@@ -62,15 +62,20 @@ function saveMag(){
   save(); closeModal('m-mag'); renderMag();
 }
 function confirmDel(type, id, nom){
-  if(!confirm(`Supprimer "${nom}" ?`)) return;
-  if(type==='mag'){
-    DB.magasins=DB.magasins.filter(m=>m.id!==id);
-    save(); renderMag();
-  } else if(type==='user'){
-    DB.users=DB.users.filter(u=>u.id!==id);
-    save(); renderUsers();
-  } else if(type==='alert'){
-    DB.alertes=DB.alertes.filter(a=>a.id!==id);
-    save(); renderDash();
-  }
+  el('conf-msg').textContent='Supprimer "'+nom+'" ?';
+  el('conf-detail').textContent='';
+  el('conf-ok').onclick=()=>{
+    closeModal('m-confirm');
+    if(type==='mag'){
+      DB.magasins=DB.magasins.filter(m=>m.id!==id);
+      save(); renderMag();
+    } else if(type==='user'){
+      DB.users=DB.users.filter(u=>u.id!==id);
+      save(); renderUsers();
+    } else if(type==='alert'){
+      DB.alertes=DB.alertes.filter(a=>a.id!==id);
+      save(); renderDash();
+    }
+  };
+  openModal('m-confirm');
 }
