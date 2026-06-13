@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QualiStore</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+<img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">      <p style="color:var(--text2);font-size:13px;margin-top:4px">Gestion de la qualité alimentaire</p>
+    </div>
+    <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
+    <div class="form-group">
+      <label class="form-label">Identifiant</label>
+      <input class="form-control" type="text" id="f-login" placeholder="Votre identifiant" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mot de passe</label>
+      <div class="pw-wrap">
+        <input class="form-control" type="password" id="f-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+        <button class="pw-eye" type="button" onclick="togglePass('f-pass',this)"><i class="ti ti-eye"></i></button>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
+      <i class="ti ti-login"></i> Se connecter
+    </button>
+
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-logo" style="padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.1)">
+<img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">   
+ </div>
+    <nav class="sb-nav" id="sb-nav"></nav>
+    <div class="sb-user">
+      <div class="avatar" id="sb-av">–</div>
+      <div>
+        <div style="font-size:12px;font-weight:500" id="sb-name">–</div>
+        <div style="font-size:10px;opacity:.6" id="sb-role">–</div>
+        <button class="btn-logout" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px"></i> Déconnexion</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="hdr">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')"><i class="ti ti-menu-2"></i></button>
+      <div>
+        <div class="hdr-title" id="pg-title">Tableau de bord</div>
+        <div class="hdr-sub" id="pg-sub"></div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px" id="hdr-actions"></div>
+    </header>
+
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div class="page" id="page-dashboard">
+        <!-- Sélecteur de vue -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+          <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">
+            <button id="dash-tab-fsqs" onclick="switchDashTab('fsqs')" style="padding:7px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;background:var(--primary);color:#fff">
+              <i class="ti ti-clipboard-check" style="font-size:14px"></i> FSQS
+            </button>
+            <button id="dash-tab-qual" onclick="switchDashTab('qual')" style="padding:7px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;background:transparent;color:var(--text2)">
+              <i class="ti ti-rosette" style="font-size:14px"></i> Qualimètre
+            </button>
+          </div>
+        </div>
+
+        <!-- STATS FSQS -->
+        <div id="dash-fsqs">
+          <div class="stats-grid">
+            <div class="stat-card blue"><div class="stat-lbl"><i class="ti ti-clipboard-check"></i> Audits FSQS</div><div class="stat-val" id="d-audits">0</div><div class="stat-sub">Total</div></div>
+            <div class="stat-card orange"><div class="stat-lbl"><i class="ti ti-alert-triangle"></i> NC ouvertes</div><div class="stat-val" id="d-nc">0</div><div class="stat-sub">À traiter</div></div>
+            <div class="stat-card red"><div class="stat-lbl"><i class="ti ti-clock"></i> Actions en retard</div><div class="stat-val" id="d-ret">0</div><div class="stat-sub">Délai dépassé</div></div>
+            <div class="stat-card green"><div class="stat-lbl"><i class="ti ti-shield-check"></i> Score moyen FSQS</div><div class="stat-val" id="d-score">–</div><div class="stat-sub">Tous magasins</div></div>
+          </div>
+          <div class="grid-2 mb-6">
+            <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-building-store" style="color:var(--primary)"></i> Par magasin</div></div><div class="card-body" id="d-mag"></div></div>
+            <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-category" style="color:#00b67a"></i> Par rayon</div><select id="d-ray-mag-filter" class="form-control" style="width:auto;font-size:12px;padding:4px 8px" onchange="renderRayonDash()"><option value="">Tous les magasins</option></select></div><div class="card-body" id="d-ray"></div></div>
+          </div>
+          <div class="card mb-4">
+            <div class="card-hdr"><div class="card-title"><i class="ti ti-clipboard-list" style="color:var(--primary)"></i> Derniers audits FSQS</div><button class="btn btn-secondary btn-sm" onclick="navigate('audits')">Voir tout</button></div>
+            <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th></th></tr></thead><tbody id="d-last"></tbody></table></div>
+          </div>
+          <div class="card mt-4">
+            <div class="card-hdr">
+              <div class="card-title"><i class="ti ti-bell-ringing" style="color:#b91c1c"></i> Alertes terrain récentes</div>
+              <span class="tsm tm" id="d-alert-cnt"></span>
+            </div>
+            <div class="card-body" id="d-alerts-list">
+              <div class="empty-state" style="padding:24px"><i class="ti ti-bell" style="font-size:28px"></i><p>Aucune alerte</p></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STATS QUALIMÈTRE -->
+        <div id="dash-qual" style="display:none">
+          <div class="stats-grid">
+            <div class="stat-card" style="border-left:4px solid #7c3aed"><div class="stat-lbl"><i class="ti ti-rosette" style="color:#7c3aed"></i> Audits Qualimètre</div><div class="stat-val" style="color:#7c3aed" id="dq-audits">0</div><div class="stat-sub">Total</div></div>
+            <div class="stat-card" style="border-left:4px solid #f59e0b"><div class="stat-lbl"><i class="ti ti-alert-circle" style="color:#f59e0b"></i> Points NC</div><div class="stat-val" style="color:#f59e0b" id="dq-nc">0</div><div class="stat-sub">Non conformes</div></div>
+            <div class="stat-card" style="border-left:4px solid #16a34a"><div class="stat-lbl"><i class="ti ti-circle-check" style="color:#16a34a"></i> Score moyen</div><div class="stat-val" style="color:#16a34a" id="dq-score">–</div><div class="stat-sub">Tous magasins</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--primary)"><div class="stat-lbl"><i class="ti ti-building-store" style="color:var(--primary)"></i> Magasins audités</div><div class="stat-val" style="color:var(--primary)" id="dq-mags">0</div><div class="stat-sub">Actifs</div></div>
+          </div>
+          <div class="grid-2 mb-6">
+            <div class="card">
+              <div class="card-hdr"><div class="card-title"><i class="ti ti-building-store" style="color:#7c3aed"></i> Score par magasin</div></div>
+              <div class="card-body" id="dq-mag"></div>
+            </div>
+            <div class="card">
+              <div class="card-hdr"><div class="card-title"><i class="ti ti-map-pin" style="color:#7c3aed"></i> Top zones NC</div></div>
+              <div class="card-body" id="dq-zones"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="card-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Derniers audits Qualimètre</div><button class="btn btn-secondary btn-sm" onclick="navigate('audit-qualimetre')">Voir tout</button></div>
+            <div class="tbl-wrap"><table><thead><tr><th>N°</th><th>Magasin</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th></th></tr></thead><tbody id="dq-last"></tbody></table></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AUDITS -->
+      <div class="page" id="page-audits">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="form-control" style="width:auto" id="flt-aud-mag" onchange="renderAudits()"><option value="">Tous les magasins</option></select>
+            <select class="form-control" style="width:auto" id="flt-aud-ray" onchange="renderAudits()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option></select>
+          </div>
+          <span class="tsm tm" id="aud-cnt"></span>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table><thead><tr><th>N°</th><th>Magasin</th><th>Rayon</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th>Statut</th><th></th></tr></thead><tbody id="aud-tb"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- NC -->
+      <div class="page" id="page-nc">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="form-control" style="width:auto" id="flt-nc-mag" onchange="renderNC()"><option value="">Tous les magasins</option></select>
+            <select class="form-control" style="width:auto" id="flt-nc-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option></select>
+            <select class="form-control" style="width:auto" id="flt-nc-crit" onchange="renderNC()"><option value="">Toutes criticités</option><option>Critique</option><option>Majeure</option><option>Mineure</option></select>
+            <select class="form-control" style="width:auto" id="flt-nc-stat" onchange="renderNC()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
+          </div>
+          <span class="tsm tm" id="nc-cnt"></span>
+        </div>
+        <!-- Tableau actif -->
+        <div class="card mb-6">
+          <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
+            <div class="card-title"><i class="ti ti-alert-triangle" style="color:var(--danger)"></i> Non-conformités actives</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select class="form-control" style="width:auto;font-size:12px;padding:4px 8px" id="flt-nc-export-period">
+                <option value="">Toutes périodes</option>
+                <option value="week">Cette semaine</option>
+                <option value="month">Mois en cours</option>
+                <option value="month30">30 derniers jours</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" onclick="exportNCActivePDF()">
+                <i class="ti ti-file-download"></i> Exporter PDF
+              </button>
+            </div>
+          </div>
+          <div class="tbl-wrap"><table><thead><tr><th>N°</th><th>Magasin</th><th>Rayon</th><th>Description</th><th>Criticité</th><th>Échéance</th><th>Statut</th><th></th></tr></thead><tbody id="nc-tb"></tbody></table></div>
+        </div>
+        <!-- Tableau archivé -->
+        <div class="card" id="nc-archive-card">
+          <div class="card-hdr" style="cursor:pointer" onclick="toggleNCArchive()">
+            <div class="card-title"><i class="ti ti-archive" style="color:var(--success)"></i> Non-conformités clôturées <span id="nc-archive-cnt" class="badge b-done" style="margin-left:8px">0</span></div>
+            <i class="ti ti-chevron-down" id="nc-archive-chevron" style="color:var(--text2);transition:transform .2s"></i>
+          </div>
+          <div id="nc-archive-body" style="display:none">
+            <div style="padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select class="form-control" style="width:auto" id="flt-arch-mag" onchange="renderNC()"><option value="">Tous les magasins</option></select>
+              <select class="form-control" style="width:auto" id="flt-arch-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option></select>
+              <select class="form-control" style="width:auto" id="flt-arch-period" onchange="renderNC()">
+                <option value="">Toutes périodes</option>
+                <option value="week">Cette semaine</option>
+                <option value="month">Mois en cours</option>
+                <option value="month30">30 derniers jours</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" onclick="exportNCArchivePDF()"><i class="ti ti-file-download"></i> Exporter PDF</button>
+            </div>
+            <div class="tbl-wrap"><table><thead><tr><th>N°</th><th>Magasin</th><th>Rayon</th><th>Description</th><th>Commentaire de suivi</th><th>Criticité</th><th>Clôturée le</th><th></th></tr></thead><tbody id="nc-archive-tb"></tbody></table></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTIONS -->
+      <div class="page" id="page-actions">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="form-control" style="width:auto" id="flt-act-mag" onchange="renderActions()"><option value="">Tous les magasins</option></select>
+            <select class="form-control" style="width:auto" id="flt-act-stat" onchange="renderActions()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
+          </div>
+          <span class="tsm tm" id="act-cnt"></span>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table><thead><tr><th>NC</th><th>Description</th><th>Magasin</th><th>Responsable</th><th>Échéance</th><th>Priorité</th><th>Statut</th><th></th></tr></thead><tbody id="act-tb"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- MAGASINS -->
+      <div class="page" id="page-magasins">
+        <div class="flex-btw mb-4">
+          <span class="tsm tm" id="mag-cnt"></span>
+          <button class="btn btn-primary" id="btn-add-mag" onclick="openMagModal()"><i class="ti ti-plus"></i> Ajouter un magasin</button>
+        </div>
+        <div class="grid-3" id="mag-grid"></div>
+        <div class="empty-state" id="mag-empty" style="display:none"><i class="ti ti-building-store"></i><p>Aucun magasin.<br>Cliquez sur « Ajouter un magasin ».</p></div>
+      </div>
+
+      <!-- RAYONS -->
+      <div class="page" id="page-rayons">
+        <div class="flex-btw mb-4">
+          <select class="form-control" style="width:auto" id="flt-ray-mag" onchange="renderRay()"><option value="">Tous les magasins</option></select>
+        </div>
+        <div class="grid-3" id="ray-grid"></div>
+      </div>
+
+      <!-- RAPPORTS FSQS -->
+      <div class="page" id="page-rapports">
+        <div class="card mb-4">
+          <div class="card-hdr"><div class="card-title"><i class="ti ti-file-analytics"></i> Rapport FSQS – Sélection des audits</div></div>
+          <div class="card-body">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+              <select class="form-control" style="width:auto" id="r-mag" onchange="renderRap()"><option value="all">Tous les magasins</option></select>
+              <select class="form-control" style="width:auto" id="r-ray" onchange="renderRap()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option></select>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+              <button class="btn btn-secondary btn-sm" onclick="toggleAllRap(true)"><i class="ti ti-check-all"></i> Tout sélectionner</button>
+              <button class="btn btn-secondary btn-sm" onclick="toggleAllRap(false)"><i class="ti ti-x"></i> Tout désélectionner</button>
+              <span class="tsm tm" id="r-cnt" style="align-self:center"></span>
+            </div>
+            <div id="r-audit-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);padding:8px 12px"></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+              <button class="btn btn-primary" onclick="genRapport()"><i class="ti ti-eye"></i> Générer l'aperçu</button>
+              <button class="btn btn-primary" id="r-print-btn" onclick="exportPDF('rap-body','rapport-fsqs')" style="display:none"><i class="ti ti-file-download"></i> Exporter en PDF</button>
+            </div>
+          </div>
+        </div>
+        <div id="rap-preview" style="display:none">
+          <div id="rap-body"></div>
+        </div>
+      </div>
+
+      <!-- RAPPORT QUALIMÈTRE -->
+      <div class="page" id="page-rapport-qualimetre">
+        <div class="card mb-4">
+          <div class="card-hdr"><div class="card-title"><i class="ti ti-gauge" style="color:#7c3aed"></i> Rapport Qualimètre – Sélection des audits</div></div>
+          <div class="card-body">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+              <select class="form-control" style="width:auto" id="rq-mag" onchange="renderRapportQualimetre()"><option value="">Tous les magasins</option></select>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+              <button class="btn btn-secondary btn-sm" onclick="toggleAllQRap(true)"><i class="ti ti-check-all"></i> Tout sélectionner</button>
+              <button class="btn btn-secondary btn-sm" onclick="toggleAllQRap(false)"><i class="ti ti-x"></i> Tout désélectionner</button>
+              <span class="tsm tm" id="rq-cnt" style="align-self:center"></span>
+            </div>
+            <div id="rq-audit-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);padding:8px 12px"></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+              <button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="genRapportQualimetre()"><i class="ti ti-eye"></i> Générer l'aperçu</button>
+              <button class="btn btn-primary" id="rq-print-btn" onclick="exportPDF('rq-body','rapport-qualimetre')" style="display:none;background:#7c3aed;border-color:#7c3aed"><i class="ti ti-file-download"></i> Exporter en PDF</button>
+            </div>
+          </div>
+        </div>
+        <div id="rq-preview" style="display:none">
+          <div id="rq-body"></div>
+        </div>
+      </div>
+
+      <!-- UTILISATEURS -->
+      <div class="page" id="page-utilisateurs">
+        <div class="flex-btw mb-4">
+          <span class="tsm tm" id="usr-cnt"></span>
+          <button class="btn btn-primary" id="btn-add-usr" onclick="openUserModal()"><i class="ti ti-user-plus"></i> Ajouter un utilisateur</button>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Utilisateur</th><th>Identifiant</th><th>Rôle</th><th>Magasin(s)</th><th>Statut</th><th>Actions</th></tr></thead>
+            <tbody id="usr-tb"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- GRILLE -->
+      <div class="page" id="page-grille">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <select class="form-control" style="width:200px" id="grille-ray-sel" onchange="showGrille(this.value)">
+            <option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option>
+          </select>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="openImportModal()"><i class="ti ti-upload"></i> Importer</button>
+            <button class="btn btn-danger" id="btn-add-ctrl" onclick="openCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
+          </div>
+        </div>
+        <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-list-check"></i> Grille commune – <span id="grille-ttl">Boucherie</span></div><div style="display:flex;gap:6px;align-items:center" id="grille-hdr-btns"><span class="badge" style="background:var(--success-light);color:#15803d"><i class="ti ti-table-import" style="font-size:12px"></i> 48 points – Grille inspection interne</span></div></div><div id="grille-body"></div></div>
+      </div>
+
+      <!-- QUALIMÈTRE -->
+      <div class="page" id="page-qualimetre">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select class="form-control" style="width:auto" id="qual-mag-sel" onchange="onQualMagChange()">
+              <option value="">– Sélectionner un magasin –</option>
+            </select>
+            <select class="form-control" style="width:auto" id="qual-ray-sel" onchange="showQualimetre()">
+              <option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="openImportModal('qualimetre')"><i class="ti ti-upload"></i> Importer</button>
+            <button class="btn btn-primary btn-sm" id="btn-add-qual" onclick="openQualCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
+          </div>
+        </div>
+        <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-gauge" style="color:#7c3aed"></i> Qualimètre – <span id="qual-ttl">–</span></div></div><div id="qual-body"></div></div>
+      </div>
+
+      <!-- AUDIT QUALIMÈTRE -->
+      <div class="page" id="page-audit-qualimetre">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="form-control" style="width:auto" id="flt-qaud-mag" onchange="renderQualAudits()"><option value="">Tous les magasins</option></select>
+            <span class="tsm tm" id="qaud-hist-cnt" style="align-self:center"></span>
+          </div>
+          <button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()">
+            <i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre
+          </button>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title"><i class="ti ti-gauge" style="color:#7c3aed"></i> Historique des audits Qualimètre</div>
+          </div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>N°</th><th>Magasin</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th>Statut</th><th></th></tr></thead>
+            <tbody id="qaud-tb"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: UTILISATEUR -->
+<div class="modal-ov" id="m-user">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="m-user-ttl"><i class="ti ti-user-plus" style="color:var(--primary)"></i> Nouvel utilisateur</div>
+      <button class="btn-x" onclick="closeModal('m-user')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="u-err"></div>
+      <input type="hidden" id="u-id">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Nom complet *</label><input class="form-control" id="u-nom" placeholder="Prénom Nom"></div>
+        <div class="form-group"><label class="form-label">Identifiant (login) *</label><input class="form-control" id="u-login" placeholder="prenom.nom" autocomplete="off"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Mot de passe *</label>
+          <div class="pw-wrap">
+            <input class="form-control" type="password" id="u-mdp" placeholder="••••••••" autocomplete="new-password">
+            <button class="pw-eye" type="button" onclick="togglePass('u-mdp',this)"><i class="ti ti-eye"></i></button>
+          </div>
+          <div class="form-hint" id="u-mdp-hint" style="display:none">Laisser vide pour ne pas modifier</div>
+        </div>
+        <div class="form-group"><label class="form-label">Statut</label><select class="form-control" id="u-statut"><option value="actif">Actif</option><option value="inactif">Inactif</option></select></div>
+      </div>
+      <hr class="divider">
+      <div class="form-group">
+        <label class="form-label">Rôle *</label>
+        <select class="form-control" id="u-role" onchange="onRoleChange()">
+          <option value="">Sélectionner...</option>
+          <option value="admin">Administrateur</option>
+          <option value="fsqs">Responsable FSQS</option>
+          <option value="directeur">Directeur de magasin</option>
+          <option value="direction">Associé</option>
+        </select>
+      </div>
+      <div class="form-group" id="u-mag-grp" style="display:none">
+        <label class="form-label">Point(s) de vente assigné(s)</label>
+        <div style="margin-bottom:6px;display:flex;gap:8px">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllMags(true)"><i class="ti ti-check-all"></i> Tout sélectionner</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllMags(false)"><i class="ti ti-x"></i> Tout désélectionner</button>
+        </div>
+        <div id="u-mag-cbs" class="cb-group" style="max-height:150px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
+      </div>
+      <hr class="divider">
+      <div class="form-group">
+        <label class="form-label">Droits sur l'application</label>
+        <div class="perm-sec">
+          <div class="perm-title">Audits &amp; Qualité</div>
+          <div class="cb-group">
+            <label class="cb-item"><input type="checkbox" id="p-aud-r"> Consulter les audits</label>
+            <label class="cb-item"><input type="checkbox" id="p-aud-w"> Créer / modifier des audits</label>
+            <label class="cb-item"><input type="checkbox" id="p-nc"> Gérer les non-conformités</label>
+            <label class="cb-item"><input type="checkbox" id="p-ac"> Gérer les actions correctives</label>
+          </div>
+        </div>
+        <div class="perm-sec">
+          <div class="perm-title">Données</div>
+          <div class="cb-group">
+            <label class="cb-item"><input type="checkbox" id="p-mag"> Gérer les magasins</label>
+            <label class="cb-item"><input type="checkbox" id="p-rap"> Accéder aux rapports</label>
+            <label class="cb-item"><input type="checkbox" id="p-grille"> Modifier la grille d'audit</label>
+          </div>
+        </div>
+        <div class="perm-sec">
+          <div class="perm-title">Administration</div>
+          <div class="cb-group">
+            <label class="cb-item"><input type="checkbox" id="p-usr"> Gérer les utilisateurs</label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-user')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveUser()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: MAGASIN -->
+<div class="modal-ov" id="m-mag">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="m-mag-ttl"><i class="ti ti-building-store" style="color:var(--primary)"></i> Nouveau magasin</div>
+      <button class="btn-x" onclick="closeModal('m-mag')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="mag-err"></div>
+      <input type="hidden" id="m-id">
+      <div class="form-group"><label class="form-label">Nom *</label><input class="form-control" id="m-nom" placeholder="ex : Carrefour Centre-Ville"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Enseigne</label><select class="form-control" id="m-enseigne"><option value="">Autre</option><option>Carrefour</option><option>Intermarché</option><option>Leclerc</option><option>Auchan</option><option>Casino</option><option>Monoprix</option><option>Super U</option><option>Lidl</option><option>Aldi</option></select></div>
+        <div class="form-group"><label class="form-label">Ville *</label><input class="form-control" id="m-ville" placeholder="Paris"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Adresse complète</label><input class="form-control" id="m-adr" placeholder="12 rue de la Paix, 75001 Paris"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Directeur</label><select class="form-control" id="m-dir"></select></div>
+        <div class="form-group"><label class="form-label">Statut</label><select class="form-control" id="m-statut"><option value="actif">Actif</option><option value="inactif">Inactif</option></select></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-mag')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveMag()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CONFIRMER SUPPRESSION -->
+<div class="modal-ov" id="m-confirm">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-trash" style="color:var(--danger)"></i> Confirmer la suppression</div>
+      <button class="btn-x" onclick="closeModal('m-confirm')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="confirm-box"><strong id="conf-msg"></strong><span id="conf-detail"></span></div>
+      <p class="tsm tm">Cette action est irréversible.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-confirm')">Annuler</button>
+      <button class="btn btn-danger" id="conf-ok"><i class="ti ti-trash"></i> Supprimer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: AUDIT -->
+<div class="modal-ov" id="m-audit">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-clipboard-plus" style="color:var(--primary)"></i> Nouvel audit FSQS</div>
+      <button class="btn-x" onclick="closeModal('m-audit')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="as1">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Magasin *</label><select class="form-control" id="a-mag"><option value="">Sélectionner...</option></select></div>
+          <div class="form-group"><label class="form-label">Rayon *</label><select class="form-control" id="a-ray"><option value="">Sélectionner...</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Date *</label><input type="date" class="form-control" id="a-date"></div>
+          <div class="form-group"><label class="form-label">Auditeur</label><input class="form-control" id="a-aud" readonly></div>
+        </div>
+        <div class="form-group"><label class="form-label">Commentaire</label><textarea class="form-control" id="a-cmt-s1" rows="2" placeholder="Observations générales..." style="display:none"></textarea></div>
+      </div>
+      <div id="as2" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div><div style="font-size:15px;font-weight:600" id="a-ray-ttl"></div><div class="tsm tm" id="a-prog"></div></div>
+          <div style="text-align:right"><div style="font-size:24px;font-weight:700" id="a-score-live">–</div><div class="tsm tm">Score provisoire</div></div>
+        </div>
+        <div id="a-qs"></div>
+        <div style="margin-top:16px;padding:14px 16px;background:#f5f8ff;border-radius:var(--radius);border:1px solid var(--primary-light)">
+          <label class="form-label" style="margin-bottom:6px"><i class="ti ti-message-circle" style="color:var(--primary-mid)"></i> Commentaire général de fin d'audit</label>
+          <textarea class="form-control" id="a-cmt" rows="2" placeholder="Observations générales, points particuliers à signaler..."></textarea>
+        </div>
+      </div>
+      <div id="as3" style="display:none;text-align:center;padding:20px 0">
+        <i class="ti ti-circle-check" style="font-size:60px;color:var(--success);display:block;margin-bottom:14px"></i>
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px">Audit enregistré !</div>
+        <div class="tm" id="a-recap"></div>
+        <div id="a-score-fin" style="width:90px;height:90px;border-radius:50%;border:7px solid;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;margin:16px auto"></div>
+        <div id="a-nc-msg" style="font-size:13px;color:var(--danger);margin-top:8px"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" id="a-prev" onclick="auditPrev()" style="display:none"><i class="ti ti-arrow-left"></i> Retour</button>
+      <button class="btn btn-primary" id="a-next" onclick="auditNext()">Continuer <i class="ti ti-arrow-right"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ALERTE TERRAIN -->
+<div class="modal-ov" id="m-alert">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" style="color:#b91c1c"><i class="ti ti-bell-ringing"></i> Nouvelle alerte terrain</div>
+      <button class="btn-x" onclick="closeModal('m-alert')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="al-err"></div>
+      <div class="form-group">
+        <label class="form-label">Magasin concerné *</label>
+        <select class="form-control" id="al-mag"><option value="">Sélectionner...</option></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Titre de l'alerte *</label>
+        <input class="form-control" id="al-titre" placeholder="Ex : Fuite d'eau dans la chambre froide">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Type d'alerte *</label>
+          <select class="form-control" id="al-type">
+            <option value="">Sélectionner...</option>
+            <option>Matériel</option>
+            <option>Structure</option>
+            <option>Produit</option>
+            <option>Hygiène</option>
+            <option>Sécurité</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Gravité *</label>
+          <select class="form-control" id="al-gravite">
+            <option value="">Sélectionner...</option>
+            <option>Mineure</option>
+            <option>Majeure</option>
+            <option>Critique</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Signalé par *</label>
+        <input class="form-control" id="al-signale" placeholder="Nom du déclarant">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Commentaire</label>
+        <textarea class="form-control" id="al-cmt" rows="3" placeholder="Décrivez la situation, le contexte, les mesures immédiates prises..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Photo(s)</label>
+        <div class="photo-preview" id="al-photos-prev"></div>
+        <input type="file" id="al-photo-input" accept="image/*" multiple style="display:none" onchange="handleAlertPhotos(this)">
+        <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="el('al-photo-input').click()">
+          <i class="ti ti-camera"></i> Ajouter une photo
+        </button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-alert')">Annuler</button>
+      <button class="btn btn-danger" onclick="saveAlert()"><i class="ti ti-bell-ringing"></i> Envoyer l'alerte</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: POINT DE CONTRÔLE (admin only) -->
+<div class="modal-ov" id="m-ctrl">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="m-ctrl-ttl"><i class="ti ti-list-check" style="color:var(--primary)"></i> Nouveau point de contrôle</div>
+      <button class="btn-x" onclick="closeModal('m-ctrl')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="ctrl-err"></div>
+      <input type="hidden" id="ctrl-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Rayon *</label>
+          <select class="form-control" id="ctrl-rayon">
+            <option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Catégorie</label>
+          <input class="form-control" id="ctrl-cat" placeholder="ex : Température, Hygiène...">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Intitulé du point de contrôle *</label>
+        <input class="form-control" id="ctrl-q" placeholder="Décrivez ce qui doit être vérifié...">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Criticité *</label>
+          <select class="form-control" id="ctrl-crit">
+            <option value="Mineure">Mineure (poids 2)</option>
+            <option value="Majeure">Majeure (poids 5)</option>
+            <option value="Critique">Critique (poids 10)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Poids personnalisé</label>
+          <input class="form-control" type="number" id="ctrl-poids" placeholder="2, 5 ou 10" min="1" max="10">
+          <div class="form-hint">Laisser vide = poids par défaut selon criticité</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-ctrl')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveCtrl()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DÉTAIL AUDIT (avec photo + commentaire) -->
+<div class="modal-ov" id="m-aud-detail">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-clipboard-check" style="color:var(--primary)"></i> Détail de l'audit</div>
+      <button class="btn-x" onclick="closeModal('m-aud-detail')">&times;</button>
+    </div>
+    <div class="modal-body" id="aud-detail-body"></div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-aud-detail')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- MODAL: IMPORT GRILLE -->
+<div class="modal-ov" id="m-import">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-upload" style="color:var(--primary)"></i> Importer des points de contrôle</div>
+      <button class="btn-x" onclick="closeModal('m-import')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Format tabs -->
+      <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <button class="imp-tab active" id="tab-csv" onclick="switchImportTab('csv')" style="flex:1;padding:10px;font-size:13px;font-weight:500;background:var(--primary);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px"><i class="ti ti-file-text"></i> CSV / TSV</button>
+        <button class="imp-tab" id="tab-xlsx" onclick="switchImportTab('xlsx')" style="flex:1;padding:10px;font-size:13px;font-weight:500;background:var(--surface);color:var(--text);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;border-left:1px solid var(--border)"><i class="ti ti-file-spreadsheet"></i> Excel (.xlsx)</button>
+        <button class="imp-tab" id="tab-pdf" onclick="switchImportTab('pdf')" style="flex:1;padding:10px;font-size:13px;font-weight:500;background:var(--surface);color:var(--text);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;border-left:1px solid var(--border)"><i class="ti ti-file-type-pdf"></i> PDF</button>
+      </div>
+
+      <!-- Format info -->
+      <div style="background:var(--bg);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.9" id="imp-format-info">
+        <strong style="color:var(--text);font-size:13px">Format CSV / TSV</strong><br>
+        Colonnes attendues : <strong>Rayon · Catégorie · Intitulé · Criticité · Poids</strong><br>
+        Séparateur auto-détecté : <code style="background:#fff;padding:1px 5px;border-radius:4px">;</code> ou <code style="background:#fff;padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
+        La première ligne peut être un en-tête (elle sera ignorée si elle contient le mot « Rayon »).<br>
+        <span style="color:#15803d">Exemple : <code style="background:#fff;padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
+      </div>
+
+      <!-- Drop zone -->
+      <div id="imp-drop" style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:32px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--bg)"
+        ondragover="event.preventDefault();this.style.borderColor='var(--primary-mid)';this.style.background='var(--primary-light)'"
+        ondragleave="this.style.borderColor='var(--border)';this.style.background='var(--bg)'"
+        ondrop="handleImportDrop(event)"
+        onclick="el('imp-file-input').click()">
+        <i class="ti ti-cloud-upload" style="font-size:40px;color:var(--text3);display:block;margin-bottom:10px"></i>
+        <div style="font-size:14px;font-weight:500;margin-bottom:4px">Glissez-déposez votre fichier ici</div>
+        <div class="tsm tm">ou cliquez pour choisir un fichier</div>
+        <div class="tsm" id="imp-accept-hint" style="color:var(--primary);margin-top:6px">.csv · .tsv · .txt acceptés</div>
+      </div>
+      <input type="file" id="imp-file-input" accept=".csv,.tsv,.txt,.xlsx,.xls,.pdf" style="display:none" onchange="handleImportFile(this)">
+
+      <!-- Preview -->
+      <div id="imp-preview" style="display:none;margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:13px;font-weight:600" id="imp-preview-title">Aperçu</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="imp-stats" class="tsm tm"></span>
+            <button class="btn btn-secondary btn-sm" onclick="clearImportPreview()"><i class="ti ti-x"></i> Effacer</button>
+          </div>
+        </div>
+        <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius)">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="background:var(--bg)">
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Rayon</th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Catégorie</th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Intitulé</th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Criticité</th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Poids</th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)"></th>
+            </tr></thead>
+            <tbody id="imp-preview-tb"></tbody>
+          </table>
+        </div>
+        <div id="imp-warnings" style="margin-top:10px;font-size:12px;color:var(--orange)"></div>
+      </div>
+
+      <!-- PDF special note -->
+      <div id="pdf-note" style="display:none;margin-top:12px;background:var(--warning-light);border-radius:var(--radius);padding:12px 14px;font-size:12px;color:#92400e">
+        <i class="ti ti-info-circle"></i> <strong>Import PDF :</strong> le texte est extrait automatiquement. Pour de meilleurs résultats, le PDF doit être un tableau avec des colonnes identifiables (Rayon, Catégorie, Intitulé, Criticité). Les PDF scannés (images) ne sont pas pris en charge.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-import')">Annuler</button>
+      <button class="btn btn-primary" id="imp-confirm-btn" onclick="confirmImport()" disabled style="opacity:.5"><i class="ti ti-check"></i> Importer <span id="imp-count-btn"></span></button>
+    </div>
+  </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>
+
+<!-- Librairies externes -->
+<script src="js/jspdf.umd.min.js"></script>
+<script src="js/html2canvas.min.js"></script>
+<script src="js/chart.umd.min.js"></script>
+
+<!-- Infrastructure -->
+<script src="js/config.js"></script>
+<script src="js/db/localStorage/storage.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/ui.js"></script>
+
+<!-- Modules métier -->
+<script src="js/dashboard.js"></script>
+<script src="js/audits.js"></script>
+<script src="js/nc.js"></script>
+<script src="js/actions.js"></script>
+<script src="js/magasins.js"></script>
+<script src="js/grille.js"></script>
+<script src="js/alertes.js"></script>
+<script src="js/users.js"></script>
+<script src="js/rapports-fsqs.js"></script>
+<script src="js/qualimetre.js"></script>
+<script src="js/audit-qualimetre.js"></script>
+<script src="js/rapport-qualimetre.js"></script>
+<script src="js/import-grille.js"></script>
+
+<!-- Point d'entrée -->
+<script src="js/init.js"></script>
+
+</body>
+</html>
