@@ -2,15 +2,6 @@
 // Dépend de : storage.js (DB, CU), auth.js (hasPerm), ui.js
 
 // ══════════════ UTILISATEURS ══════════════
-const DPERMS={
-  admin:     {'aud-r':1,'aud-w':1,'nc':1,'ac':1,'mag':1,'rap':1,'grille':1,'usr':1},
-  fsqs:      {'aud-r':1,'aud-w':1,'nc':1,'ac':1,'mag':0,'rap':1,'grille':1,'usr':0},
-  directeur: {'aud-r':1,'aud-w':0,'nc':0,'ac':1,'mag':0,'rap':1,'grille':0,'usr':0},
-  direction: {'aud-r':1,'aud-w':0,'nc':0,'ac':0,'mag':0,'rap':1,'grille':0,'usr':0}
-};
-const PIDS=['aud-r','aud-w','nc','ac','mag','rap','grille','usr'];
-// "direction" label displayed as "Associé"
-function roleBdg(r){ const m={admin:'b-admin',fsqs:'b-fsqs',directeur:'b-dir',direction:'b-direction'}; const l={admin:'Administrateur',fsqs:'Resp. FSQS',directeur:'Directeur',direction:'Associé'}; return `<span class="badge ${m[r]||''}">${l[r]||r}</span>`; }
 
 function toggleAllMags(sel){ document.querySelectorAll('.mcb').forEach(c=>c.checked=sel); }
 

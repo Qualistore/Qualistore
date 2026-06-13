@@ -3,31 +3,12 @@
 
 // ══════════════ IMPORT GRILLE (CSV / XLSX / PDF) ══════════════
 // Lazy-load SheetJS and PDF.js only when needed
-const SHEETJS_URL='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-const PDFJS_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 let XLSXLoaded=false, PDFJSLoaded=false;
 
 function loadScript(url){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=url; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
 
 let importRows=[]; // parsed rows pending confirmation
 let currentImportTab='csv';
-
-const FORMAT_INFO={
-  csv:`<strong style="color:var(--text);font-size:13px">Format CSV / TSV</strong><br>
-    Colonnes attendues : <strong>Rayon · Catégorie · Intitulé · Criticité · Poids</strong><br>
-    Séparateur auto-détecté : <code style="background:#fff;padding:1px 5px;border-radius:4px">;</code> ou <code style="background:#fff;padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
-    La première ligne peut être un en-tête (ignorée si elle contient « Rayon »).<br>
-    <span style="color:#15803d">Exemple : <code style="background:#fff;padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>`,
-  xlsx:`<strong style="color:var(--text);font-size:13px">Format Excel (.xlsx / .xls)</strong><br>
-    La 1ère feuille du classeur est utilisée. La 1ère ligne doit être un en-tête ou être ignorée.<br>
-    Colonnes (dans l'ordre) : <strong>Rayon · Catégorie · Intitulé · Criticité · Poids</strong><br>
-    <span style="color:#15803d">Les colonnes peuvent aussi être nommées en en-tête — la détection est automatique.</span>`,
-  pdf:`<strong style="color:var(--text);font-size:13px">Format PDF</strong><br>
-    Le texte du PDF est extrait et analysé ligne par ligne.<br>
-    Chaque ligne doit contenir les informations séparées par des espaces ou tabulations.<br>
-    Les PDFs contenant des tableaux avec les colonnes <strong>Rayon, Catégorie, Intitulé, Criticité</strong> sont mieux reconnus.<br>
-    <span style="color:var(--orange)">⚠ Les PDFs scannés (images) ne fonctionnent pas.</span>`
-};
 
 const ACCEPT_HINTS={ csv:'.csv · .tsv · .txt acceptés', xlsx:'.xlsx · .xls acceptés', pdf:'.pdf accepté' };
 
