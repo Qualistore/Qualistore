@@ -206,6 +206,7 @@ DB = {
 | `alertes.js` | `ui.js` (appelle openAlertModal), `dashboard.js`, `actions.js` |
 | `qualimetre.js` | `ui.js` (appelle showQualimetre), `import-grille.js` |
 | `audit-qualimetre.js` | `ui.js` (appelle renderQualAudits), `rapport-qualimetre.js` |
+| `magasins.js` | `users.js`, `alertes.js` (confirmDel utilisée pour supprimer users et alertes) |
 
 ### Détail complet des dépendances
 
@@ -221,7 +222,7 @@ DB = {
 
 **actions.js** utilise : `save` ← storage.js | `v`, `el` ← auth.js | `fd`, `today`, `overdue`, `statBdg`, `critBdg`, `visibleMids` ← ui.js | `canEditNC`, `renderNC` ← nc.js | `renderAlertsDash` ← alertes.js
 
-**magasins.js** utilise : `save`, `uid` ← storage.js | `hasPerm`, `v`, `sv`, `el` ← auth.js | `sc`, `openModal`, `closeModal`, `magScore`, `pbar`, `visibleMids` ← ui.js
+**magasins.js** utilise : `save`, `uid` ← storage.js | `hasPerm`, `v`, `sv`, `el` ← auth.js | `sc`, `openModal`, `closeModal`, `magScore`, `pbar`, `visibleMids` ← ui.js | expose `confirmDel` (utilisée par magasins, users, alertes)
 
 **rayons.js** utilise : `el` ← auth.js | `fd`, `sc`, `scCls`, `rIcon`, `pbar`, `visibleMids` ← ui.js
 

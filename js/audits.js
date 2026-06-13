@@ -70,3 +70,21 @@ function showAud(id){
   el('aud-detail-body').innerHTML=html;
   openModal('m-aud-detail');
 }
+function openAuditModal(){
+  const mids=visibleMids();
+  const msel=el('a-mag');
+  msel.innerHTML='<option value="">Sélectionner...</option>'+DB.magasins.filter(m=>mids.includes(m.id)&&m.statut==='actif').map(m=>`<option value="${m.id}">${m.nom}</option>`).join('');
+  el('a-date').value=today();
+  el('a-aud').value=CU?CU.nom:'';
+  el('as1').style.display=''; el('as2').style.display='none'; el('as3').style.display='none';
+  el('a-prev').style.display='none';
+  el('a-next').innerHTML='Continuer <i class="ti ti-arrow-right"></i>';
+  openModal('m-audit');
+}
+
+function deleteAudit(id){
+  if(!confirm('Supprimer cet audit ?')) return;
+  DB.audits=DB.audits.filter(a=>a.id!==id);
+  DB.ncs=DB.ncs.filter(n=>n.aid!==id);
+  save(); renderAudits();
+}

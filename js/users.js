@@ -1,7 +1,7 @@
 // ══════════════ USERS ══════════════
 // Dépend de : storage.js (DB, CU), auth.js (hasPerm), ui.js
 
-// ══════════════ UTILISATEURS ══════════════
+function roleBdg(r){ const m={admin:'b-admin',fsqs:'b-fsqs',directeur:'b-dir',direction:'b-direction'}; const l={admin:'Administrateur',fsqs:'Resp. FSQS',directeur:'Directeur',direction:'Associé'}; return `<span class="badge ${m[r]||''}">${l[r]||r}</span>`; }
 
 function toggleAllMags(sel){ document.querySelectorAll('.mcb').forEach(c=>c.checked=sel); }
 
@@ -50,9 +50,7 @@ function openUserModal(id){
 }
 function onRoleChange(apply){
   const r=el('u-role').value;
-  // Show magasin selector for all non-admin roles
   el('u-mag-grp').style.display=(r&&r!=='admin')?'':'none';
-  // Associé = direction: pre-check all magasins
   if(apply!==false&&r==='direction'){ document.querySelectorAll('.mcb').forEach(c=>c.checked=true); }
   if(apply!==false&&DPERMS[r]){ PIDS.forEach(p=>{ const e=el('p-'+p); if(e) e.checked=!!DPERMS[r][p]; }); }
 }
