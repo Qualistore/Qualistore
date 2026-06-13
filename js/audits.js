@@ -88,3 +88,104 @@ function deleteAudit(id){
   DB.ncs=DB.ncs.filter(n=>n.aid!==id);
   save(); renderAudits();
 }
+
+let auditStep=0, auditAnswers={};
+
+function auditNext(){
+  if(auditStep===0){
+    const mid=v('a-mag'), ray=v('a-ray'), date=v('a-date');
+    if(!mid||!ray||!date){ alert('Magasin, rayon et date sont requis.'); return; }
+    buildAuditQuestions(ray);
+    el('as1').style.display='none'; el('as2').style.display='';
+    el('a-ray-ttl').textContent=ray;
+    el('a-prev').style.display='';
+    el('a-next').innerHTML='Valider l\'audit <i class="ti ti-check"></i>';
+    auditStep=1;
+  } else if(auditStep===1){
+    submitAudit();
+  }
+}
+
+function auditPrev(){
+  if(auditStep===1){
+    el('as2').style.display='none'; el('as1').style.display='';
+    el('a-prev').style.display='none';
+    el('a-next').innerHTML='Continuer <i class="ti ti-arrow-right"></i>';
+    auditStep=0;
+  }
+}
+
+function buildAuditQuestions(rayon){
+  const qs=getGrille(rayon);
+  auditAnswers={};
+  qs.forEach(q=>{ auditAnswers[q.id]={q:q.q,rep:null,cmt:'',photos:[]}; });
+  el('a-prog').textContent=`0/${qs.length} réponses`;
+  el('a-qs').innerHTML=qs.map(q=>`
+    <div class="aq" id="aaq-${q.id}" style="margin-bottom:8px">
+      <div class="qt">${critBdg(q.c)} ${q.q}</div>
+      ${q.prec?`<div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-style:italic">${q.prec}</div>`:''}
+      <div class="rg">
+        <div class="rb" onclick="setAudRep('${q.id}','C',this)"><i class="ti ti-check" style="font-size:12px"></i> Conforme</div>
+        <div class="rb" onclick="setAudRep('${q.id}','NC',this)"><i class="ti ti-x" style="font-size:12px"></i> Non conforme</div>
+        <div class="rb" onclick="setAudRep('${q.id}','NA',this)"><i class="ti ti-minus" style="font-size:12px"></i> N/A</div>
+      </div>
+      <div class="nc-det" id="and-${q.id}">
+        <input type="text" class="form-control" style="font-size:12px;margin-top:6px" placeholder="Commentaire NC..." oninput="auditAnswers['${q.id}'].cmt=this.value">
+      </div>
+    </div>`).join('');
+  updateAuditScore();
+}
+
+function setAudRep(qid,r,btn){
+  auditAnswers[qid].rep=r;
+  const c=el('aaq-'+qid);
+  c.querySelectorAll('.rb').forEach(b=>b.classList.remove('selC','selNC','selNA'));
+  btn.classList.add('sel'+r);
+  const d=el('and-'+qid); if(r==='NC') d?.classList.add('on'); else d?.classList.remove('on');
+  updateAuditScore();
+}
+
+function updateAuditScore(){
+  const qs=getGrille(v('a-ray'));
+  const ans=Object.values(auditAnswers);
+  const valid=ans.filter(a=>a.rep&&a.rep!=='NA');
+  const done=ans.filter(a=>a.rep).length;
+  el('a-prog').textContent=`${done}/${qs.length} réponses`;
+  const total=qs.filter(q=>auditAnswers[q.id]?.rep&&auditAnswers[q.id]?.rep!=='NA').reduce((s,q)=>s+q.p,0);
+  const ok=qs.filter(q=>auditAnswers[q.id]?.rep==='C').reduce((s,q)=>s+q.p,0);
+  const pct=total>0?Math.round((ok/total)*100):null;
+  el('a-score-live').textContent=pct!==null?pct+'%':'–';
+}
+
+function submitAudit(){
+  const mid=v('a-mag'), ray=v('a-ray'), date=v('a-date'), aud=v('a-aud'), cmt=v('a-cmt');
+  const mag=DB.magasins.find(m=>m.id===mid)||{};
+  const qs=getGrille(ray);
+  // Auto-fill unanswered
+  qs.forEach(q=>{ if(!auditAnswers[q.id]?.rep) auditAnswers[q.id]={q:q.q,rep:'NA',cmt:'',photos:[]}; });
+  const valid=qs.filter(q=>auditAnswers[q.id].rep!=='NA');
+  const ok=valid.filter(q=>auditAnswers[q.id].rep==='C');
+  const totalW=valid.reduce((s,q)=>s+q.p,0);
+  const okW=ok.reduce((s,q)=>s+q.p,0);
+  const score=totalW>0?Math.round((okW/totalW)*100):100;
+  const ncList=valid.filter(q=>auditAnswers[q.id].rep==='NC');
+  const aid='AUD-'+String(DB.nAud++).padStart(3,'0');
+  if(!DB.audits) DB.audits=[];
+  DB.audits.push({id:aid,mid,mag:mag.nom||'',rayon:ray,date,aud,cmt,score,nc:ncList.length,statut:ncList.length?'Non conforme':'Conforme',answers:{...auditAnswers}});
+  ncList.forEach(q=>{
+    const ncId='NC-'+String(DB.nNc++).padStart(3,'0');
+    const dl=new Date(Date.now()+7*86400000).toISOString().split('T')[0];
+    DB.ncs.push({id:ncId,mid,mag:mag.nom||'',rayon:ray,date,desc:q.q,crit:q.c,resp:aud,dl,statut:'Ouverte',cmt:auditAnswers[q.id].cmt,aid});
+  });
+  save();
+  el('as2').style.display='none'; el('as3').style.display='';
+  el('a-prev').style.display='none';
+  el('a-next').innerHTML='Fermer';
+  el('a-next').onclick=()=>{ closeModal('m-audit'); el('a-next').onclick=auditNext; auditStep=0; renderAudits(); };
+  el('a-recap').textContent=(mag.nom||'')+' · '+ray+' · '+fd(date);
+  const sc2=score>=95?'var(--success)':score>=80?'#f59e0b':score>=70?'var(--orange)':'var(--danger)';
+  el('a-score-fin').style.borderColor=sc2; el('a-score-fin').style.color=sc2;
+  el('a-score-fin').textContent=score+'%';
+  el('a-nc-msg').textContent=ncList.length?ncList.length+' NC détectée(s)':'';
+  auditStep=2;
+}
