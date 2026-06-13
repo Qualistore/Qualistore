@@ -61,3 +61,16 @@ function saveMag(){
   else { DB.magasins.push({id:uid(),...data}); }
   save(); closeModal('m-mag'); renderMag();
 }
+function confirmDel(type, id, nom){
+  if(!confirm(`Supprimer "${nom}" ?`)) return;
+  if(type==='mag'){
+    DB.magasins=DB.magasins.filter(m=>m.id!==id);
+    save(); renderMag();
+  } else if(type==='user'){
+    DB.users=DB.users.filter(u=>u.id!==id);
+    save(); renderUsers();
+  } else if(type==='alert'){
+    DB.alertes=DB.alertes.filter(a=>a.id!==id);
+    save(); renderDash();
+  }
+}
