@@ -26,7 +26,9 @@ Application métier de gestion des audits FSQS (Food Safety & Quality Standards)
 qualistore/
 ├── Qualistore.html                   ← Squelette HTML + chargement des scripts
 ├── assets/
-│   └── logo.png                      ← Logo de l'application
+│   ├── logo.png                      ← Logo de l'application
+│   ├── bienvenue-qualimetre.pdf      ← Affiché à l'étape 0 du modal Qualimètre
+│   └── referentiel-affichage.pdf     ← Bouton dans le header du modal pendant l'audit
 ├── css/
 │   └── app.css                       ← Tous les styles
 └── js/
@@ -34,14 +36,14 @@ qualistore/
     ├── auth.js                       ← Login/logout, hasPerm(), v(), sv(), el()
     ├── ui.js                         ← Sidebar, navigation, modals, toasts, helpers affichage
     ├── dashboard.js                  ← Tableau de bord FSQS + Qualimètre (onglets switchDashTab)
-    ├── audits.js                     ← Liste et création des audits FSQS
+    ├── audits.js                     ← Liste, création, navigation modal audit FSQS (openAuditModal, auditNext, auditPrev, submitAudit)
     ├── nc.js                         ← Non-conformités (liste, création, édition, suivi)
     ├── actions.js                    ← Actions correctives liées aux NC
-    ├── magasins.js                   ← Gestion des magasins
+    ├── magasins.js                   ← Gestion des magasins + confirmDel (global)
     ├── rayons.js                     ← Page Rayons (performances par rayon)
     ├── grille.js                     ← Grille d'audit (affichage, personnalisation par rayon)
     ├── alertes.js                    ← Alertes (création, suivi)
-    ├── users.js                      ← Gestion des utilisateurs
+    ├── users.js                      ← Gestion des utilisateurs + roleBdg (global)
     ├── rapports-fsqs.js              ← Rapports et exports PDF audits FSQS
     ├── qualimetre.js                 ← Référentiel Qualimètre (questions par zone)
     ├── audit-qualimetre.js           ← Saisie et calcul d'un audit Qualimètre
@@ -85,7 +87,7 @@ init.js
 | `SK` | `config.js` | Clé localStorage (`'fsqs_v2'`) |
 | `DB` | `storage.js` | Objet en mémoire (toute la base de données) |
 | `CU` | `storage.js` | Utilisateur connecté (Current User) |
-| `LOGO_B64` | `config.js` | Logo encodé base64 |
+| `LOGO_B64` | `config.js` | Chemin vers le logo (`assets/logo.png`) |
 | `DPERMS` | `config.js` | Permissions par rôle |
 | `PIDS` | `config.js` | Liste des IDs de permissions |
 | `GRILLE_BASE_COMMUNE` | `config.js` | 48 questions d'audit communes à tous les rayons |
@@ -101,7 +103,7 @@ init.js
 DB = {
   users: [],          // { id, nom, login, pwd (btoa), role, statut, magasins[], perms{} }
   magasins: [],       // { id, nom, ville, enseigne, adr, statut, did }
-  audits: [],         // { id, mid, mag, rayon, date, aud, score, nc, items[], cmt }
+  audits: [],         // { id, mid, mag, rayon, date, aud, score, nc, items[], cmt, answers{} }
   ncs: [],            // { id, mid, mag, rayon, date, desc, crit, resp, dl, statut, cmt, aid, isAlert }
   actions: [],        // { id, ncId, desc, mag, resp, ech, prio, statut, alertId }
   alertes: [],        // { id, mid, mag, titre, type, gravite, signale, cmt, photos[], date, statut }
@@ -138,8 +140,32 @@ DB = {
 - Deux onglets dans le tableau de bord : FSQS et Qualimètre
 - `switchDashTab(tab)` dans `dashboard.js` gère la bascule
 - Panneau FSQS : `id="dash-fsqs"` | Panneau Qualimètre : `id="dash-qual"`
-- Graphiques linéaires (Chart.js) dans les deux onglets — score par magasin en fonction du N° d'audit
+- Graphiques linéaires (Chart.js) dans les deux onglets — score par magasin trié par ID d'audit
 - `renderDashQual()` alimente les stats Qualimètre (dq-audits, dq-nc, dq-score, dq-mags, dq-mag, dq-zones, dq-last)
+
+---
+
+## Modal Audit Qualimètre
+
+- **Étape 0** : page d'accueil avec instructions (contenu du PDF bienvenue-qualimetre.pdf)
+- **Étape 1** : saisie magasin, date, auditeur
+- **Étape 2** : questions par zone avec onglets. Bouton "Référentiel affichage" dans le header ouvre `assets/referentiel-affichage.pdf` dans un nouvel onglet
+- **Étape 3** : résultat et score final
+- ID de la modal : `m-qual-audit` | ID détail : `m-qual-audit-detail`
+
+---
+
+## Fonctions globales importantes
+
+| Fonction | Définie dans | Rôle |
+|---|---|---|
+| `confirmDel(type, id, nom)` | `magasins.js` | Suppression avec modal de confirmation (types : mag, user, alert) |
+| `roleBdg(r)` | `users.js` | Génère le badge HTML pour un rôle |
+| `openAuditModal()` | `audits.js` | Ouvre le modal de création d'audit FSQS |
+| `auditNext()` / `auditPrev()` | `audits.js` | Navigation dans le modal audit FSQS |
+| `submitAudit()` | `audits.js` | Enregistre l'audit FSQS et génère les NC |
+| `deleteAudit(id)` | `audits.js` | Supprime un audit et ses NC associées |
+| `openQualAuditModal()` | `audit-qualimetre.js` | Ouvre le modal de création d'audit Qualimètre |
 
 ---
 
@@ -175,16 +201,19 @@ DB = {
 - **localStorage** : les données sont persistées localement dans le navigateur (migration Supabase prévue).
 - **Compte par défaut** : login `admin` / mot de passe `admin`.
 - **Import lazy** : SheetJS et PDF.js sont chargés à la demande (CDN) uniquement lors de l'import de grille.
-- **Grille d'audit** : `GRILLE_BASE_COMMUNE` est dans `config.js` uniquement — ne pas la redéclarer dans d'autres fichiers.
-- **QUAL_ZONES** : dans `config.js` uniquement — ne pas la redéclarer dans `audit-qualimetre.js`.
-- **DPERMS / PIDS** : dans `config.js` uniquement — ne pas les redéclarer dans `users.js`.
-- **FORMAT_INFO / SHEETJS_URL / PDFJS_URL** : dans `config.js` uniquement — ne pas les redéclarer dans `import-grille.js`.
+- **GRILLE_BASE_COMMUNE** : dans `config.js` uniquement — ne pas redéclarer dans d'autres fichiers.
+- **QUAL_ZONES** : dans `config.js` uniquement — ne pas redéclarer dans `audit-qualimetre.js`.
+- **DPERMS / PIDS** : dans `config.js` uniquement — ne pas redéclarer dans `users.js`.
+- **FORMAT_INFO / SHEETJS_URL / PDFJS_URL** : dans `config.js` uniquement — ne pas redéclarer dans `import-grille.js`.
+- **confirmDel** : définie dans `magasins.js`, utilisée globalement.
+- **roleBdg** : définie dans `users.js`, utilisée globalement.
 
 ---
 
 ## Supabase (migration prévue)
 
 - URL : `https://jztacnkvmuhouhhapjen.supabase.co`
+- Clé publique : `sb_publishable_HuVt2NSLrCfUvKcgXI7Byg_Jkq96fB9`
 - Tables créées : users, magasins, audits, ncs, actions, alertes, grille_custom, qual_audits, qualimetre_custom, counters
 - La migration implique de rendre toutes les opérations asynchrones (await)
 
@@ -216,7 +245,7 @@ DB = {
 
 **dashboard.js** utilise : `el` ← auth.js | `fd`, `sc`, `sbadge`, `overdue`, `rIcon`, `magScore`, `pbar`, `visibleMids` ← ui.js | `showAud` ← audits.js | `renderAlertsDash` ← alertes.js
 
-**audits.js** utilise : `v`, `el` ← auth.js | `fd`, `sc`, `scCls`, `sbadge`, `statBdg`, `critBdg`, `rIcon`, `openModal`, `visibleMids` ← ui.js
+**audits.js** utilise : `v`, `el` ← auth.js | `fd`, `sc`, `scCls`, `sbadge`, `statBdg`, `critBdg`, `rIcon`, `openModal`, `closeModal`, `visibleMids`, `today` ← ui.js | `getGrille` ← grille.js
 
 **nc.js** utilise : `save` ← storage.js | `v`, `sv`, `el` ← auth.js | `fd`, `today`, `overdue`, `statBdg`, `critBdg`, `rIcon`, `openModal`, `closeModal`, `visibleMids` ← ui.js | `renderActions` ← actions.js
 
@@ -224,13 +253,13 @@ DB = {
 
 **magasins.js** utilise : `save`, `uid` ← storage.js | `hasPerm`, `v`, `sv`, `el` ← auth.js | `sc`, `openModal`, `closeModal`, `magScore`, `pbar`, `visibleMids` ← ui.js | expose `confirmDel` (utilisée par magasins, users, alertes)
 
-**rayons.js** utilise : `el` ← auth.js | `fd`, `sc`, `scCls`, `rIcon`, `pbar`, `visibleMids` ← ui.js
+**rayons.js** utilise : `el` ← auth.js | `fd`, `sc`, `rIcon`, `pbar`, `visibleMids` ← ui.js
 
 **grille.js** utilise : `save`, `uid` ← storage.js | `v`, `sv`, `el` ← auth.js | `critBdg`, `openModal`, `closeModal` ← ui.js
 
 **alertes.js** utilise : `save` ← storage.js | `v`, `sv`, `el` ← auth.js | `fd`, `today`, `critBdg`, `openModal`, `closeModal`, `visibleMids` ← ui.js | `renderDash` ← dashboard.js
 
-**users.js** utilise : `save`, `uid` ← storage.js | `hasPerm`, `v`, `sv`, `el` ← auth.js | `buildSidebar`, `updateSBUser`, `openModal`, `closeModal` ← ui.js
+**users.js** utilise : `save`, `uid` ← storage.js | `hasPerm`, `v`, `sv`, `el` ← auth.js | `buildSidebar`, `updateSBUser`, `openModal`, `closeModal` ← ui.js | expose `roleBdg`
 
 **rapports-fsqs.js** utilise : `v`, `el` ← auth.js | `fd`, `sc`, `scCls`, `visibleMids` ← ui.js
 
