@@ -68,7 +68,7 @@ function qaNext(){
   } else if(qaStep===1){
     if(!v('qa-mag')||!v('qa-date')||!v('qa-aud').trim()){ alert('Magasin, date et auditeur sont requis.'); return; }
     buildQaQuestions();
-    el('qa-s1').style.display='none'; el('qa-s2').style.display='';
+    el('qa-s1').style.display='none'; el('qa-s2').style.display=''; const rb=el('btn-ref-affichage'); if(rb) rb.style.display='';
     el('qa-next').innerHTML='Valider l\'audit <i class="ti ti-check"></i>';
     qaStep=2;
   } else if(qaStep===2){
@@ -77,7 +77,7 @@ function qaNext(){
 }
 function qaPrev(){
   if(qaStep===2){
-    el('qa-s2').style.display='none'; el('qa-s1').style.display='';
+    el('qa-s2').style.display='none'; el('qa-s1').style.display=''; const rb2=el('btn-ref-affichage'); if(rb2) rb2.style.display='none';
     el('qa-next').innerHTML='Commencer l\'audit <i class="ti ti-arrow-right"></i>';
     qaStep=1;
   } else if(qaStep===1){
@@ -177,7 +177,7 @@ function submitQualAudit(){
   const aid='QA-'+String((DB.qualAudits.length+1)).padStart(3,'0');
   DB.qualAudits.push({ id:aid, mid, mag:mag.nom||'', date, aud, cmt, score, nc:ncList.length, statut:ncList.length?'Ouvert':'Conforme', answers:{...qaAnswers} });
   save();
-  el('qa-s2').style.display='none'; el('qa-s3').style.display=''; el('qa-prev').style.display='none';
+  el('qa-s2').style.display='none'; el('qa-s3').style.display=''; el('qa-prev').style.display='none'; const rb3=el('btn-ref-affichage'); if(rb3) rb3.style.display='none';
   el('qa-next').innerHTML='Fermer'; el('qa-next').onclick=()=>{ closeModal('m-qual-audit'); renderQualAudits(); };
   el('qa-recap').textContent=(mag.nom||'')+' · '+fd(date)+' · Auditeur : '+aud;
   el('qa-score-fin').textContent=score+'%';
