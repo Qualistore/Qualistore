@@ -16,7 +16,7 @@
 
 ## Contexte
 
-Application métier de gestion des audits FSQS (Food Safety & Quality Standards) pour des magasins. Mono-fichier HTML à l'origine, refactorisée en multi-fichiers. Fonctionne entièrement en local (localStorage), sans serveur.
+Application métier de gestion des audits FSQS (Food Safety & Quality Standards) pour des magasins. Refactorisée en multi-fichiers. Hébergée sur GitHub Pages (https://falves1995.github.io/QualistoreV2/Qualistore.html). Fonctionne avec localStorage (migration Supabase prévue).
 
 ---
 
@@ -25,17 +25,20 @@ Application métier de gestion des audits FSQS (Food Safety & Quality Standards)
 ```
 qualistore/
 ├── Qualistore.html                   ← Squelette HTML + chargement des scripts
+├── assets/
+│   └── logo.png                      ← Logo de l'application
 ├── css/
-│   └── app.css                       ← Tous les styles (193 lignes)
+│   └── app.css                       ← Tous les styles
 └── js/
-    ├── config.js                     ← Constantes globales (LOGO, SK, DPERMS, GRILLE_BASE, QUAL_ZONES, FORMAT_INFO…)
+    ├── config.js                     ← Constantes globales (LOGO_B64, SK, DPERMS, PIDS, GRILLE_BASE_COMMUNE, QUAL_ZONES, FORMAT_INFO, SHEETJS_URL, PDFJS_URL)
     ├── auth.js                       ← Login/logout, hasPerm(), v(), sv(), el()
     ├── ui.js                         ← Sidebar, navigation, modals, toasts, helpers affichage
-    ├── dashboard.js                  ← Page tableau de bord (stats, alertes résumées)
+    ├── dashboard.js                  ← Tableau de bord FSQS + Qualimètre (onglets switchDashTab)
     ├── audits.js                     ← Liste et création des audits FSQS
     ├── nc.js                         ← Non-conformités (liste, création, édition, suivi)
     ├── actions.js                    ← Actions correctives liées aux NC
     ├── magasins.js                   ← Gestion des magasins
+    ├── rayons.js                     ← Page Rayons (performances par rayon)
     ├── grille.js                     ← Grille d'audit (affichage, personnalisation par rayon)
     ├── alertes.js                    ← Alertes (création, suivi)
     ├── users.js                      ← Gestion des utilisateurs
@@ -45,8 +48,11 @@ qualistore/
     ├── rapport-qualimetre.js         ← Rapport et export PDF Qualimètre
     ├── import-grille.js              ← Import grille via CSV / XLSX / PDF
     ├── init.js                       ← Point d'entrée : DOMContentLoaded, loadDB(), navigate()
+    ├── chart.umd.min.js              ← Chart.js (local, pour les graphiques)
+    ├── html2canvas.min.js            ← html2canvas (local, pour exports PDF)
+    ├── jspdf.umd.min.js              ← jsPDF (local, pour exports PDF)
     └── db/
-        └── localStorage/
+        └── localstorage/
             └── storage.js            ← Moteur DB : DB (objet mémoire), loadDB(), save(), uid(), CU
 ```
 
@@ -55,14 +61,14 @@ qualistore/
 ## Ordre de chargement dans Qualistore.html
 
 ```html
-<!-- Librairies externes -->
-jspdf · html2canvas
+<!-- Librairies externes (locales) -->
+js/jspdf.umd.min.js · js/html2canvas.min.js · js/chart.umd.min.js
 
 <!-- Infrastructure (ordre obligatoire) -->
-config.js → storage.js → auth.js → ui.js
+config.js → db/localstorage/storage.js → auth.js → ui.js
 
 <!-- Modules métier (ordre libre) -->
-dashboard · audits · nc · actions · magasins · grille · alertes
+dashboard · audits · nc · actions · magasins · rayons · grille · alertes
 users · rapports-fsqs · qualimetre · audit-qualimetre
 rapport-qualimetre · import-grille
 
@@ -94,14 +100,14 @@ init.js
 ```js
 DB = {
   users: [],          // { id, nom, login, pwd (btoa), role, statut, magasins[], perms{} }
-  magasins: [],       // { id, nom, rayon, ... }
-  audits: [],         // { id, magId, date, rayon, score, items[], ... }
-  ncs: [],            // { id, auditId, magId, desc, statut, cmt, ... }
-  actions: [],        // { id, ncId, desc, statut, echeance, ... }
-  alertes: [],        // { id, titre, desc, statut, ... }
+  magasins: [],       // { id, nom, ville, enseigne, adr, statut, did }
+  audits: [],         // { id, mid, mag, rayon, date, aud, score, nc, items[], cmt }
+  ncs: [],            // { id, mid, mag, rayon, date, desc, crit, resp, dl, statut, cmt, aid, isAlert }
+  actions: [],        // { id, ncId, desc, mag, resp, ech, prio, statut, alertId }
+  alertes: [],        // { id, mid, mag, titre, type, gravite, signale, cmt, photos[], date, statut }
   grilleCustom: {},   // { [rayon]: [{id, cat, q, prec, p, c}] }
-  qualimetreCustom:{},// { [rayon]: [...] }
-  qualAudits: [],     // Audits Qualimètre
+  qualimetreCustom:{},// { [mid]: { [rayon]: [...] } }
+  qualAudits: [],     // { id, mid, mag, date, aud, cmt, score, nc, statut, answers{} }
   nAud:1, nNc:1, nAc:1, nAl:1, nQAud:1  // Compteurs auto-incrément
 }
 ```
@@ -116,6 +122,24 @@ DB = {
 | `fsqs` | Resp. FSQS | Audits, NC, actions, rapports, grille |
 | `directeur` | Directeur | Lecture audits, actions, rapports |
 | `direction` | Associé | Lecture audits, rapports |
+
+---
+
+## Sidebar — visibilité des onglets
+
+- **Magasins** et **Rayons** : visibles uniquement si `hasPerm('mag')` (admin uniquement par défaut), placés sous Grille d'audit dans Paramètres
+- **Audit Qualimètre** : visible par tous les rôles
+- **Nouvel audit Qualimètre** : bouton dans le bandeau du haut (violet), à côté de Nouvel audit
+
+---
+
+## Dashboard — onglets FSQS / Qualimètre
+
+- Deux onglets dans le tableau de bord : FSQS et Qualimètre
+- `switchDashTab(tab)` dans `dashboard.js` gère la bascule
+- Panneau FSQS : `id="dash-fsqs"` | Panneau Qualimètre : `id="dash-qual"`
+- Graphiques linéaires (Chart.js) dans les deux onglets — score par magasin en fonction du N° d'audit
+- `renderDashQual()` alimente les stats Qualimètre (dq-audits, dq-nc, dq-score, dq-mags, dq-mag, dq-zones, dq-last)
 
 ---
 
@@ -146,18 +170,27 @@ DB = {
 
 ## Notes importantes
 
-- **Pas de serveur** : tout fonctionne en ouvrant `Qualistore.html` directement dans le navigateur.
+- **GitHub Pages** : l'appli est hébergée publiquement, toutes les librairies JS sont en local (pas de CDN) pour éviter les blocages CORS.
 - **Pas de framework** : JS vanilla pur, pas de React/Vue/Angular.
-- **localStorage** : les données sont persistées localement dans le navigateur.
+- **localStorage** : les données sont persistées localement dans le navigateur (migration Supabase prévue).
 - **Compte par défaut** : login `admin` / mot de passe `admin`.
-- **Import lazy** : SheetJS et PDF.js sont chargés à la demande uniquement lors de l'import de grille.
-- **Grille d'audit** : `GRILLE_BASE_COMMUNE` est partagée par tous les rayons ; les questions personnalisées sont dans `DB.grilleCustom[rayon]`.
+- **Import lazy** : SheetJS et PDF.js sont chargés à la demande (CDN) uniquement lors de l'import de grille.
+- **Grille d'audit** : `GRILLE_BASE_COMMUNE` est dans `config.js` uniquement — ne pas la redéclarer dans d'autres fichiers.
+- **QUAL_ZONES** : dans `config.js` uniquement — ne pas la redéclarer dans `audit-qualimetre.js`.
+- **DPERMS / PIDS** : dans `config.js` uniquement — ne pas les redéclarer dans `users.js`.
+- **FORMAT_INFO / SHEETJS_URL / PDFJS_URL** : dans `config.js` uniquement — ne pas les redéclarer dans `import-grille.js`.
+
+---
+
+## Supabase (migration prévue)
+
+- URL : `https://jztacnkvmuhouhhapjen.supabase.co`
+- Tables créées : users, magasins, audits, ncs, actions, alertes, grille_custom, qual_audits, qualimetre_custom, counters
+- La migration implique de rendre toutes les opérations asynchrones (await)
 
 ---
 
 ## Dépendances entre fichiers
-
-Pour chaque fichier, les fonctions qu'il emprunte à d'autres fichiers. Si tu modifies un fichier, vérifie les fichiers qui en dépendent.
 
 | Fichier modifié | Fichiers potentiellement impactés |
 |---|---|
@@ -189,6 +222,8 @@ Pour chaque fichier, les fonctions qu'il emprunte à d'autres fichiers. Si tu mo
 **actions.js** utilise : `save` ← storage.js | `v`, `el` ← auth.js | `fd`, `today`, `overdue`, `statBdg`, `critBdg`, `visibleMids` ← ui.js | `canEditNC`, `renderNC` ← nc.js | `renderAlertsDash` ← alertes.js
 
 **magasins.js** utilise : `save`, `uid` ← storage.js | `hasPerm`, `v`, `sv`, `el` ← auth.js | `sc`, `openModal`, `closeModal`, `magScore`, `pbar`, `visibleMids` ← ui.js
+
+**rayons.js** utilise : `el` ← auth.js | `fd`, `sc`, `scCls`, `rIcon`, `pbar`, `visibleMids` ← ui.js
 
 **grille.js** utilise : `save`, `uid` ← storage.js | `v`, `sv`, `el` ← auth.js | `critBdg`, `openModal`, `closeModal` ← ui.js
 
