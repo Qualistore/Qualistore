@@ -734,6 +734,71 @@
 
 
 
+
+<!-- MODAL: AUDIT QUALIMÈTRE -->
+<div class="modal-ov" id="m-qual-audit">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Nouvel audit Qualimètre</div>
+      <button class="btn-x" onclick="closeModal('m-qual-audit')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Étape 0 : Accueil -->
+      <div id="qa-s0" style="text-align:center;padding:20px 0">
+        <i class="ti ti-rosette" style="font-size:56px;color:#7c3aed;display:block;margin-bottom:14px"></i>
+        <div style="font-size:18px;font-weight:700;margin-bottom:8px">Audit Qualimètre</div>
+        <div class="tm tsm">Parcours client – Œil du client</div>
+      </div>
+      <!-- Étape 1 : Infos -->
+      <div id="qa-s1" style="display:none">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Magasin *</label><select class="form-control" id="qa-mag"><option value="">Sélectionner...</option></select></div>
+          <div class="form-group"><label class="form-label">Date *</label><input type="date" class="form-control" id="qa-date"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Auditeur *</label><input class="form-control" id="qa-aud" placeholder="Nom de l'auditeur"></div>
+        <div class="form-group"><label class="form-label">Commentaire général</label><textarea class="form-control" id="qa-cmt" rows="2" placeholder="Observations..."></textarea></div>
+      </div>
+      <!-- Étape 2 : Questions -->
+      <div id="qa-s2" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:15px;font-weight:600" id="qa-zone-title"></div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="font-size:22px;font-weight:700;color:#7c3aed" id="qa-score-live">–</div>
+            <div class="tsm tm" id="qa-progress"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" id="qa-zone-tabs"></div>
+        <div id="qa-questions"></div>
+      </div>
+      <!-- Étape 3 : Résultat -->
+      <div id="qa-s3" style="display:none;text-align:center;padding:20px 0">
+        <i class="ti ti-circle-check" style="font-size:60px;color:var(--success);display:block;margin-bottom:14px"></i>
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px">Audit enregistré !</div>
+        <div class="tm" id="qa-recap"></div>
+        <div id="qa-score-fin" style="width:90px;height:90px;border-radius:50%;border:7px solid #7c3aed;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#7c3aed;margin:16px auto"></div>
+        <div id="qa-nc-msg" style="font-size:13px;color:var(--danger);margin-top:8px"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" id="qa-prev" onclick="qaPrev()" style="display:none"><i class="ti ti-arrow-left"></i> Retour</button>
+      <button class="btn btn-primary" id="qa-next" style="background:#7c3aed;border-color:#7c3aed">Démarrer <i class="ti ti-arrow-right"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DÉTAIL AUDIT QUALIMÈTRE -->
+<div class="modal-ov" id="m-qual-audit-detail">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Détail audit Qualimètre</div>
+      <button class="btn-x" onclick="closeModal('m-qual-audit-detail')">&times;</button>
+    </div>
+    <div class="modal-body" id="qa-detail-body"></div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-qual-audit-detail')">Fermer</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
 
