@@ -2,6 +2,7 @@
 // Ce fichier regroupe toutes les constantes globales.
 
 const LOGO_B64="assets/logo.png";
+const SK='fsqs_v2';
 
 // ══════════════ STORAGE ══════════════
 
