@@ -5,7 +5,7 @@ let _chartFsqs = null;
 let _chartQual = null;
 
 const CHART_COLORS = [
-  '#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6',
+  '#0062ff','#ffee00','#10b981','#ef4444','#8b5cf6',
   '#06b6d4','#f97316','#84cc16','#ec4899','#6366f1'
 ];
 
@@ -78,7 +78,7 @@ function renderDash(){
 function renderChartFsqs(mids, myAudits){
   const myMags=DB.magasins.filter(m=>mids.includes(m.id));
   const datasets=myMags.map((m,i)=>{
-    const audits=[...myAudits].filter(a=>a.mid===m.id).sort((a,b)=>a.date>b.date?1:-1);
+const audits=[...myAudits].filter(a=>a.mid===m.id).sort((a,b)=>a.id>b.id?1:-1);
     return {
       label: m.nom,
       data: audits.map((a,idx)=>({ x: idx+1, y: a.score })),
@@ -169,7 +169,7 @@ function renderDashQual(){
 function renderChartQual(mids, qAudits){
   const myMags=DB.magasins.filter(m=>mids.includes(m.id));
   const datasets=myMags.map((m,i)=>{
-    const audits=[...qAudits].filter(a=>a.mid===m.id).sort((a,b)=>a.date>b.date?1:-1);
+    const audits=[...qAudits].filter(a=>a.mid===m.id).sort((a,b)=>a.id>b.id?1:-1);
     return {
       label: m.nom,
       data: audits.map((a,idx)=>({ x: idx+1, y: a.score||0 })),
