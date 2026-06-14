@@ -74,8 +74,8 @@ function openAuditModal(){
   const mids=visibleMids();
   const msel=el('a-mag');
   msel.innerHTML='<option value="">Sélectionner...</option>'+DB.magasins.filter(m=>mids.includes(m.id)&&m.statut==='actif').map(m=>`<option value="${m.id}">${m.nom}</option>`).join('');
-  el('qa-date').value=today();
-  el('qa-date').readOnly=!(CU&&CU.role==='admin');
+  el('a-date').value=today();
+  el('a-date').readOnly=!(CU&&CU.role==='admin');
   el('a-aud').value=CU?CU.nom:'';
   el('as1').style.display=''; el('as2').style.display='none'; el('as3').style.display='none';
   el('a-prev').style.display='none';
@@ -132,6 +132,9 @@ function buildAuditQuestions(rayon){
       </div>
       <div class="nc-det" id="and-${q.id}">
         <input type="text" class="form-control" style="font-size:12px;margin-top:6px" placeholder="Commentaire NC..." oninput="auditAnswers['${q.id}'].cmt=this.value">
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aphot-${q.id}"></div>
+        <input type="file" accept="image/*" multiple style="display:none" id="aphi-${q.id}" onchange="handleAuditPhoto('${q.id}',this)">
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:11px" onclick="el('aphi-${q.id}').click()"><i class="ti ti-camera"></i> Ajouter photo</button>
       </div>
     </div>`).join('');
   updateAuditScore();
@@ -191,4 +194,20 @@ const acId='AC-'+uid();
   el('a-score-fin').textContent=score+'%';
   el('a-nc-msg').textContent=ncList.length?ncList.length+' NC détectée(s)':'';
   auditStep=2;
+}
+
+async function handleAuditPhoto(qid, input){
+  const files=[...input.files];
+  for(const f of files){
+    const path='audits/'+qid+'-'+uid()+'-'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const url=await sbUploadPhoto(f, path);
+    if(url){
+      auditAnswers[qid].photos.push(url);
+    } else {
+      alert('Upload échoué — vérifiez votre connexion.');
+    }
+    const prev=el('aphot-'+qid);
+    if(prev) prev.innerHTML=auditAnswers[qid].photos.map(u=>`<img src="${u}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`).join('');
+  }
+  input.value='';
 }
