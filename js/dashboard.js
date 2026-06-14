@@ -39,6 +39,39 @@ function buildLineChart(canvasId, datasets, chartRef){
   });
 }
 
+function buildBarChart(canvasId, labels, data, colors, chartRef){
+  const canvas = el(canvasId);
+  if(!canvas) return null;
+  if(chartRef) chartRef.destroy();
+  return new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Score moyen',
+        data,
+        backgroundColor: colors.map(c=>c+'99'),
+        borderColor: colors,
+        borderWidth: 2,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` Score moyen : ${ctx.parsed.y}%` } }
+      },
+      scales: {
+        y: {
+          min: 0, max: 100,
+          ticks: { callback: v => v+'%' }
+        }
+      }
+    }
+  });
+}
 // ══════════════ DASHBOARD FSQS ══════════════
 function renderDash(){
   const mids=visibleMids();
@@ -77,27 +110,28 @@ function renderDash(){
 
 function renderChartFsqs(mids, myAudits){
   const myMags=DB.magasins.filter(m=>mids.includes(m.id));
-  const datasets=myMags.map((m,i)=>{
-const audits=[...myAudits].filter(a=>a.mid===m.id).sort((a,b)=>a.id>b.id?1:-1);
-    return {
-      label: m.nom,
-      data: audits.map((a,idx)=>({ x: idx+1, y: a.score })),
-      borderColor: CHART_COLORS[i % CHART_COLORS.length],
-      backgroundColor: CHART_COLORS[i % CHART_COLORS.length]+'22',
-      tension: 0.3, pointRadius: 4, fill: false
-    };
-  }).filter(d=>d.data.length>0);
+  const magsAvecAudits=myMags.map((m,i)=>{
+    const audits=myAudits.filter(a=>a.mid===m.id);
+    if(!audits.length) return null;
+    const avg=Math.round(audits.reduce((s,a)=>s+a.score,0)/audits.length);
+    return { nom: m.nom, avg, color: CHART_COLORS[i % CHART_COLORS.length] };
+  }).filter(Boolean);
 
   const wrap=el('d-mag');
   if(!wrap) return;
-  if(!datasets.length){
-    wrap.innerHTML='<div class="empty-state" style="padding:24px"><i class="ti ti-chart-line" style="font-size:28px"></i><p>Aucune donnée</p></div>';
+  if(!magsAvecAudits.length){
+    wrap.innerHTML='<div class="empty-state" style="padding:24px"><i class="ti ti-chart-bar" style="font-size:28px"></i><p>Aucune donnée</p></div>';
     return;
   }
   wrap.innerHTML='<div style="position:relative;height:260px"><canvas id="chart-fsqs"></canvas></div>';
-  _chartFsqs = buildLineChart('chart-fsqs', datasets, _chartFsqs);
+  _chartFsqs = buildBarChart(
+    'chart-fsqs',
+    magsAvecAudits.map(m=>m.nom),
+    magsAvecAudits.map(m=>m.avg),
+    magsAvecAudits.map(m=>m.color),
+    _chartFsqs
+  );
 }
-
 function renderRayonDash(){
   const mids=visibleMids();
   const sel=el('d-ray-mag-filter');
