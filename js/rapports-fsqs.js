@@ -24,6 +24,8 @@ function renderRap(){
   </label>`).join('');
   el('rap-preview').style.display='none';
   el('r-print-btn').style.display='none';
+  const delBtn=el('r-del-btn');
+  if(delBtn) delBtn.style.display=CU&&CU.role==='admin'?'':'none';
 }
 function toggleAllRap(v){ document.querySelectorAll('.r-cb').forEach(c=>c.checked=v); }
 
@@ -113,4 +115,22 @@ function genRapport(){
   el('rap-preview').style.display='';
   el('r-print-btn').style.display='';
   el('rap-preview').scrollIntoView({behavior:'smooth'});
+}
+function deleteSelectedAudits(){
+  const selected=[...document.querySelectorAll('.r-cb:checked')].map(c=>c.value);
+  if(!selected.length){ alert('Sélectionnez au moins un audit.'); return; }
+  if(!confirm('Supprimer '+selected.length+' audit(s) et toutes leurs NC/actions associées ?')) return;
+  selected.forEach(id=>{
+    const ncs=DB.ncs.filter(n=>n.aid===id).map(n=>n.id);
+    ncs.forEach(ncId=>{
+      sbDeleteWhere('actions','ncId',ncId);
+      DB.actions=DB.actions.filter(a=>a.ncId!==ncId);
+    });
+    sbDeleteWhere('ncs','aid',id);
+    sbDeleteWhere('audits','id',id);
+    DB.ncs=DB.ncs.filter(n=>n.aid!==id);
+    DB.audits=DB.audits.filter(a=>a.id!==id);
+  });
+  save(['audits','ncs','actions']);
+  renderRap();
 }

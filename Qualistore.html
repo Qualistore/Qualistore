@@ -246,6 +246,7 @@
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
               <button class="btn btn-primary" onclick="genRapport()"><i class="ti ti-eye"></i> Générer l'aperçu</button>
               <button class="btn btn-primary" id="r-print-btn" onclick="exportPDF('rap-body','rapport-fsqs')" style="display:none"><i class="ti ti-file-download"></i> Exporter en PDF</button>
+              <button class="btn btn-danger btn-sm" id="r-del-btn" onclick="deleteSelectedAudits()" style="display:none"><i class="ti ti-trash"></i> Supprimer la sélection</button>
             </div>
           </div>
         </div>
@@ -271,6 +272,7 @@
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
               <button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="genRapportQualimetre()"><i class="ti ti-eye"></i> Générer l'aperçu</button>
               <button class="btn btn-primary" id="rq-print-btn" onclick="exportPDF('rq-body','rapport-qualimetre')" style="display:none;background:#7c3aed;border-color:#7c3aed"><i class="ti ti-file-download"></i> Exporter en PDF</button>
+              <button class="btn btn-danger btn-sm" id="rq-del-btn" onclick="deleteSelectedQualAudits()" style="display:none"><i class="ti ti-trash"></i> Supprimer la sélection</button>
             </div>
           </div>
         </div>

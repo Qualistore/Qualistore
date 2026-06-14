@@ -27,6 +27,8 @@ function renderRapportQualimetre(){
   }).join('');
   el('rq-preview').style.display='none';
   el('rq-print-btn').style.display='none';
+  const delBtn=el('rq-del-btn');
+  if(delBtn) delBtn.style.display=CU&&CU.role==='admin'?'':'none';
 }
 function toggleAllQRap(v){ document.querySelectorAll('.rq-cb').forEach(c=>c.checked=v); }
 
@@ -193,4 +195,15 @@ function printReport(){}  // no-op — exportPDF used instead
 function printSingleQA(id){
   const a=(DB.qualAudits||[]).find(x=>x.id===id); if(!a) return;
   showQualAudit(id); setTimeout(()=>exportPDF('qa-detail-body','audit-qualimetre-'+id),400);
+}
+function deleteSelectedQualAudits(){
+  const selected=[...document.querySelectorAll('.rq-cb:checked')].map(c=>c.value);
+  if(!selected.length){ alert('Sélectionnez au moins un audit.'); return; }
+  if(!confirm('Supprimer '+selected.length+' audit(s) Qualimètre ?')) return;
+  selected.forEach(id=>{
+    sbDeleteWhere('qual_audits','id',id);
+    DB.qualAudits=(DB.qualAudits||[]).filter(a=>a.id!==id);
+  });
+  save(['qualAudits']);
+  renderRapportQualimetre();
 }
