@@ -114,7 +114,13 @@ function renderChartFsqs(mids, myAudits){
     const audits=myAudits.filter(a=>a.mid===m.id);
     if(!audits.length) return null;
     const avg=Math.round(audits.reduce((s,a)=>s+a.score,0)/audits.length);
-    return { nom: m.nom, avg, color: CHART_COLORS[i % CHART_COLORS.length] };
+const GREENS=['#16a34a','#15803d','#22c55e','#4ade80','#86efac'];
+const YELLOWS=['#ca8a04','#a16207','#eab308','#facc15','#fde047'];
+const ORANGES=['#ea580c','#c2410c','#f97316','#fb923c','#fdba74'];
+const REDS=['#dc2626','#b91c1c','#ef4444','#f87171','#fca5a5'];
+const palette=avg>=90?GREENS:avg>=75?YELLOWS:avg>=60?ORANGES:REDS;
+const color=palette[i % palette.length];
+return { nom: m.nom, avg, color };
   }).filter(Boolean);
 
   const wrap=el('d-mag');
