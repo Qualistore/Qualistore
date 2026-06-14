@@ -42,3 +42,21 @@ async function sbDeleteAll(table){
 async function sbDeleteWhere(table, col, val){
   return await supaFetch('/rest/v1/'+table+'?'+col+'=eq.'+encodeURIComponent(val), { method:'DELETE' });
 }
+async function sbUploadPhoto(file, path){
+  const res=await fetch(SUPA_URL+'/storage/v1/object/photos/'+path, {
+    method:'POST',
+    headers:{
+      'apikey': SUPA_KEY,
+      'Authorization': 'Bearer '+SUPA_KEY,
+      'Content-Type': file.type,
+      'x-upsert': 'true'
+    },
+    body: file
+  });
+  if(!res.ok){ console.error('Upload photo échoué'); return null; }
+  return SUPA_URL+'/storage/v1/object/public/photos/'+path;
+}
+
+async function sbDeletePhoto(path){
+  return await supaFetch('/storage/v1/object/photos/'+path, { method:'DELETE' });
+}

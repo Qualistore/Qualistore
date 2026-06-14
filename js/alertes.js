@@ -37,13 +37,19 @@ function saveAlert(){
   const nb=el('nc-bdg'); if(nb) nb.textContent=DB.ncs.filter(x=>x.statut==='Ouverte').length;
   renderDash();
 }
-function handleAlertPhotos(input){
+async function handleAlertPhotos(input){
   const files=[...input.files];
-  files.forEach(f=>{
-    const r=new FileReader();
-    r.onload=e=>{ alertPhotosB64.push(e.target.result); renderAlertPhotoPrev(); };
-    r.readAsDataURL(f);
-  });
+  for(const f of files){
+    const path='alertes/'+uid()+'-'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const url=await sbUploadPhoto(f, path);
+    if(url){ alertPhotosB64.push(url); renderAlertPhotoPrev(); }
+    else {
+      // Fallback base64 si offline
+      const r=new FileReader();
+      r.onload=e=>{ alertPhotosB64.push(e.target.result); renderAlertPhotoPrev(); };
+      r.readAsDataURL(f);
+    }
+  }
   input.value='';
 }
 function renderAlertPhotoPrev(){

@@ -75,6 +75,13 @@ function confirmDel(type, id, nom){
       save(['users']); sbDeleteWhere('users','id',id);
       renderUsers();
     } else if(type==='alert'){
+      const al=DB.alertes.find(a=>a.id===id);
+      if(al&&al.photos) al.photos.forEach(url=>{
+        if(url.includes('/storage/v1/object/public/photos/')){
+          const path=url.split('/storage/v1/object/public/photos/')[1];
+          sbDeletePhoto(path);
+        }
+      });
       DB.alertes=DB.alertes.filter(a=>a.id!==id);
       save(['alertes']); sbDeleteWhere('alertes','id',id);
       renderDash();
