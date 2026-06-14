@@ -140,8 +140,10 @@ DB = {
 - Deux onglets dans le tableau de bord : FSQS et Qualimètre
 - `switchDashTab(tab)` dans `dashboard.js` gère la bascule
 - Panneau FSQS : `id="dash-fsqs"` | Panneau Qualimètre : `id="dash-qual"`
-- Graphiques linéaires (Chart.js) dans les deux onglets — score par magasin trié par ID d'audit
+- Graphiques en **barres** (Chart.js) dans les deux onglets — **moyenne des scores par magasin**
+- Code couleur des barres : vert ≥90%, jaune 75-89%, orange 60-74%, rouge <60%
 - `renderDashQual()` alimente les stats Qualimètre (dq-audits, dq-nc, dq-score, dq-mags, dq-mag, dq-zones, dq-last)
+- `buildBarChart(canvasId, labels, data, colors, chartRef)` dans `dashboard.js` — génère un graphique en barres
 
 ---
 
@@ -159,7 +161,7 @@ DB = {
 
 | Fonction | Définie dans | Rôle |
 |---|---|---|
-| `confirmDel(type, id, nom)` | `magasins.js` | Suppression avec modal de confirmation (types : mag, user, alert) |
+| `confirmDel(type, id, nom)` | `magasins.js` | Suppression avec modal de confirmation (types : mag, user, alert, nc) |
 | `roleBdg(r)` | `users.js` | Génère le badge HTML pour un rôle |
 | `openAuditModal()` | `audits.js` | Ouvre le modal de création d'audit FSQS |
 | `auditNext()` / `auditPrev()` | `audits.js` | Navigation dans le modal audit FSQS |
@@ -208,9 +210,11 @@ DB = {
 - **confirmDel** : définie dans `magasins.js`, utilisée globalement.
 - **roleBdg** : définie dans `users.js`, utilisée globalement.
 - **Modal Qualimètre** : étape 0 affiche le contenu de bienvenue-qualimetre.pdf. Pendant l'audit (étape 2), bouton dans le header ouvre referentiel-affichage.pdf dans un nouvel onglet.
-- `confirmDel` : définie dans `magasins.js`, utilisée globalement pour supprimer magasins, users et alertes.
+- **confirmDel** : définie dans `magasins.js`, utilisée globalement. Types supportés : `mag`, `user`, `alert`, `nc`. Pour `nc` : supprime la NC et son action corrective liée.
+- **Modal NC edit** (`m-nc-edit`) : dans `Qualistore.html`. Permet à admin de modifier statut, échéance et commentaire d'une NC. L'échéance (`nc-edit-dl`) est visible uniquement pour admin. La sauvegarde sync l'action corrective liée (`ac.ech` et `ac.statut`).
 - `roleBdg` : définie dans `users.js`, génère les badges de rôle.
 - `openAuditModal`, `auditNext`, `auditPrev`, `buildAuditQuestions`, `submitAudit` : définis dans `audits.js`.
+- **submitAudit** : crée automatiquement une action corrective dans `DB.actions` pour chaque NC générée (lien via `ncId`).
 
 ---
 
