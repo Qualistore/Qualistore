@@ -208,26 +208,32 @@ function renderDashQual(){
 
 function renderChartQual(mids, qAudits){
   const myMags=DB.magasins.filter(m=>mids.includes(m.id));
-  const datasets=myMags.map((m,i)=>{
-    const audits=[...qAudits].filter(a=>a.mid===m.id).sort((a,b)=>a.id>b.id?1:-1);
-    return {
-      label: m.nom,
-      data: audits.map((a,idx)=>({ x: idx+1, y: a.score||0 })),
-      borderColor: CHART_COLORS[i % CHART_COLORS.length],
-      backgroundColor: CHART_COLORS[i % CHART_COLORS.length]+'22',
-      tension: 0.3, pointRadius: 4, fill: false
-    };
-  }).filter(d=>d.data.length>0);
+const magsAvecAudits=myMags.map((m,i)=>{
+    const audits=qAudits.filter(a=>a.mid===m.id);
+    if(!audits.length) return null;
+    const avg=Math.round(audits.reduce((s,a)=>s+(a.score||0),0)/audits.length);
+    const GREENS=['#16a34a','#15803d','#22c55e','#4ade80','#86efac'];
+    const YELLOWS=['#ca8a04','#a16207','#eab308','#facc15','#fde047'];
+    const ORANGES=['#ea580c','#c2410c','#f97316','#fb923c','#fdba74'];
+    const REDS=['#dc2626','#b91c1c','#ef4444','#f87171','#fca5a5'];
+    const palette=avg>=90?GREENS:avg>=75?YELLOWS:avg>=60?ORANGES:REDS;
+    return { nom: m.nom, avg, color: palette[i % palette.length] };
+  }).filter(Boolean);
 
   const wrap=el('dq-mag');
   if(!wrap) return;
-  if(!datasets.length){
-    wrap.innerHTML='<div class="empty-state" style="padding:24px"><i class="ti ti-chart-line" style="font-size:28px"></i><p>Aucune donnée</p></div>';
+  if(!magsAvecAudits.length){
+    wrap.innerHTML='<div class="empty-state" style="padding:24px"><i class="ti ti-chart-bar" style="font-size:28px"></i><p>Aucune donnée</p></div>';
     return;
   }
   wrap.innerHTML='<div style="position:relative;height:260px"><canvas id="chart-qual"></canvas></div>';
-  _chartQual = buildLineChart('chart-qual', datasets, _chartQual);
-}
+  _chartQual = buildBarChart(
+    'chart-qual',
+    magsAvecAudits.map(m=>m.nom),
+    magsAvecAudits.map(m=>m.avg),
+    magsAvecAudits.map(m=>m.color),
+    _chartQual
+  );}
 
 // ══════════════ ONGLETS DASHBOARD ══════════════
 function switchDashTab(tab){
