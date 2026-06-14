@@ -207,6 +207,10 @@ DB = {
 - **FORMAT_INFO / SHEETJS_URL / PDFJS_URL** : dans `config.js` uniquement — ne pas redéclarer dans `import-grille.js`.
 - **confirmDel** : définie dans `magasins.js`, utilisée globalement.
 - **roleBdg** : définie dans `users.js`, utilisée globalement.
+- **Modal Qualimètre** : étape 0 affiche le contenu de bienvenue-qualimetre.pdf. Pendant l'audit (étape 2), bouton dans le header ouvre referentiel-affichage.pdf dans un nouvel onglet.
+- `confirmDel` : définie dans `magasins.js`, utilisée globalement pour supprimer magasins, users et alertes.
+- `roleBdg` : définie dans `users.js`, génère les badges de rôle.
+- `openAuditModal`, `auditNext`, `auditPrev`, `buildAuditQuestions`, `submitAudit` : définis dans `audits.js`.
 
 ---
 
