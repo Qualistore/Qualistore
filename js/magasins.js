@@ -68,18 +68,24 @@ function confirmDel(type, id, nom){
     closeModal('m-confirm');
     if(type==='mag'){
       DB.magasins=DB.magasins.filter(m=>m.id!==id);
-      save(); renderMag();
+      save(['magasins']); sbDeleteWhere('magasins','id',id);
+      renderMag();
     } else if(type==='user'){
       DB.users=DB.users.filter(u=>u.id!==id);
-      save(); renderUsers();
-} else if(type==='alert'){
+      save(['users']); sbDeleteWhere('users','id',id);
+      renderUsers();
+    } else if(type==='alert'){
       DB.alertes=DB.alertes.filter(a=>a.id!==id);
-      save(); renderDash();
+      save(['alertes']); sbDeleteWhere('alertes','id',id);
+      renderDash();
     } else if(type==='nc'){
       DB.actions=DB.actions.filter(a=>a.ncId!==id);
       DB.ncs=DB.ncs.filter(n=>n.id!==id);
-      save(); renderNC();
-        }
+      save(['ncs','actions']);
+      sbDeleteWhere('ncs','id',id);
+      sbDeleteWhere('actions','ncId',id);
+      renderNC();
+    }
   };
   openModal('m-confirm');
 }
