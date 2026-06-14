@@ -3,7 +3,7 @@
 
 // ══════════════ SIDEBAR ══════════════
 function buildSidebar(){
-  const n=[
+  const navItems=[
     {sec:'Principal'},
     {id:'dashboard',ic:'ti-dashboard',lb:'Tableau de bord'},
     hasPerm('aud-r')&&{id:'audits',ic:'ti-clipboard-check',lb:'Audits FSQS'},
@@ -20,7 +20,7 @@ function buildSidebar(){
     hasPerm('mag')&&{id:'rayons',ic:'ti-category',lb:'Rayons'},
   ].filter(Boolean);
 
-  const built=n.filter(Boolean);
+  const built=navItems.filter(Boolean);
   const cleaned=[];
   for(let i=0;i<built.length;i++){
     if(built[i].sec){
@@ -48,32 +48,6 @@ function buildSidebar(){
   if(toggle) toggle.onclick=()=>{ el('sidebar').classList.toggle('open'); const ov=el('sb-overlay'); if(ov) ov.style.display=el('sidebar').classList.contains('open')?'block':'none'; };
 }
 
-  // Build nav - filter empty sections
-  const built=n.filter(Boolean);
-  // Remove trailing section headers (section with nothing after it)
-  const cleaned=[];
-  for(let i=0;i<built.length;i++){
-    if(built[i].sec){
-      const hasItems=built.slice(i+1).some(x=>!x.sec);
-      if(!hasItems) continue;
-      // Also skip if next item is also a section
-      const nextReal=built[i+1];
-      if(nextReal&&nextReal.sec) continue;
-    }
-    cleaned.push(built[i]);
-  }
-
-  el('sb-nav').innerHTML=cleaned.map(x=>{
-    if(x.sec) return `<div class="nav-sec">${x.sec}</div>`;
-    const iStyle=x.style?` style="${x.style}"`:'';
-    return `<div class="nav-item" id="nav-${x.id}" onclick="navigate('${x.id}')">`
-      +`<i class="ti ${x.ic}"${iStyle}></i> ${x.lb}`
-      +(x.bdg?`<span class="nav-badge" id="${x.bdg}">0</span>`:'')+`</div>`;
-  }).join('');
-
-  el('hdr-actions').innerHTML = hasPerm('aud-w')
-    ? `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" onclick="openAuditModal()"><i class="ti ti-plus"></i> Nouvel audit</button><button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`
-    : `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`;
 function updateSBUser(){
   if(!CU) return;
   const ini=CU.nom.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase();
@@ -84,7 +58,7 @@ function updateSBUser(){
 }
 
 // ══════════════ NAVIGATION ══════════════
-const PM={
+var PM={
   dashboard:['Tableau de bord','Vue d\'ensemble'], audits:['Audits FSQS','Historique'],
   nc:['Non-conformités','Suivi des écarts'], actions:['Actions correctives','Plan d\'actions'],
   magasins:['Magasins','Gestion du parc'], rayons:['Rayons','Performances'],
@@ -101,7 +75,7 @@ function navigate(pg){
   const ni=el('nav-'+pg); if(ni) ni.classList.add('active');
   const m=PM[pg]||[pg,''];
   el('pg-title').textContent=m[0]; el('pg-sub').textContent=m[1];
-    if(window.innerWidth<=900){ el('sidebar').classList.remove('open'); const ov=el('sb-overlay'); if(ov) ov.style.display='none'; }
+  if(window.innerWidth<=900){ el('sidebar').classList.remove('open'); const ov=el('sb-overlay'); if(ov) ov.style.display='none'; }
   ({dashboard:renderDash,audits:renderAudits,nc:renderNC,actions:renderActions,
     magasins:renderMag,rayons:renderRay,rapports:renderRap,'rapport-qualimetre':renderRapportQualimetre,
     utilisateurs:renderUsers,
@@ -128,12 +102,9 @@ function magScore(mid){ const a=DB.audits.filter(x=>x.mid===mid); return a.lengt
 function rayScore(r){ const a=DB.audits.filter(x=>x.rayon===r); return a.length?Math.round(a.reduce((s,x)=>s+x.score,0)/a.length):null; }
 function pbar(s){ return `<div class="progress-bar" style="margin-top:5px"><div class="progress-fill ${pgCls(s)}" style="width:${s}%"></div></div>`; }
 
-// Returns the magasin IDs the current user is allowed to see.
-// admin/fsqs with no restriction = all; everyone else = their assigned list.
 function visibleMids(){
   if(!CU) return [];
   if(CU.role==='admin'||CU.role==='fsqs') return DB.magasins.map(m=>m.id);
   return (CU.magasins||[]);
 }
-// Filter any array of objects that have a .mid property to only visible ones
 function scopeToUser(list){ const mids=visibleMids(); return list.filter(x=>mids.includes(x.mid)); }
