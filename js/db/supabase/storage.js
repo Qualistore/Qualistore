@@ -98,13 +98,19 @@ setInterval(async ()=>{
       sbSelect('audits'), sbSelect('ncs'), sbSelect('actions'),
       sbSelect('alertes'), sbSelect('qual_audits')
     ]);
+    const changed=
+      JSON.stringify(audits)!==JSON.stringify(DB.audits)||
+      JSON.stringify(ncs)!==JSON.stringify(DB.ncs)||
+      JSON.stringify(actions)!==JSON.stringify(DB.actions)||
+      JSON.stringify(alertes)!==JSON.stringify(DB.alertes)||
+      JSON.stringify(qualAudits)!==JSON.stringify(DB.qualAudits);
+    if(!changed) return;
     DB.audits=audits||[];
     DB.ncs=ncs||[];
     DB.actions=actions||[];
     DB.alertes=alertes||[];
     DB.qualAudits=qualAudits||[];
     _saveLocal();
-    // Rafraîchir la page active
     const active=document.querySelector('.page.active');
     if(active){
       const page=active.id.replace('page-','');
@@ -114,7 +120,7 @@ setInterval(async ()=>{
       else if(page==='dashboard') renderDash();
       else if(page==='audit-qualimetre') renderQualAudits();
     }
-  } catch(e){ /* silencieux si offline */ }
+  } catch(e){}
 }, 5000);
 
 window.addEventListener('online', ()=>{
