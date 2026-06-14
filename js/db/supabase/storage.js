@@ -12,8 +12,7 @@ function _defaultDB(){
     users:[{id:'admin1',nom:'Administrateur',login:'admin',pwd:btoa('admin'),role:'admin',statut:'actif',magasins:[],
       perms:{'aud-r':1,'aud-w':1,'nc':1,'ac':1,'mag':1,'rap':1,'grille':1,'usr':1}}],
     magasins:[], audits:[], ncs:[], actions:[], alertes:[],
-    grilleCustom:{}, qualimetreCustom:{}, qualAudits:[],
-    nAud:1, nNc:1, nAc:1, nAl:1, nQAud:1
+    grilleCustom:{}, qualimetreCustom:{}, qualAudits:[]
   };
 }
 
@@ -26,98 +25,97 @@ function _loadLocal(){
   return null;
 }
 
-// ── Appelé au démarrage dans init.js ──
 async function loadDB(){
-  // 1. Charger localStorage immédiatement (affichage instantané)
-  const local = _loadLocal();
-  if(local) DB = local;
-
-  // 2. Tenter sync Supabase
+  const local=_loadLocal();
+  if(local) DB=local;
   try {
-    const [users, magasins, audits, ncs, actions, alertes,
-           grilleRows, qualAudits, qualRows, counters] = await Promise.all([
+    const [users,magasins,audits,ncs,actions,alertes,
+           grilleRows,qualAudits,qualRows] = await Promise.all([
       sbSelect('users'), sbSelect('magasins'), sbSelect('audits'),
       sbSelect('ncs'), sbSelect('actions'), sbSelect('alertes'),
       sbSelect('grille_custom'), sbSelect('qual_audits'),
-      sbSelect('qualimetre_custom'), sbSelect('counters')
+      sbSelect('qualimetre_custom')
     ]);
-
-    // Reconstruire grilleCustom { [rayon]: data }
     const grilleCustom={};
     (grilleRows||[]).forEach(r=>{ grilleCustom[r.rayon]=r.data; });
-
-    // Reconstruire qualimetreCustom { [mid]: data }
     const qualimetreCustom={};
     (qualRows||[]).forEach(r=>{ qualimetreCustom[r.mid]=r.data; });
-
-    // Reconstruire compteurs
-    const cmap={};
-    (counters||[]).forEach(c=>{ cmap[c.id]=c.val; });
-
-    DB = {
-      users: users||[],
-      magasins: magasins||[],
-      audits: audits||[],
-      ncs: ncs||[],
-      actions: actions||[],
-      alertes: alertes||[],
-      grilleCustom,
-      qualimetreCustom,
-      qualAudits: qualAudits||[],
-      nAud: cmap.nAud||1, nNc: cmap.nNc||1, nAc: cmap.nAc||1,
-      nAl: cmap.nAl||1, nQAud: cmap.nQAud||1
+    DB={
+      users: users||[], magasins: magasins||[],
+      audits: audits||[], ncs: ncs||[],
+      actions: actions||[], alertes: alertes||[],
+      grilleCustom, qualimetreCustom, qualAudits: qualAudits||[]
     };
-
-    // Si Supabase vide, injecter admin par défaut
-    if(!DB.users.length) DB.users = _defaultDB().users;
-
+    if(!DB.users.length) DB.users=_defaultDB().users;
     _saveLocal();
     console.log('✅ Supabase chargé');
   } catch(e){
     console.warn('⚠️ Supabase inaccessible, mode offline:', e.message);
-    _dirty = true;
+    _dirty=true;
   }
 }
 
-// ── Appelé après chaque modification ──
-function save(){
+// ── save(tables) — ne pousse que les tables modifiées ──
+function save(tables){
   _saveLocal();
-  _pushToSupabase();
+  _pushToSupabase(tables);
 }
 
-async function _pushToSupabase(){
+async function _pushToSupabase(tables){
+  // Si pas de tables spécifiées, on pousse tout
+  const all=!tables;
   try {
-    const grilleRows = Object.entries(DB.grilleCustom).map(([rayon,data])=>({
-      id: rayon, rayon, data
-    }));
-    const qualRows = Object.entries(DB.qualimetreCustom).map(([mid,data])=>({
-      id: mid, mid, data
-    }));
-    const counters = [
-      {id:'nAud',val:DB.nAud},{id:'nNc',val:DB.nNc},{id:'nAc',val:DB.nAc},
-      {id:'nAl',val:DB.nAl},{id:'nQAud',val:DB.nQAud}
-    ];
-
-    await Promise.all([
-      sbUpsert('users', DB.users),
-      sbUpsert('magasins', DB.magasins),
-      sbUpsert('audits', DB.audits),
-      sbUpsert('ncs', DB.ncs),
-      sbUpsert('actions', DB.actions),
-      sbUpsert('alertes', DB.alertes),
-      grilleRows.length ? sbUpsert('grille_custom', grilleRows) : Promise.resolve(),
-      sbUpsert('qual_audits', DB.qualAudits),
-      qualRows.length ? sbUpsert('qualimetre_custom', qualRows) : Promise.resolve(),
-      sbUpsert('counters', counters)
-    ]);
-
-    _dirty = false;
+    const ops=[];
+    if(all||tables.includes('users'))    ops.push(sbUpsert('users', DB.users));
+    if(all||tables.includes('magasins')) ops.push(sbUpsert('magasins', DB.magasins));
+    if(all||tables.includes('audits'))   ops.push(sbUpsert('audits', DB.audits));
+    if(all||tables.includes('ncs'))      ops.push(sbUpsert('ncs', DB.ncs));
+    if(all||tables.includes('actions'))  ops.push(sbUpsert('actions', DB.actions));
+    if(all||tables.includes('alertes'))  ops.push(sbUpsert('alertes', DB.alertes));
+    if(all||tables.includes('qualAudits')) ops.push(sbUpsert('qual_audits', DB.qualAudits));
+    if(all||tables.includes('grilleCustom')){
+      const rows=Object.entries(DB.grilleCustom).map(([rayon,data])=>({id:rayon,rayon,data}));
+      if(rows.length) ops.push(sbUpsert('grille_custom', rows));
+    }
+    if(all||tables.includes('qualimetreCustom')){
+      const rows=Object.entries(DB.qualimetreCustom).map(([mid,data])=>({id:mid,mid,data}));
+      if(rows.length) ops.push(sbUpsert('qualimetre_custom', rows));
+    }
+    await Promise.all(ops);
+    _dirty=false;
     console.log('✅ Supabase sync OK');
   } catch(e){
-    console.warn('⚠️ Sync Supabase échouée (offline ?):', e.message);
-    _dirty = true;
+    console.warn('⚠️ Sync Supabase échouée:', e.message);
+    _dirty=true;
   }
 }
+
+// ── Polling toutes les 30s pour voir les données des autres sessions ──
+setInterval(async ()=>{
+  if(!CU) return;
+  try {
+    const [audits,ncs,actions,alertes,qualAudits] = await Promise.all([
+      sbSelect('audits'), sbSelect('ncs'), sbSelect('actions'),
+      sbSelect('alertes'), sbSelect('qual_audits')
+    ]);
+    DB.audits=audits||[];
+    DB.ncs=ncs||[];
+    DB.actions=actions||[];
+    DB.alertes=alertes||[];
+    DB.qualAudits=qualAudits||[];
+    _saveLocal();
+    // Rafraîchir la page active
+    const active=document.querySelector('.page.active');
+    if(active){
+      const page=active.id.replace('page-','');
+      if(page==='audits') renderAudits();
+      else if(page==='nc') renderNC();
+      else if(page==='actions') renderActions();
+      else if(page==='dashboard') renderDash();
+      else if(page==='audit-qualimetre') renderQualAudits();
+    }
+  } catch(e){ /* silencieux si offline */ }
+}, 5000);
 
 window.addEventListener('online', ()=>{
   if(_dirty){ console.log('🔄 Reconnexion — sync Supabase...'); _pushToSupabase(); }
