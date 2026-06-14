@@ -169,14 +169,14 @@ function submitAudit(){
   const okW=ok.reduce((s,q)=>s+q.p,0);
   const score=totalW>0?Math.round((okW/totalW)*100):100;
   const ncList=valid.filter(q=>auditAnswers[q.id].rep==='NC');
-  const aid='AUD-'+String(DB.nAud++).padStart(3,'0');
+const aid='AUD-'+uid();
   if(!DB.audits) DB.audits=[];
   DB.audits.push({id:aid,mid,mag:mag.nom||'',rayon:ray,date,aud,cmt,score,nc:ncList.length,statut:ncList.length?'Non conforme':'Conforme',answers:{...auditAnswers}});
 ncList.forEach(q=>{
-    const ncId='NC-'+String(DB.nNc++).padStart(3,'0');
+const ncId='NC-'+uid();
     const dl=new Date(Date.now()+7*86400000).toISOString().split('T')[0];
     DB.ncs.push({id:ncId,mid,mag:mag.nom||'',rayon:ray,date,desc:q.q,crit:q.c,resp:aud,dl,statut:'Ouverte',cmt:auditAnswers[q.id].cmt,aid});
-    const acId='AC-'+String(DB.nAc++).padStart(3,'0');
+const acId='AC-'+uid();
     DB.actions.push({id:acId,ncId,desc:q.q,mag:mag.nom||'',resp:aud,ech:dl,prio:q.c,statut:'Ouverte',cmt:''});
   });
    save();

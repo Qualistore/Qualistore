@@ -174,7 +174,7 @@ function submitQualAudit(){
   const ncList=valid.filter(a=>a.rep==='NC');
   const score=valid.length>0?Math.round((c/valid.length)*100):100;
   if(!DB.qualAudits) DB.qualAudits=[];
-  const aid='QA-'+String((DB.qualAudits.length+1)).padStart(3,'0');
+  const aid='QA-'+uid();
   DB.qualAudits.push({ id:aid, mid, mag:mag.nom||'', date, aud, cmt, score, nc:ncList.length, statut:ncList.length?'Ouvert':'Conforme', answers:{...qaAnswers} });
   save();
   el('qa-s2').style.display='none'; el('qa-s3').style.display=''; el('qa-prev').style.display='none'; const rb3=el('btn-ref-affichage'); if(rb3) rb3.style.display='none';
