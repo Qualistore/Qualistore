@@ -172,12 +172,14 @@ function submitAudit(){
   const aid='AUD-'+String(DB.nAud++).padStart(3,'0');
   if(!DB.audits) DB.audits=[];
   DB.audits.push({id:aid,mid,mag:mag.nom||'',rayon:ray,date,aud,cmt,score,nc:ncList.length,statut:ncList.length?'Non conforme':'Conforme',answers:{...auditAnswers}});
-  ncList.forEach(q=>{
+ncList.forEach(q=>{
     const ncId='NC-'+String(DB.nNc++).padStart(3,'0');
     const dl=new Date(Date.now()+7*86400000).toISOString().split('T')[0];
     DB.ncs.push({id:ncId,mid,mag:mag.nom||'',rayon:ray,date,desc:q.q,crit:q.c,resp:aud,dl,statut:'Ouverte',cmt:auditAnswers[q.id].cmt,aid});
+    const acId='AC-'+String(DB.nAc++).padStart(3,'0');
+    DB.actions.push({id:acId,ncId,desc:q.q,mag:mag.nom||'',resp:aud,ech:dl,prio:q.c,statut:'Ouverte',cmt:''});
   });
-  save();
+   save();
   el('as2').style.display='none'; el('as3').style.display='';
   el('a-prev').style.display='none';
   el('a-next').innerHTML='Fermer';
