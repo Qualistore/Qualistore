@@ -72,10 +72,14 @@ function confirmDel(type, id, nom){
     } else if(type==='user'){
       DB.users=DB.users.filter(u=>u.id!==id);
       save(); renderUsers();
-    } else if(type==='alert'){
+} else if(type==='alert'){
       DB.alertes=DB.alertes.filter(a=>a.id!==id);
       save(); renderDash();
-    }
+    } else if(type==='nc'){
+      DB.actions=DB.actions.filter(a=>a.ncId!==id);
+      DB.ncs=DB.ncs.filter(n=>n.id!==id);
+      save(); renderNC();
+        }
   };
   openModal('m-confirm');
 }
