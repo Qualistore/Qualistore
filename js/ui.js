@@ -74,7 +74,6 @@ function buildSidebar(){
   el('hdr-actions').innerHTML = hasPerm('aud-w')
     ? `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" onclick="openAuditModal()"><i class="ti ti-plus"></i> Nouvel audit</button><button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`
     : `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`;
-}
 function updateSBUser(){
   if(!CU) return;
   const ini=CU.nom.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase();
