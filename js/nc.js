@@ -283,6 +283,9 @@ function openNCEdit(id){
   el('nc-edit-desc').textContent=n.desc;
   el('nc-edit-statut').value=n.statut;
   sv('nc-edit-cmt', n.cmt||'');
+  const dlGroup=el('nc-edit-dl-group');
+  if(dlGroup) dlGroup.style.display=CU&&CU.role==='admin'?'':'none';
+  sv('nc-edit-dl', n.dl||'');
   openModal('m-nc-edit');
 }
 
@@ -291,8 +294,8 @@ function saveNCEdit(){
   const n=DB.ncs.find(x=>x.id===id); if(!n) return;
   n.statut=el('nc-edit-statut').value;
   n.cmt=v('nc-edit-cmt').trim();
+  if(CU&&CU.role==='admin'){ const dl=v('nc-edit-dl'); if(dl) { n.dl=dl; const ac=DB.actions.find(a=>a.ncId===id); if(ac) ac.ech=dl; } }
   if(n.statut==='Clôturée'&&!n.closedDate) n.closedDate=today();
-  // Sync action corrective associée
   const ac=DB.actions.find(a=>a.ncId===id);
   if(ac){
     if(n.statut==='Clôturée') ac.statut='Traitée';
