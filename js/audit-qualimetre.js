@@ -48,6 +48,7 @@ function openQualAuditModal(){
   const mids=visibleMids();
   const msel=el('qa-mag'); msel.innerHTML='<option value="">Sélectionner...</option>'+DB.magasins.filter(m=>mids.includes(m.id)&&m.statut==='actif').map(m=>`<option value="${m.id}">${m.nom}</option>`).join('');
   el('qa-date').value=today();
+  el('qa-date').readOnly=!(CU&&CU.role==='admin');
   el('qa-aud').value=CU?CU.nom:'';
   sv('qa-cmt','');
   // Show step 0 (welcome), hide others
