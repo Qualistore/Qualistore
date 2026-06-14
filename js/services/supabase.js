@@ -35,7 +35,7 @@ async function sbUpsert(table, rows){
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(normalized)
   });
-}}
+}
 async function sbDeleteAll(table){
   return await supaFetch('/rest/v1/'+table+'?id=neq.___none___', { method:'DELETE' });
 }
