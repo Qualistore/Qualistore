@@ -22,13 +22,20 @@ async function sbSelect(table){
   return await supaFetch('/rest/v1/'+table+'?select=*') || [];
 }
 async function sbUpsert(table, rows){
-  if(!rows.length) return;
+  if(!rows||!rows.length) return;
+  // Normaliser : tous les objets doivent avoir les mêmes clés
+  const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+  const normalized=rows.map(r=>{
+    const obj={};
+    keys.forEach(k=>{ obj[k]=r[k]!==undefined?r[k]:null; });
+    return obj;
+  });
   return await supaFetch('/rest/v1/'+table, {
     method: 'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
-    body: JSON.stringify(rows)
+    body: JSON.stringify(normalized)
   });
-}
+}}
 async function sbDeleteAll(table){
   return await supaFetch('/rest/v1/'+table+'?id=neq.___none___', { method:'DELETE' });
 }
