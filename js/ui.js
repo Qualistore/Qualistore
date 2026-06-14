@@ -20,6 +20,34 @@ function buildSidebar(){
     hasPerm('mag')&&{id:'rayons',ic:'ti-category',lb:'Rayons'},
   ].filter(Boolean);
 
+  const built=n.filter(Boolean);
+  const cleaned=[];
+  for(let i=0;i<built.length;i++){
+    if(built[i].sec){
+      const hasItems=built.slice(i+1).some(x=>!x.sec);
+      if(!hasItems) continue;
+      const nextReal=built[i+1];
+      if(nextReal&&nextReal.sec) continue;
+    }
+    cleaned.push(built[i]);
+  }
+
+  el('sb-nav').innerHTML=cleaned.map(x=>{
+    if(x.sec) return `<div class="nav-sec">${x.sec}</div>`;
+    const iStyle=x.style?` style="${x.style}"`:'';
+    return `<div class="nav-item" id="nav-${x.id}" onclick="navigate('${x.id}')">`
+      +`<i class="ti ${x.ic}"${iStyle}></i> ${x.lb}`
+      +(x.bdg?`<span class="nav-badge" id="${x.bdg}">0</span>`:'')+`</div>`;
+  }).join('');
+
+  el('hdr-actions').innerHTML = hasPerm('aud-w')
+    ? `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" onclick="openAuditModal()"><i class="ti ti-plus"></i> Nouvel audit</button><button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`
+    : `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`;
+
+  const toggle=document.querySelector('.menu-toggle');
+  if(toggle) toggle.onclick=()=>{ el('sidebar').classList.toggle('open'); const ov=el('sb-overlay'); if(ov) ov.style.display=el('sidebar').classList.contains('open')?'block':'none'; };
+}
+
   // Build nav - filter empty sections
   const built=n.filter(Boolean);
   // Remove trailing section headers (section with nothing after it)
@@ -74,7 +102,7 @@ function navigate(pg){
   const ni=el('nav-'+pg); if(ni) ni.classList.add('active');
   const m=PM[pg]||[pg,''];
   el('pg-title').textContent=m[0]; el('pg-sub').textContent=m[1];
-  if(window.innerWidth<=900) el('sidebar').classList.remove('open');
+    if(window.innerWidth<=900){ el('sidebar').classList.remove('open'); const ov=el('sb-overlay'); if(ov) ov.style.display='none'; }
   ({dashboard:renderDash,audits:renderAudits,nc:renderNC,actions:renderActions,
     magasins:renderMag,rayons:renderRay,rapports:renderRap,'rapport-qualimetre':renderRapportQualimetre,
     utilisateurs:renderUsers,
