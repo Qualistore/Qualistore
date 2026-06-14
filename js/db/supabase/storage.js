@@ -79,4 +79,46 @@ async function loadDB(){
   }
 }
 
-// ── Appelé
+// ── Appelé après chaque modification ──
+function save(){
+  _saveLocal();
+  _pushToSupabase();
+}
+
+async function _pushToSupabase(){
+  try {
+    const grilleRows = Object.entries(DB.grilleCustom).map(([rayon,data])=>({
+      id: rayon, rayon, data
+    }));
+    const qualRows = Object.entries(DB.qualimetreCustom).map(([mid,data])=>({
+      id: mid, mid, data
+    }));
+    const counters = [
+      {id:'nAud',val:DB.nAud},{id:'nNc',val:DB.nNc},{id:'nAc',val:DB.nAc},
+      {id:'nAl',val:DB.nAl},{id:'nQAud',val:DB.nQAud}
+    ];
+
+    await Promise.all([
+      sbUpsert('users', DB.users),
+      sbUpsert('magasins', DB.magasins),
+      sbUpsert('audits', DB.audits),
+      sbUpsert('ncs', DB.ncs),
+      sbUpsert('actions', DB.actions),
+      sbUpsert('alertes', DB.alertes),
+      grilleRows.length ? sbUpsert('grille_custom', grilleRows) : Promise.resolve(),
+      sbUpsert('qual_audits', DB.qualAudits),
+      qualRows.length ? sbUpsert('qualimetre_custom', qualRows) : Promise.resolve(),
+      sbUpsert('counters', counters)
+    ]);
+
+    _dirty = false;
+    console.log('✅ Supabase sync OK');
+  } catch(e){
+    console.warn('⚠️ Sync Supabase échouée (offline ?):', e.message);
+    _dirty = true;
+  }
+}
+
+window.addEventListener('online', ()=>{
+  if(_dirty){ console.log('🔄 Reconnexion — sync Supabase...'); _pushToSupabase(); }
+});
