@@ -89,7 +89,13 @@ function genRapport(){
                 return `<tr style="border-left:3px solid ${critColor}">
                   <td style="padding:8px 10px;border:1px solid #e2e6ef;color:#1a1f36">
                     ${n.desc}
-                    ${(()=>{ const a=DB.audits.find(x=>x.id===n.aid); const ans=a&&a.answers&&Object.values(a.answers).find(x=>x.q===n.desc); return ans&&ans.photos&&ans.photos.length?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${ans.photos.map(p=>`<img src="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #e2e6ef">`).join('')}</div>`:''; })()}
+                    ${(()=>{
+                      const a=DB.audits.find(x=>x.id===n.aid);
+                      const ans=a&&a.answers&&Object.values(a.answers).find(x=>x.q===n.desc);
+                      const cmt=ans?.cmt||n.cmt||'';
+                      const photos=ans&&ans.photos&&ans.photos.length?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${ans.photos.map(p=>`<img src="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #e2e6ef">`).join('')}</div>`:'';
+                      return (cmt?`<div style="font-style:italic;color:#e53935;margin-top:4px;font-size:11px">→ ${cmt}</div>`:'')+photos;
+                    })()}
                   </td>
                   <td style="padding:8px 10px;border:1px solid #e2e6ef">
                     <span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${critColor}20;color:${critColor};font-weight:600;font-size:10px">${n.crit}</span>
