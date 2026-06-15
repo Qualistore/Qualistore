@@ -530,7 +530,7 @@
   <div class="modal modal-lg">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-clipboard-plus" style="color:var(--primary)"></i> Nouvel audit FSQS</div>
-      <button class="btn-x" onclick="closeModal('m-audit')">&times;</button>
+      <button class="btn-x" onclick="auditStep===1?pauseAudit():closeModal('m-audit')">&times;</button>
     </div>
     <div class="modal-body">
       <div id="as1">

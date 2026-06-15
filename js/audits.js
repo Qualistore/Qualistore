@@ -292,15 +292,19 @@ function renderDrafts(){
   list=[...list].reverse();
   el('drafts-cnt').textContent=list.length+' brouillon(s)';
   if(!list.length){ tb.innerHTML=`<tr><td colspan="6"><div class="empty-state"><i class="ti ti-player-pause"></i><p>Aucun brouillon en cours.</p></div></td></tr>`; return; }
-  tb.innerHTML=list.map(d=>`<tr>
+  tb.innerHTML=list.map(d=>{
+    const isOwner=CU&&(CU.id===d.uid||CU.role==='admin');
+    const canDelete=CU&&(CU.id===d.uid||CU.role==='admin');
+    return `<tr>
     <td style="font-weight:600;color:var(--primary)">${d.id}</td>
     <td>${d.mag}</td>
-    <td>${rIcon(d.rayon)} ${d.rayon}</td>
+    <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(d.rayon)} ${d.rayon}</td>
     <td>${fd(d.date)}</td>
     <td>${d.aud}</td>
     <td><div class="act-btns">
-      <button class="btn btn-primary btn-sm" onclick="resumeDraft('${d.id}')"><i class="ti ti-player-play"></i> Reprendre</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteDraft('${d.id}')"><i class="ti ti-trash"></i></button>
+      ${isOwner?`<button class="btn btn-primary btn-sm" onclick="resumeDraft('${d.id}')"><i class="ti ti-player-play"></i> Reprendre</button>`:''}
+      ${canDelete?`<button class="btn btn-danger btn-sm" onclick="deleteDraft('${d.id}')"><i class="ti ti-trash"></i></button>`:''}
     </div></td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 }

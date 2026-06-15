@@ -14,7 +14,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   buildSidebar();
   updateSBUser();
   navigate('dashboard');
-  document.querySelectorAll('.modal-ov').forEach(m=>m.addEventListener('click',e=>{
-    if(e.target===m) m.classList.remove('open');
-  }));
+document.querySelectorAll('.modal-ov').forEach(m=>m.addEventListener('click',e=>{
+    if(e.target===m){
+      if(m.id==='m-audit'&&auditStep===1) pauseAudit();
+      else m.classList.remove('open');
+    }
+   }));
 });
