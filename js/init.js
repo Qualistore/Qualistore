@@ -1,8 +1,11 @@
 // ══════════════ INIT ══════════════
 document.addEventListener('DOMContentLoaded', async ()=>{
+  // Vider le cache de l'appli (JS/CSS) à chaque ouverture
+  if('caches' in window){
+    caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));
+  }
   try { await loadDB(); } catch(e){ console.warn('loadDB error:', e); }
   _checkSessionOnLoad();
-  console.log('CU après loadDB:', CU);
   if(CU){
     document.getElementById('login-screen').style.display='none';
     document.getElementById('app').classList.add('on');
