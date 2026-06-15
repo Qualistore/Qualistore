@@ -52,6 +52,8 @@ async function loadDB(){
     if(!DB.users.length) DB.users=_defaultDB().users;
     _saveLocal();
     console.log('✅ Supabase chargé');
+    // Rafraîchir CU depuis la DB Supabase
+    if(CU){ const fresh=DB.users.find(u=>u.id===CU.id); if(fresh) CU=fresh; else CU=null; }
 
   } catch(e){
     console.warn('⚠️ Supabase inaccessible, mode offline:', e.message);
