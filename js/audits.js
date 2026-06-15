@@ -56,7 +56,7 @@ function showAud(id){
         <div style="font-size:12px;font-weight:600;margin-bottom:4px">${x.q}</div>
         ${x.note?`<div style="font-size:12px;color:var(--text2)">${x.note}</div>`:''}
         ${x.cmt?`<div style="font-size:12px;color:var(--danger)">${x.cmt}</div>`:''}
-        ${x.photos&&x.photos.length?`<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${x.photos.map(p=>`<img src="${p}" style="width:64px;height:64px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`).join('')}</div>`:''}
+        ${x.photos&&x.photos.length?`<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${x.photos.map(p=>`<img src="${p}" style="width:64px;height:64px;border-radius:7px;object-fit:cover;border:1px solid var(--border);cursor:pointer" onclick="openPhotoViewer('${p}')">`).join('')}</div>`:''}
       </div>`).join('');
     }
   }
@@ -210,4 +210,12 @@ async function handleAuditPhoto(qid, input){
     if(prev) prev.innerHTML=auditAnswers[qid].photos.map(u=>`<img src="${u}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`).join('');
   }
   input.value='';
+}
+
+function openPhotoViewer(url){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out';
+  ov.onclick=()=>document.body.removeChild(ov);
+  ov.innerHTML=`<img src="${url}" style="max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6)">`;
+  document.body.appendChild(ov);
 }
