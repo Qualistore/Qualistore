@@ -50,6 +50,8 @@ async function loadDB(){
     if(!DB.users.length) DB.users=_defaultDB().users;
     _saveLocal();
     console.log('✅ Supabase chargé');
+    const savedCU=localStorage.getItem('fsqs_cu');
+    if(savedCU) CU=JSON.parse(savedCU);
   } catch(e){
     console.warn('⚠️ Supabase inaccessible, mode offline:', e.message);
     _dirty=true;
