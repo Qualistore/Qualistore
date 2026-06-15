@@ -54,7 +54,7 @@ function updateSBUser(){
   const ini=CU.nom.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase();
   el('sb-av').textContent=ini;
   el('sb-name').textContent=CU.nom;
-  const rl={admin:'Administrateur',fsqs:'Auditeur FSQS',directeur:'Directeur',direction:'Direction'};
+const rl={admin:'Administrateur',fsqs:'Auditeur FSQS',directeur:'Directeur',direction:'Direction',collaborateur:'Collaborateur magasin'};
   el('sb-role').textContent=rl[CU.role]||CU.role;
 }
 

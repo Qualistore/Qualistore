@@ -1,7 +1,7 @@
 // ══════════════ USERS ══════════════
 // Dépend de : storage.js (DB, CU), auth.js (hasPerm), ui.js
 
-function roleBdg(r){ const m={admin:'b-admin',fsqs:'b-fsqs',directeur:'b-dir',direction:'b-direction'}; const l={admin:'Administrateur',fsqs:'Resp. FSQS',directeur:'Directeur',direction:'Associé'}; return `<span class="badge ${m[r]||''}">${l[r]||r}</span>`; }
+function roleBdg(r){ const m={admin:'b-admin',fsqs:'b-fsqs',directeur:'b-dir',direction:'b-direction',collaborateur:'b-prog'}; const l={admin:'Administrateur',fsqs:'Auditeur FSQS',directeur:'Directeur',direction:'Associé',collaborateur:'Collaborateur magasin'}; return `<span class="badge ${m[r]||''}">${l[r]||r}</span>`; }
 
 function toggleAllMags(sel){ document.querySelectorAll('.mcb').forEach(c=>c.checked=sel); }
 

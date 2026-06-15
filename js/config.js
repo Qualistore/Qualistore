@@ -10,7 +10,8 @@ const DPERMS={
   admin:     {'aud-r':1,'aud-w':1,'nc':1,'ac':1,'mag':1,'rap':1,'grille':1,'usr':1},
   fsqs:      {'aud-r':1,'aud-w':1,'nc':1,'ac':1,'mag':0,'rap':1,'grille':1,'usr':0},
   directeur: {'aud-r':1,'aud-w':0,'nc':0,'ac':1,'mag':0,'rap':1,'grille':0,'usr':0},
-  direction: {'aud-r':1,'aud-w':0,'nc':0,'ac':0,'mag':0,'rap':1,'grille':0,'usr':0}
+  direction:     {'aud-r':1,'aud-w':0,'nc':0,'ac':0,'mag':0,'rap':1,'grille':0,'usr':0},
+  collaborateur: {'aud-r':0,'aud-w':1,'nc':0,'ac':0,'mag':0,'rap':0,'grille':0,'usr':0}
 };
 const PIDS=['aud-r','aud-w','nc','ac','mag','rap','grille','usr'];
 
