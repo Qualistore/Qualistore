@@ -23,9 +23,12 @@ async function sbSelect(table){
 }
 async function sbUpsert(table, rows){
   if(!rows||!rows.length) return;
-  // Normaliser : tous les objets doivent avoir les mêmes clés
-  const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))];
-  const normalized=rows.map(r=>{
+  // Dédupliquer par id (garder le dernier)
+  const seen=new Map();
+  rows.forEach(r=>{ if(r.id) seen.set(r.id,r); });
+  const deduped=seen.size>0?[...seen.values()]:rows;
+  const keys=[...new Set(deduped.flatMap(r=>Object.keys(r)))];
+  const normalized=deduped.map(r=>{
     const obj={};
     keys.forEach(k=>{ obj[k]=r[k]!==undefined?r[k]:null; });
     return obj;
