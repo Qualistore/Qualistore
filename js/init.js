@@ -1,7 +1,7 @@
 // ══════════════ INIT ══════════════
 document.addEventListener('DOMContentLoaded', async ()=>{
   try { await loadDB(); } catch(e){ console.warn('loadDB error:', e); }
-
+  console.log('CU après loadDB:', CU);
   if(CU){
     document.getElementById('login-screen').style.display='none';
     document.getElementById('app').classList.add('on');
