@@ -202,6 +202,8 @@ tbody tr:hover td{background:#f8faff}
   tbody td{padding:9px 10px;font-size:12px}
   .act-btns{flex-wrap:wrap}
 }
+  /* Désactiver pull-to-refresh sur mobile */
+body { overscroll-behavior-y: contain; }
 
 @media(max-width:600px){
   .stats-grid{grid-template-columns:1fr}

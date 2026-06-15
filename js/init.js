@@ -17,4 +17,8 @@ document.querySelectorAll('.modal-ov').forEach(m=>m.addEventListener('click',e=>
       else m.classList.remove('open');
     }
   }));
+window.addEventListener('beforeunload', ()=>{
+    if(auditStep===1) pauseAudit();
+    else if(qaStep===2) pauseQualAudit();
+  });
 });
