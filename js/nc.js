@@ -189,7 +189,16 @@ function exportNCActivePDF(){
           return `<tr style="background:${i%2===0?'#fff':'#fafafa'};border-left:3px solid ${critColor}">
             <td style="padding:8px 10px;border:1px solid #e2e6ef;font-size:11px">${n.mag}</td>
             <td style="padding:8px 10px;border:1px solid #e2e6ef;font-size:11px;white-space:nowrap">${n.rayon}</td>
-            <td style="padding:8px 10px;border:1px solid #e2e6ef">${n.desc}</td>
+            <td style="padding:8px 10px;border:1px solid #e2e6ef">${n.desc}
+              ${(()=>{
+                const audit=DB.audits.find(x=>x.id===n.aid);
+                const ans=audit&&audit.answers&&Object.values(audit.answers).find(x=>x.q===n.desc);
+                const auditPhotos=ans&&ans.photos&&ans.photos.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${ans.photos.map(p=>`<img src="${p}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #e2e6ef">`).join('')}</div>`:'';
+                const alerte=n.isAlert&&DB.alertes.find(x=>x.id===n.aid);
+                const alertPhotos=alerte&&alerte.photos&&alerte.photos.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${alerte.photos.map(p=>`<img src="${p}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #e2e6ef">`).join('')}</div>`:'';
+                return auditPhotos||alertPhotos;
+              })()}
+            </td>
             <td style="padding:8px 10px;border:1px solid #e2e6ef;text-align:center">
               <span style="display:inline-block;padding:2px 7px;border-radius:10px;background:${critColor}18;color:${critColor};font-weight:700;font-size:10px">${n.crit}</span>
             </td>
@@ -255,7 +264,16 @@ function exportNCArchivePDF(){
           return `<tr style="background:${i%2===0?'#fff':'#f0fdf4'};border-left:3px solid ${critColor}">
             <td style="padding:8px 10px;border:1px solid #d1fae5;font-size:11px">${n.mag}</td>
             <td style="padding:8px 10px;border:1px solid #d1fae5;font-size:11px;white-space:nowrap">${n.rayon}</td>
-            <td style="padding:8px 10px;border:1px solid #d1fae5">${n.desc}</td>
+            <td style="padding:8px 10px;border:1px solid #d1fae5">${n.desc}
+              ${(()=>{
+                const audit=DB.audits.find(x=>x.id===n.aid);
+                const ans=audit&&audit.answers&&Object.values(audit.answers).find(x=>x.q===n.desc);
+                const auditPhotos=ans&&ans.photos&&ans.photos.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${ans.photos.map(p=>`<img src="${p}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #d1fae5">`).join('')}</div>`:'';
+                const alerte=n.isAlert&&DB.alertes.find(x=>x.id===n.aid);
+                const alertPhotos=alerte&&alerte.photos&&alerte.photos.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${alerte.photos.map(p=>`<img src="${p}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #d1fae5">`).join('')}</div>`:'';
+                return auditPhotos||alertPhotos;
+              })()}
+            </td>
             <td style="padding:8px 10px;border:1px solid #d1fae5;text-align:center">
               <span style="display:inline-block;padding:2px 7px;border-radius:10px;background:${critColor}18;color:${critColor};font-weight:700;font-size:10px">${n.crit}</span>
             </td>
