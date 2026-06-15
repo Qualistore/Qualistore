@@ -12,7 +12,7 @@ function _defaultDB(){
     users:[{id:'admin1',nom:'Administrateur',login:'admin',pwd:btoa('admin'),role:'admin',statut:'actif',magasins:[],
       perms:{'aud-r':1,'aud-w':1,'nc':1,'ac':1,'mag':1,'rap':1,'grille':1,'usr':1}}],
     magasins:[], audits:[], ncs:[], actions:[], alertes:[],
-    grilleCustom:{}, qualimetreCustom:{}, qualAudits:[]
+    grilleCustom:{}, qualimetreCustom:{}, qualAudits:[], drafts:[]
   };
 }
 
@@ -30,11 +30,11 @@ async function loadDB(){
   if(local) DB=local;
   try {
     const [users,magasins,audits,ncs,actions,alertes,
-           grilleRows,qualAudits,qualRows] = await Promise.all([
+           grilleRows,qualAudits,qualRows,drafts] = await Promise.all([
       sbSelect('users'), sbSelect('magasins'), sbSelect('audits'),
       sbSelect('ncs'), sbSelect('actions'), sbSelect('alertes'),
       sbSelect('grille_custom'), sbSelect('qual_audits'),
-      sbSelect('qualimetre_custom')
+      sbSelect('qualimetre_custom'), sbSelect('drafts')
     ]);
     const grilleCustom={};
     (grilleRows||[]).forEach(r=>{ grilleCustom[r.rayon]=r.data; });
@@ -44,7 +44,8 @@ async function loadDB(){
       users: users||[], magasins: magasins||[],
       audits: audits||[], ncs: ncs||[],
       actions: actions||[], alertes: alertes||[],
-      grilleCustom, qualimetreCustom, qualAudits: qualAudits||[]
+      grilleCustom, qualimetreCustom, qualAudits: qualAudits||[],
+      drafts: drafts||[],
     };
     if(!DB.users.length) DB.users=_defaultDB().users;
     _saveLocal();
@@ -73,6 +74,7 @@ async function _pushToSupabase(tables){
     if(all||tables.includes('actions'))  ops.push(sbUpsert('actions', DB.actions));
     if(all||tables.includes('alertes'))  ops.push(sbUpsert('alertes', DB.alertes));
     if(all||tables.includes('qualAudits')) ops.push(sbUpsert('qual_audits', DB.qualAudits));
+    if(all||tables.includes('drafts')) ops.push(sbUpsert('drafts', DB.drafts));
     if(all||tables.includes('grilleCustom')){
       const rows=Object.entries(DB.grilleCustom).map(([rayon,data])=>({id:rayon,rayon,data}));
       if(rows.length) ops.push(sbUpsert('grille_custom', rows));
@@ -94,9 +96,9 @@ async function _pushToSupabase(tables){
 setInterval(async ()=>{
   if(!CU) return;
   try {
-    const [audits,ncs,actions,alertes,qualAudits] = await Promise.all([
+    const [audits,ncs,actions,alertes,qualAudits,drafts] = await Promise.all([
       sbSelect('audits'), sbSelect('ncs'), sbSelect('actions'),
-      sbSelect('alertes'), sbSelect('qual_audits')
+      sbSelect('alertes'), sbSelect('qual_audits'), sbSelect('drafts')
     ]);
     const changed=
       JSON.stringify(audits)!==JSON.stringify(DB.audits)||
@@ -110,6 +112,7 @@ setInterval(async ()=>{
     DB.actions=actions||[];
     DB.alertes=alertes||[];
     DB.qualAudits=qualAudits||[];
+    DB.drafts=drafts||[];
     _saveLocal();
     const active=document.querySelector('.page.active');
     if(active){

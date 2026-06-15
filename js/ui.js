@@ -7,6 +7,7 @@ function buildSidebar(){
     {sec:'Principal'},
     {id:'dashboard',ic:'ti-dashboard',lb:'Tableau de bord'},
     hasPerm('aud-r')&&{id:'audits',ic:'ti-clipboard-check',lb:'Audits FSQS'},
+    hasPerm('aud-w')&&{id:'brouillons',ic:'ti-player-pause',lb:'Brouillons'},
     hasPerm('nc')&&{id:'nc',ic:'ti-alert-triangle',lb:'Non-conformités',bdg:'nc-bdg'},
     hasPerm('ac')&&{id:'actions',ic:'ti-tool',lb:'Actions correctives'},
     {id:'audit-qualimetre',ic:'ti-rosette',lb:'Audit Qualimètre',style:'color:#c4b5fd'},
@@ -65,7 +66,8 @@ var PM={
   rapports:['Rapport FSQS','Audits & non-conformités FSQS'], utilisateurs:['Utilisateurs','Gestion des accès'],
   grille:['Grille d\'audit','Référentiels'], qualimetre:['Qualimètre','Référentiel par magasin'],
   'audit-qualimetre':['Audit Qualimètre','Parcours client – Œil du client'],
-  'rapport-qualimetre':['Rapport Qualimètre','Historique et exports des audits Qualimètre']
+  'rapport-qualimetre':['Rapport Qualimètre','Historique et exports des audits Qualimètre'],
+  brouillons:['Brouillons','Audits en cours de saisie'],
 };
 function navigate(pg){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -81,7 +83,8 @@ function navigate(pg){
     utilisateurs:renderUsers,
     grille:()=>{ const sel=el('grille-ray-sel'); showGrille(sel?sel.value:'Boucherie'); },
     qualimetre:()=>{ showQualimetre(); },
-    'audit-qualimetre':()=>{ renderQualAudits(); }
+    'audit-qualimetre':()=>{ renderQualAudits(); },
+    brouillons:()=>{ renderDrafts(); }
   })[pg]?.();
 }
 

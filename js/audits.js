@@ -79,6 +79,8 @@ function openAuditModal(){
   el('a-aud').value=CU?CU.nom:'';
   el('as1').style.display=''; el('as2').style.display='none'; el('as3').style.display='none';
   el('a-prev').style.display='none';
+  el('a-pause').style.display='none';
+  _currentDraftId=null;
   el('a-next').innerHTML='Continuer <i class="ti ti-arrow-right"></i>';
   openModal('m-audit');
 }
@@ -100,6 +102,7 @@ function auditNext(){
     el('as1').style.display='none'; el('as2').style.display='';
     el('a-ray-ttl').textContent=ray;
     el('a-prev').style.display='';
+    el('a-pause').style.display='';
     el('a-next').innerHTML='Valider l\'audit <i class="ti ti-check"></i>';
     auditStep=1;
   } else if(auditStep===1){
@@ -113,6 +116,7 @@ function auditPrev(){
     el('a-prev').style.display='none';
     el('a-next').innerHTML='Continuer <i class="ti ti-arrow-right"></i>';
     auditStep=0;
+    el('a-pause').style.display='none';
   }
 }
 
@@ -184,8 +188,10 @@ const acId='AC-'+uid();
     DB.actions.push({id:acId,ncId,desc:q.q,mag:mag.nom||'',resp:aud,ech:dl,prio:q.c,statut:'Ouverte',cmt:''});
   });
    save();
+   if(_currentDraftId){ DB.drafts=DB.drafts.filter(d=>d.id!==_currentDraftId); sbDeleteWhere('drafts','id',_currentDraftId); save(['drafts']); _currentDraftId=null; }
   el('as2').style.display='none'; el('as3').style.display='';
   el('a-prev').style.display='none';
+  el('a-pause').style.display='none';
   el('a-next').innerHTML='Fermer';
   el('a-next').onclick=()=>{ closeModal('m-audit'); el('a-next').onclick=auditNext; auditStep=0; renderAudits(); };
   el('a-recap').textContent=(mag.nom||'')+' · '+ray+' · '+fd(date);
@@ -218,4 +224,83 @@ function openPhotoViewer(url){
   ov.onclick=()=>document.body.removeChild(ov);
   ov.innerHTML=`<img src="${url}" style="max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6)">`;
   document.body.appendChild(ov);
+}
+
+let _currentDraftId=null;
+
+function pauseAudit(){
+  const mid=v('a-mag'), ray=v('a-ray'), date=v('a-date'), aud=v('a-aud'), cmt=v('a-cmt');
+  const mag=DB.magasins.find(m=>m.id===mid)||{};
+  const draftId=_currentDraftId||'DRF-'+uid();
+  _currentDraftId=draftId;
+  const existing=DB.drafts.findIndex(d=>d.id===draftId);
+  const draft={ id:draftId, mid, mag:mag.nom||'', rayon:ray, date, aud, cmt, answers:{...auditAnswers}, createdAt:today(), uid:CU?CU.id:'' };
+  if(existing>=0) DB.drafts[existing]=draft;
+  else DB.drafts.push(draft);
+  save(['drafts']);
+  sbUpsert('drafts',[draft]);
+  closeModal('m-audit');
+  auditStep=0; _currentDraftId=null;
+  showToast('Audit mis en pause — retrouvez-le dans Brouillons','success');
+  renderAudits();
+}
+
+function resumeDraft(id){
+  const d=DB.drafts.find(x=>x.id===id); if(!d) return;
+  _currentDraftId=id;
+  const mids=visibleMids();
+  const msel=el('a-mag');
+  msel.innerHTML='<option value="">Sélectionner...</option>'+DB.magasins.filter(m=>mids.includes(m.id)&&m.statut==='actif').map(m=>`<option value="${m.id}">${m.nom}</option>`).join('');
+  el('a-mag').value=d.mid;
+  el('a-ray').value=d.rayon;
+  el('a-date').value=d.date;
+  el('a-date').readOnly=!(CU&&CU.role==='admin');
+  el('a-aud').value=d.aud;
+  sv('a-cmt',d.cmt||'');
+  el('as1').style.display='none'; el('as2').style.display=''; el('as3').style.display='none';
+  el('a-prev').style.display='';
+  el('a-pause').style.display='';
+  el('a-next').innerHTML='Valider l\'audit <i class="ti ti-check"></i>';
+  auditAnswers={...d.answers};
+  buildAuditQuestions(d.rayon);
+  // Restore answers
+  Object.entries(d.answers).forEach(([qid,ans])=>{
+    if(!ans.rep) return;
+    const btn=document.querySelector(`#aaq-${qid} .rb`);
+    const btns=document.querySelectorAll(`#aaq-${qid} .rb`);
+    const map={'C':0,'NC':1,'NA':2};
+    if(btns[map[ans.rep]]) setAudRep(qid,ans.rep,btns[map[ans.rep]]);
+  });
+  auditStep=1;
+  openModal('m-audit');
+}
+
+function deleteDraft(id){
+  if(!confirm('Supprimer ce brouillon ?')) return;
+  DB.drafts=DB.drafts.filter(d=>d.id!==id);
+  save(['drafts']);
+  sbDeleteWhere('drafts','id',id);
+  renderDrafts();
+}
+
+function renderDrafts(){
+  const tb=el('drafts-tb'); if(!tb) return;
+  const mids=visibleMids();
+  let list=CU&&CU.role==='admin'
+    ? [...DB.drafts]
+    : DB.drafts.filter(d=>d.uid===CU.id);
+  list=[...list].reverse();
+  el('drafts-cnt').textContent=list.length+' brouillon(s)';
+  if(!list.length){ tb.innerHTML=`<tr><td colspan="6"><div class="empty-state"><i class="ti ti-player-pause"></i><p>Aucun brouillon en cours.</p></div></td></tr>`; return; }
+  tb.innerHTML=list.map(d=>`<tr>
+    <td style="font-weight:600;color:var(--primary)">${d.id}</td>
+    <td>${d.mag}</td>
+    <td>${rIcon(d.rayon)} ${d.rayon}</td>
+    <td>${fd(d.date)}</td>
+    <td>${d.aud}</td>
+    <td><div class="act-btns">
+      <button class="btn btn-primary btn-sm" onclick="resumeDraft('${d.id}')"><i class="ti ti-player-play"></i> Reprendre</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteDraft('${d.id}')"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
 }

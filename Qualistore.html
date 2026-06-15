@@ -131,6 +131,16 @@
         </div>
       </div>
 
+      <!-- BROUILLONS -->
+      <div class="page" id="page-brouillons">
+        <div class="flex-btw mb-4">
+          <span class="tsm tm" id="drafts-cnt"></span>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table><thead><tr><th>N°</th><th>Magasin</th><th>Rayon</th><th>Date</th><th>Auditeur</th><th></th></tr></thead><tbody id="drafts-tb"></tbody></table></div>
+        </div>
+      </div>
+      
       <!-- AUDITS -->
       <div class="page" id="page-audits">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
@@ -555,6 +565,7 @@
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" id="a-prev" onclick="auditPrev()" style="display:none"><i class="ti ti-arrow-left"></i> Retour</button>
+      <button class="btn btn-warning" id="a-pause" onclick="pauseAudit()" style="display:none;background:#f59e0b;border-color:#f59e0b;color:#fff"><i class="ti ti-player-pause"></i> Pause</button>
       <button class="btn btn-primary" id="a-next" onclick="auditNext()">Continuer <i class="ti ti-arrow-right"></i></button>
     </div>
   </div>
