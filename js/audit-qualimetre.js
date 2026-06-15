@@ -26,7 +26,6 @@ function renderQualAudits(){
   const tb=el('qaud-tb');
   if(!list.length){ tb.innerHTML=`<tr><td colspan="8"><div class="empty-state"><i class="ti ti-rosette" style="color:#ddd6fe"></i><p>Aucun audit Qualimètre réalisé.</p></div></td></tr>`; return; }
   tb.innerHTML=list.map(a=>`<tr>
-    <td style="font-weight:600;color:#7c3aed">${a.id}</td>
     <td>${a.mag}</td>
     <td>${fd(a.date)}</td>
     <td>${a.aud}</td>
@@ -194,7 +193,6 @@ function showQualAudit(id){
   const scolor=a.score>=90?'var(--success)':a.score>=75?'#f59e0b':a.score>=60?'var(--orange)':'var(--danger)';
   let html=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
     <table style="font-size:13px">
-      <tr><td class="tm" style="padding:4px 0;width:40%">N° Audit</td><td style="font-weight:600;color:#7c3aed">${a.id}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Magasin</td><td>${a.mag}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Date</td><td>${fd(a.date)}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Auditeur</td><td>${a.aud}</td></tr>

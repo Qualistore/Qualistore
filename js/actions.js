@@ -21,7 +21,6 @@ function renderActions(){
     const linkedNC=DB.ncs.find(x=>x.id===a.ncId);
     const auditDesc=linkedNC?linkedNC.desc:a.desc;
     return `<tr style="${ov?'background:#fff8f8':''}">
-    <td style="color:var(--danger);font-size:12px;font-weight:600;vertical-align:top;padding-top:14px">${a.ncId}</td>
     <td style="max-width:200px;font-size:12px;vertical-align:top;padding-top:14px">
       <!-- Description audit : non modifiable -->
       <div style="color:var(--text)">${auditDesc.slice(0,80)}${auditDesc.length>80?'...':''}</div>

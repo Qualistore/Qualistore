@@ -15,7 +15,6 @@ function renderRap(){
   if(!auds.length){ listEl.innerHTML='<div class="empty-state" style="padding:16px"><p>Aucun audit.</p></div>'; return; }
   listEl.innerHTML=auds.map(a=>`<label style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px">
     <input type="checkbox" class="r-cb" value="${a.id}" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer" checked>
-    <span style="font-weight:600;color:var(--primary);min-width:72px">${a.id}</span>
     <span style="flex:1">${a.mag}</span>
     <span class="badge" style="background:var(--bg)">${a.rayon}</span>
     <span class="tsm tm">${fd(a.date)}</span>
@@ -55,7 +54,7 @@ function genRapport(){
       return `<div class="report-audit-card" style="border:1px solid #e2e6ef;border-radius:10px;margin-bottom:20px;overflow:hidden">
         <div style="background:linear-gradient(90deg,#e8f0fc,#f3f5f9);padding:12px 18px;display:flex;justify-content:space-between;align-items:center">
           <div>
-            <div style="font-size:14px;font-weight:700;color:#1a4fa0">${a.id} — ${a.mag}</div>
+            <div style="font-size:14px;font-weight:700;color:#1a4fa0">${a.mag}</div>
             <div style="font-size:12px;color:#5a6070;margin-top:2px">${a.rayon} · ${fd(a.date)} · Auditeur : ${a.aud}</div>
           </div>
           <div style="text-align:center">
@@ -73,7 +72,6 @@ function genRapport(){
           <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px">
             <thead>
               <tr style="background:#f8f8f8">
-                <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px;width:60px">N°</th>
                 <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Description</th>
                 <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px;width:110px">Criticité</th>
                 <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px;width:90px">Statut</th>
@@ -89,7 +87,6 @@ function genRapport(){
                 const statColor=n.statut==='Clôturée'?'#15803d':n.statut==='En cours'?'#92400e':'#b91c1c';
                 const isEnCours=n.statut==='En cours';
                 return `<tr style="border-left:3px solid ${critColor}">
-                  <td style="padding:8px 10px;border:1px solid #e2e6ef;font-weight:700;color:${critColor};white-space:nowrap">${n.id}</td>
                   <td style="padding:8px 10px;border:1px solid #e2e6ef;color:#1a1f36">
                     ${n.desc}
                     ${(()=>{ const a=DB.audits.find(x=>x.id===n.aid); const ans=a&&a.answers&&Object.values(a.answers).find(x=>x.q===n.desc); return ans&&ans.photos&&ans.photos.length?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${ans.photos.map(p=>`<img src="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #e2e6ef">`).join('')}</div>`:''; })()}

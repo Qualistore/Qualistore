@@ -20,7 +20,6 @@ function renderNC(){
   const isAdmin=CU&&CU.role==='admin';
   if(!list.length){ tb.innerHTML=`<tr><td colspan="8"><div class="empty-state" style="padding:28px"><i class="ti ti-circle-check" style="color:var(--success);font-size:36px"></i><p>Aucune non-conformité active.</p></div></td></tr>`; }
   else tb.innerHTML=list.map(n=>`<tr>
-    <td style="font-weight:600;color:var(--danger);vertical-align:top;padding-top:14px">${n.id}</td>
     <td style="vertical-align:top;padding-top:14px">${n.mag}</td>
     <td style="vertical-align:top;padding-top:14px"><div style="display:flex;align-items:center;gap:6px">${rIcon(n.rayon)} ${n.rayon}</div></td>
     <td style="max-width:220px;font-size:12px;vertical-align:top;padding-top:14px">
@@ -58,7 +57,6 @@ function renderNCArchives(fMag, fRay, fCrit){
   const isAdmin=CU&&CU.role==='admin';
   if(!arch.length){ tb.innerHTML=`<tr><td colspan="8"><div class="empty-state" style="padding:20px"><p>Aucune NC clôturée${afPer?' sur cette période':''}.</p></div></td></tr>`; return; }
   tb.innerHTML=arch.map(n=>`<tr style="opacity:.85">
-    <td style="font-weight:600;color:var(--success);vertical-align:top;padding-top:12px">${n.id}</td>
     <td style="vertical-align:top;padding-top:12px;font-size:12px">${n.mag}</td>
     <td style="vertical-align:top;padding-top:12px"><div style="display:flex;align-items:center;gap:6px;font-size:12px">${rIcon(n.rayon)} ${n.rayon}</div></td>
     <td style="max-width:200px;font-size:12px;vertical-align:top;padding-top:12px;color:var(--text2)">${n.desc.slice(0,80)}${n.desc.length>80?'...':''}</td>
@@ -189,7 +187,6 @@ function exportNCActivePDF(){
           const isEnCours=n.statut==='En cours';
           const late=n.dl&&new Date(n.dl)<new Date()&&n.statut!=='Clôturée';
           return `<tr style="background:${i%2===0?'#fff':'#fafafa'};border-left:3px solid ${critColor}">
-            <td style="padding:8px 10px;border:1px solid #e2e6ef;font-weight:700;color:${critColor};white-space:nowrap">${n.id}</td>
             <td style="padding:8px 10px;border:1px solid #e2e6ef;font-size:11px">${n.mag}</td>
             <td style="padding:8px 10px;border:1px solid #e2e6ef;font-size:11px;white-space:nowrap">${n.rayon}</td>
             <td style="padding:8px 10px;border:1px solid #e2e6ef">${n.desc}</td>
@@ -247,7 +244,7 @@ function exportNCArchivePDF(){
     <table style="width:100%;border-collapse:collapse;font-size:11px">
       <thead>
         <tr style="background:#f0fdf4">
-          ${['N°','Magasin','Rayon','Description','Criticité','Clôturée le','💬 Commentaire de suivi'].map(h=>`<th style="padding:8px 10px;border:1px solid #a7f3d0;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#15803d${h.includes('💬')?';background:#eef3fb;color:#1a4fa0':''}">${h}</th>`).join('')}
+          ${['Magasin','Rayon','Description','Criticité','Clôturée le','💬 Commentaire de suivi'].map(h=>`<th style="padding:8px 10px;border:1px solid #a7f3d0;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#15803d${h.includes('💬')?';background:#eef3fb;color:#1a4fa0':''}">${h}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
@@ -256,7 +253,6 @@ function exportNCArchivePDF(){
           const suiviCmt=n.cmt||ac?.cmt||'';
           const critColor=n.crit==='Critique'?'#e53935':n.crit==='Majeure'?'#ea580c':'#f59e0b';
           return `<tr style="background:${i%2===0?'#fff':'#f0fdf4'};border-left:3px solid ${critColor}">
-            <td style="padding:8px 10px;border:1px solid #d1fae5;font-weight:700;color:${critColor};white-space:nowrap">${n.id}</td>
             <td style="padding:8px 10px;border:1px solid #d1fae5;font-size:11px">${n.mag}</td>
             <td style="padding:8px 10px;border:1px solid #d1fae5;font-size:11px;white-space:nowrap">${n.rayon}</td>
             <td style="padding:8px 10px;border:1px solid #d1fae5">${n.desc}</td>

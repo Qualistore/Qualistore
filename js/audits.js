@@ -15,7 +15,6 @@ function renderAudits(){
   const tb=el('aud-tb');
   if(!list.length){ tb.innerHTML=`<tr><td colspan="9"><div class="empty-state"><i class="ti ti-clipboard-check"></i><p>Aucun audit.</p></div></td></tr>`; return; }
   tb.innerHTML=list.map(a=>`<tr>
-    <td style="font-weight:600;color:var(--primary)">${a.id}</td>
     <td>${a.mag}</td>
     <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(a.rayon)} ${a.rayon}</td>
     <td>${fd(a.date)}</td><td>${a.aud}</td>
@@ -33,7 +32,6 @@ function showAud(id){
   const ncs=DB.ncs.filter(n=>n.aid===id);
   let html=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
     <table style="font-size:13px">
-      <tr><td class="tm" style="padding:4px 0;width:40%">N° Audit</td><td style="font-weight:600;color:var(--primary)">${a.id}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Magasin</td><td>${a.mag}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Rayon</td><td>${a.rayon}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Date</td><td>${fd(a.date)}</td></tr>

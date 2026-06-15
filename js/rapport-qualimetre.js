@@ -18,7 +18,6 @@ function renderRapportQualimetre(){
     const nc=Object.values(a.answers||{}).filter(v=>v.rep==='NC').length;
     return `<label style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px">
       <input type="checkbox" class="rq-cb" value="${a.id}" style="width:16px;height:16px;accent-color:#7c3aed;cursor:pointer" checked>
-      <span style="font-weight:600;color:#7c3aed;min-width:72px">${a.id}</span>
       <span style="flex:1">${a.mag}</span>
       <span class="tsm tm">${fd(a.date)} · ${a.aud}</span>
       <span style="font-weight:700;color:${scolor(a.score)}">${a.score}%</span>
@@ -62,7 +61,7 @@ function genRapportQualimetre(){
         <!-- En-tête audit -->
         <div style="background:linear-gradient(90deg,#f5f3ff,#ede9fe);padding:12px 18px;display:flex;justify-content:space-between;align-items:center">
           <div>
-            <div style="font-size:14px;font-weight:700;color:#6d28d9">${a.id} — ${a.mag}</div>
+            <div style="font-size:14px;font-weight:700;color:#6d28d9">${a.mag}</div>
             <div style="font-size:12px;color:#5a6070;margin-top:2px">${fd(a.date)} · Auditeur : ${a.aud}</div>
           </div>
         </div>
