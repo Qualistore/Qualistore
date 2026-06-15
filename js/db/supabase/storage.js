@@ -5,6 +5,8 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 
 let DB = _defaultDB();
 let CU = null;
+// Restaurer CU immédiatement depuis localStorage
+try { const s=localStorage.getItem('fsqs_cu'); if(s) CU=JSON.parse(s); } catch(e){}
 let _dirty = false;
 
 function _defaultDB(){
@@ -50,8 +52,7 @@ async function loadDB(){
     if(!DB.users.length) DB.users=_defaultDB().users;
     _saveLocal();
     console.log('✅ Supabase chargé');
-    const savedCU=localStorage.getItem('fsqs_cu');
-    if(savedCU) CU=JSON.parse(savedCU);
+
   } catch(e){
     console.warn('⚠️ Supabase inaccessible, mode offline:', e.message);
     _dirty=true;
