@@ -24,7 +24,15 @@ function renderActions(){
     <td style="max-width:200px;font-size:12px;vertical-align:top;padding-top:14px">
       <!-- Description audit : non modifiable -->
       <div style="color:var(--text)">${auditDesc.slice(0,80)}${auditDesc.length>80?'...':''}</div>
-      ${(()=>{ const audit=DB.audits.find(x=>x.id===linkedNC?.aid); const ans=audit&&audit.answers&&Object.values(audit.answers).find(x=>x.q===auditDesc); return ans&&ans.photos&&ans.photos.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${ans.photos.map(p=>`<img src="${p}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="openPhotoViewer('${p}')">`).join('')}</div>`:''; })()}
+      ${(()=>{
+        const audit=DB.audits.find(x=>x.id===linkedNC?.aid);
+        const ans=audit&&audit.answers&&Object.values(audit.answers).find(x=>x.q===auditDesc);
+        const auditPhotos=ans&&ans.photos&&ans.photos.length?ans.photos.map(p=>`<img src="${p}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="openPhotoViewer('${p}')">`).join(''):'';
+        const alerte=linkedNC?.isAlert&&DB.alertes.find(x=>x.id===linkedNC?.aid);
+        const alertPhotos=alerte&&alerte.photos&&alerte.photos.length?alerte.photos.map(p=>`<img src="${p}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="openPhotoViewer('${p}')">`).join(''):'';
+        const allPhotos=auditPhotos||alertPhotos;
+        return allPhotos?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${allPhotos}</div>`:'';
+      })()}
     </td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px">${a.mag}</td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px">${a.resp}</td>

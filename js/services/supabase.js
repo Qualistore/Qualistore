@@ -61,5 +61,9 @@ async function sbUploadPhoto(file, path){
 }
 
 async function sbDeletePhoto(path){
-  return await supaFetch('/storage/v1/object/photos/'+path, { method:'DELETE' });
+  const res=await fetch(SUPA_URL+'/storage/v1/object/photos/'+path, {
+    method:'DELETE',
+    headers:{ 'apikey':SUPA_KEY, 'Authorization':'Bearer '+SUPA_KEY }
+  });
+  return res.ok;
 }
