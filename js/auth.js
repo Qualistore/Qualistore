@@ -7,12 +7,14 @@ function doLogin(){
   if(!u){ document.getElementById('login-err').classList.add('show'); return; }
   document.getElementById('login-err').classList.remove('show');
   CU=u;
+  localStorage.setItem('fsqs_cu', JSON.stringify(u));
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').classList.add('on');
   buildSidebar(); updateSBUser(); navigate('dashboard');
 }
 function doLogout(){
   CU=null;
+  localStorage.removeItem('fsqs_cu');
   document.getElementById('app').classList.remove('on');
   document.getElementById('login-screen').style.display='';
   sv('f-login',''); sv('f-pass','');
