@@ -1,6 +1,7 @@
 // ══════════════ INIT ══════════════
 document.addEventListener('DOMContentLoaded', async ()=>{
   try { await loadDB(); } catch(e){ console.warn('loadDB error:', e); }
+  _checkSessionOnLoad();
   console.log('CU après loadDB:', CU);
   if(CU){
     document.getElementById('login-screen').style.display='none';
@@ -21,4 +22,7 @@ window.addEventListener('beforeunload', ()=>{
     if(auditStep===1) pauseAudit();
     else if(qaStep===2) pauseQualAudit();
   });
+  ['click','keydown','touchstart','mousemove'].forEach(e=>
+    document.addEventListener(e, ()=>{ if(CU) _resetSessionTimer(); }, {passive:true})
+  );
 });
