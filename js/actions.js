@@ -25,6 +25,7 @@ function renderActions(){
     <td style="max-width:200px;font-size:12px;vertical-align:top;padding-top:14px">
       <!-- Description audit : non modifiable -->
       <div style="color:var(--text)">${auditDesc.slice(0,80)}${auditDesc.length>80?'...':''}</div>
+      ${(()=>{ const audit=DB.audits.find(x=>x.id===linkedNC?.aid); const ans=audit&&audit.answers&&Object.values(audit.answers).find(x=>x.q===auditDesc); return ans&&ans.photos&&ans.photos.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${ans.photos.map(p=>`<img src="${p}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="openPhotoViewer('${p}')">`).join('')}</div>`:''; })()}
     </td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px">${a.mag}</td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px">${a.resp}</td>
