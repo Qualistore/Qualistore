@@ -21,17 +21,17 @@ function saveAlert(){
   if(!mid||!titre||!type||!grav||!sig){ err.textContent='Magasin, titre, type, gravité et signataire sont requis.'; err.classList.add('show'); return; }
   if(!DB.alertes) DB.alertes=[];
   const mag=DB.magasins.find(m=>m.id===mid)||{};
-  const alId='AL-'+String(DB.nAl++).padStart(3,'0');
+  const alId='AL-'+uid();
   DB.alertes.push({ id:alId, mid, mag:mag.nom||'', titre, type, gravite:grav, signale:sig, cmt:v('al-cmt'), photos:[...alertPhotosB64], date:today(), statut:'Active' });
   const critMap={'Critique':'Critique','Majeure':'Majeure','Mineure':'Mineure'};
   const ncCrit=critMap[grav]||'Majeure';
   const days={'Critique':3,'Majeure':7,'Mineure':14};
   const dl=new Date(Date.now()+days[ncCrit]*86400000).toISOString().split('T')[0];
-  const ncId='NC-'+String(DB.nNc++).padStart(3,'0');
+  const ncId='NC-'+uid();
   DB.ncs.push({ id:ncId, mid, mag:mag.nom||'', rayon:type, date:today(),
     desc:'[Alerte '+type+'] '+titre+(v('al-cmt')?' — '+v('al-cmt'):''),
     crit:ncCrit, resp:sig, dl, statut:'Ouverte', aid:alId, isAlert:true });
-  const acId='AC-'+String(DB.nAc++).padStart(3,'0');
+  const acId='AC-'+uid();
   DB.actions.push({ id:acId, ncId, desc:'Traiter l\'alerte : '+titre, mag:mag.nom||'', resp:sig, ech:dl, prio:ncCrit, statut:'Ouverte', alertId:alId });
   save(); closeModal('m-alert'); alertPhotosB64=[];
   const nb=el('nc-bdg'); if(nb) nb.textContent=DB.ncs.filter(x=>x.statut==='Ouverte').length;
