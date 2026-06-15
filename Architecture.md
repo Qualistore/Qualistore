@@ -16,7 +16,7 @@
 
 ## Contexte
 
-Application métier de gestion des audits FSQS (Food Safety & Quality Standards) pour des magasins. Refactorisée en multi-fichiers. Hébergée sur GitHub Pages (https://falves1995.github.io/QualistoreV2/Qualistore.html). Fonctionne avec localStorage (migration Supabase prévue).
+Application métier de gestion des audits FSQS (Food Safety & Quality Standards) pour des magasins. Refactorisée en multi-fichiers. Hébergée sur GitHub Pages (https://qualistore.github.io/Qualistore/). Fonctionne avec Supabase (backend) + localStorage (cache offline).
 
 ---
 
@@ -30,32 +30,36 @@ qualistore/
 │   ├── bienvenue-qualimetre.pdf      ← Affiché à l'étape 0 du modal Qualimètre
 │   └── referentiel-affichage.pdf     ← Bouton dans le header du modal pendant l'audit
 ├── css/
-│   └── app.css                       ← Tous les styles
+│   └── app.css                       ← Tous les styles (responsive mobile/tablette inclus)
 └── js/
     ├── config.js                     ← Constantes globales (LOGO_B64, SK, DPERMS, PIDS, GRILLE_BASE_COMMUNE, QUAL_ZONES, FORMAT_INFO, SHEETJS_URL, PDFJS_URL)
-    ├── auth.js                       ← Login/logout, hasPerm(), v(), sv(), el()
+    ├── auth.js                       ← Login/logout, hasPerm(), v(), sv(), el() — persiste CU dans localStorage
     ├── ui.js                         ← Sidebar, navigation, modals, toasts, helpers affichage
     ├── dashboard.js                  ← Tableau de bord FSQS + Qualimètre (onglets switchDashTab)
-    ├── audits.js                     ← Liste, création, navigation modal audit FSQS (openAuditModal, auditNext, auditPrev, submitAudit)
+    ├── audits.js                     ← Liste, création, navigation modal audit FSQS (openAuditModal, auditNext, auditPrev, submitAudit, pauseAudit, resumeDraft)
     ├── nc.js                         ← Non-conformités (liste, création, édition, suivi)
     ├── actions.js                    ← Actions correctives liées aux NC
     ├── magasins.js                   ← Gestion des magasins + confirmDel (global)
     ├── rayons.js                     ← Page Rayons (performances par rayon)
     ├── grille.js                     ← Grille d'audit (affichage, personnalisation par rayon)
-    ├── alertes.js                    ← Alertes (création, suivi)
+    ├── alertes.js                    ← Alertes (création, suivi) — photos uploadées dans Supabase Storage
     ├── users.js                      ← Gestion des utilisateurs + roleBdg (global)
-    ├── rapports-fsqs.js              ← Rapports et exports PDF audits FSQS
+    ├── rapports-fsqs.js              ← Rapports et exports PDF audits FSQS + suppression admin
     ├── qualimetre.js                 ← Référentiel Qualimètre (questions par zone)
-    ├── audit-qualimetre.js           ← Saisie et calcul d'un audit Qualimètre
-    ├── rapport-qualimetre.js         ← Rapport et export PDF Qualimètre
+    ├── audit-qualimetre.js           ← Saisie et calcul d'un audit Qualimètre (pauseQualAudit, resumeQualDraft)
+    ├── rapport-qualimetre.js         ← Rapport et export PDF Qualimètre + suppression admin
     ├── import-grille.js              ← Import grille via CSV / XLSX / PDF
-    ├── init.js                       ← Point d'entrée : DOMContentLoaded, loadDB(), navigate()
+    ├── init.js                       ← Point d'entrée : DOMContentLoaded, loadDB(), navigate(), beforeunload
     ├── chart.umd.min.js              ← Chart.js (local, pour les graphiques)
     ├── html2canvas.min.js            ← html2canvas (local, pour exports PDF)
     ├── jspdf.umd.min.js              ← jsPDF (local, pour exports PDF)
     └── db/
-        └── localstorage/
-            └── storage.js            ← Moteur DB : DB (objet mémoire), loadDB(), save(), uid(), CU
+        ├── localstorage/
+        │   └── storage.js            ← Ancien moteur (non utilisé)
+        └── supabase/
+            └── storage.js            ← Moteur DB : DB (objet mémoire), loadDB(), save(tables?), uid(), CU
+    └── services/
+        └── supabase.js               ← Client Supabase : supaFetch, sbSelect, sbUpsert, sbDeleteWhere, sbUploadPhoto, sbDeletePhoto
 ```
 
 ---
@@ -67,7 +71,7 @@ qualistore/
 js/jspdf.umd.min.js · js/html2canvas.min.js · js/chart.umd.min.js
 
 <!-- Infrastructure (ordre obligatoire) -->
-config.js → db/localstorage/storage.js → auth.js → ui.js
+config.js → js/services/supabase.js → js/db/supabase/storage.js → auth.js → ui.js
 
 <!-- Modules métier (ordre libre) -->
 dashboard · audits · nc · actions · magasins · rayons · grille · alertes
@@ -103,14 +107,14 @@ init.js
 DB = {
   users: [],          // { id, nom, login, pwd (btoa), role, statut, magasins[], perms{} }
   magasins: [],       // { id, nom, ville, enseigne, adr, statut, did }
-  audits: [],         // { id, mid, mag, rayon, date, aud, score, nc, items[], cmt, answers{} }
-  ncs: [],            // { id, mid, mag, rayon, date, desc, crit, resp, dl, statut, cmt, aid, isAlert }
-  actions: [],        // { id, ncId, desc, mag, resp, ech, prio, statut, alertId }
+  audits: [],         // { id, mid, mag, rayon, date, aud, score, nc, items[], cmt, answers{}, statut }
+  ncs: [],            // { id, mid, mag, rayon, date, desc, crit, resp, dl, statut, cmt, aid, isAlert, closedDate }
+  actions: [],        // { id, ncId, desc, mag, resp, ech, prio, statut, alertId, cmt }
   alertes: [],        // { id, mid, mag, titre, type, gravite, signale, cmt, photos[], date, statut }
   grilleCustom: {},   // { [rayon]: [{id, cat, q, prec, p, c}] }
   qualimetreCustom:{},// { [mid]: { [rayon]: [...] } }
   qualAudits: [],     // { id, mid, mag, date, aud, cmt, score, nc, statut, answers{} }
-  nAud:1, nNc:1, nAc:1, nAl:1, nQAud:1  // Compteurs auto-incrément
+  drafts: [],         // { id, mid, mag, rayon, date, aud, cmt, answers{}, createdAt, uid, type? }
 }
 ```
 
@@ -121,7 +125,7 @@ DB = {
 | Rôle | Label affiché | Permissions |
 |---|---|---|
 | `admin` | Administrateur | Tout |
-| `fsqs` | Resp. FSQS | Audits, NC, actions, rapports, grille |
+| `fsqs` | Auditeur FSQS | Audits, NC, actions, rapports, grille |
 | `directeur` | Directeur | Lecture audits, actions, rapports |
 | `direction` | Associé | Lecture audits, rapports |
 
@@ -129,9 +133,11 @@ DB = {
 
 ## Sidebar — visibilité des onglets
 
-- **Magasins** et **Rayons** : visibles uniquement si `hasPerm('mag')` (admin uniquement par défaut), placés sous Grille d'audit dans Paramètres
+- **Magasins** et **Rayons** : visibles uniquement si `hasPerm('mag')` (admin uniquement par défaut)
+- **Brouillons** : visible si `hasPerm('aud-w')` — admin voit tous les brouillons, les autres voient uniquement les leurs
 - **Audit Qualimètre** : visible par tous les rôles
 - **Nouvel audit Qualimètre** : bouton dans le bandeau du haut (violet), à côté de Nouvel audit
+- Burger menu mobile : toggle `sidebar.open` + overlay `sb-overlay`
 
 ---
 
@@ -165,9 +171,16 @@ DB = {
 | `roleBdg(r)` | `users.js` | Génère le badge HTML pour un rôle |
 | `openAuditModal()` | `audits.js` | Ouvre le modal de création d'audit FSQS |
 | `auditNext()` / `auditPrev()` | `audits.js` | Navigation dans le modal audit FSQS |
-| `submitAudit()` | `audits.js` | Enregistre l'audit FSQS et génère les NC |
-| `deleteAudit(id)` | `audits.js` | Supprime un audit et ses NC associées |
+| `submitAudit()` | `audits.js` | Enregistre l'audit FSQS et génère les NC + actions |
+| `pauseAudit()` | `audits.js` | Sauvegarde brouillon FSQS et ferme le modal |
+| `resumeDraft(id)` | `audits.js` | Reprend un brouillon FSQS |
+| `deleteAudit(id)` | `audits.js` | Supprime un audit et ses NC/actions associées |
 | `openQualAuditModal()` | `audit-qualimetre.js` | Ouvre le modal de création d'audit Qualimètre |
+| `pauseQualAudit()` | `audit-qualimetre.js` | Sauvegarde brouillon Qualimètre et ferme le modal |
+| `resumeQualDraft(id)` | `audit-qualimetre.js` | Reprend un brouillon Qualimètre |
+| `openPhotoViewer(url)` | `audits.js` | Affiche une photo en plein écran |
+| `handleAuditPhoto(qid, input)` | `audits.js` | Upload photo vers Supabase Storage pour un point de contrôle |
+| `renderDrafts()` | `audits.js` | Affiche la liste des brouillons |
 
 ---
 
@@ -198,32 +211,39 @@ DB = {
 
 ## Notes importantes
 
-- **GitHub Pages** : l'appli est hébergée publiquement, toutes les librairies JS sont en local (pas de CDN) pour éviter les blocages CORS.
+- **GitHub Pages** : l'appli est hébergée publiquement sur https://qualistore.github.io/Qualistore/
 - **Pas de framework** : JS vanilla pur, pas de React/Vue/Angular.
-- **localStorage** : les données sont persistées localement dans le navigateur (migration Supabase prévue).
+- **Supabase** : base de données principale. localStorage = cache offline. Sync automatique toutes les 10s (polling).
+- **Offline** : l'appli fonctionne sans connexion. Les données sont poussées vers Supabase dès que la connexion revient.
 - **Compte par défaut** : login `admin` / mot de passe `admin`.
-- **Import lazy** : SheetJS et PDF.js sont chargés à la demande (CDN) uniquement lors de l'import de grille.
-- **GRILLE_BASE_COMMUNE** : dans `config.js` uniquement — ne pas redéclarer dans d'autres fichiers.
-- **QUAL_ZONES** : dans `config.js` uniquement — ne pas redéclarer dans `audit-qualimetre.js`.
-- **DPERMS / PIDS** : dans `config.js` uniquement — ne pas redéclarer dans `users.js`.
-- **FORMAT_INFO / SHEETJS_URL / PDFJS_URL** : dans `config.js` uniquement — ne pas redéclarer dans `import-grille.js`.
-- **confirmDel** : définie dans `magasins.js`, utilisée globalement.
-- **roleBdg** : définie dans `users.js`, utilisée globalement.
-- **Modal Qualimètre** : étape 0 affiche le contenu de bienvenue-qualimetre.pdf. Pendant l'audit (étape 2), bouton dans le header ouvre referentiel-affichage.pdf dans un nouvel onglet.
-- **confirmDel** : définie dans `magasins.js`, utilisée globalement. Types supportés : `mag`, `user`, `alert`, `nc`. Pour `nc` : supprime la NC et son action corrective liée.
-- **Modal NC edit** (`m-nc-edit`) : dans `Qualistore.html`. Permet à admin de modifier statut, échéance et commentaire d'une NC. L'échéance (`nc-edit-dl`) est visible uniquement pour admin. La sauvegarde sync l'action corrective liée (`ac.ech` et `ac.statut`).
-- `roleBdg` : définie dans `users.js`, génère les badges de rôle.
-- `openAuditModal`, `auditNext`, `auditPrev`, `buildAuditQuestions`, `submitAudit` : définis dans `audits.js`.
-- **submitAudit** : crée automatiquement une action corrective dans `DB.actions` pour chaque NC générée (lien via `ncId`).
+- **Session persistante** : CU sauvegardé dans `localStorage` (`fsqs_cu`). Restauré au démarrage — pas de déconnexion au F5.
+- **Pull-to-refresh désactivé** sur mobile (`overscroll-behavior-y: contain`).
+- **beforeunload** : si un audit est en cours (step 1 ou 2), il est automatiquement mis en pause.
+- **Photos** : uploadées dans Supabase Storage bucket `photos`. Dossier `alertes/` pour les alertes, `audits/` pour les points de contrôle. URLs publiques stockées dans DB.
+- **IDs** : tous générés via `uid()` (timestamp+random) — plus de compteurs nAud/nNc/nAc/nQAud.
+- **Brouillons** (`DB.drafts`) : table Supabase `drafts`. Champ `type='qualimetre'` pour distinguer les brouillons Qualimètre. Admin voit tous les brouillons, les autres voient uniquement les leurs.
+- **Suppression audits** : admin peut supprimer des audits depuis les pages Rapports FSQS et Rapport Qualimètre. Supprime aussi les NC et actions liées.
+- **Date d'audit** : pré-remplie avec la date du jour, modifiable uniquement par admin.
+- **GRILLE_BASE_COMMUNE** : dans `config.js` uniquement.
+- **QUAL_ZONES** : dans `config.js` uniquement.
+- **DPERMS / PIDS** : dans `config.js` uniquement.
+- **FORMAT_INFO / SHEETJS_URL / PDFJS_URL** : dans `config.js` uniquement.
+- **confirmDel** : définie dans `magasins.js`, types : `mag`, `user`, `alert`, `nc`. Supprime aussi les photos Supabase Storage pour les alertes.
+- **roleBdg** : définie dans `users.js`.
+- **Permission `aud-w`** : contrôle création audits FSQS ET Qualimètre.
+- **Permission `rap`** : contrôle accès rapports FSQS ET Qualimètre.
 
 ---
 
-## Supabase (migration prévue)
+## Supabase
 
 - URL : `https://jztacnkvmuhouhhapjen.supabase.co`
 - Clé publique : `sb_publishable_HuVt2NSLrCfUvKcgXI7Byg_Jkq96fB9`
-- Tables créées : users, magasins, audits, ncs, actions, alertes, grille_custom, qual_audits, qualimetre_custom, counters
-- La migration implique de rendre toutes les opérations asynchrones (await)
+- Tables : users, magasins, audits, ncs, actions, alertes, grille_custom, qual_audits, qualimetre_custom, drafts
+- Storage bucket : `photos` (public) — dossiers `alertes/` et `audits/`
+- Toutes les tables sont sans RLS (sécurité gérée côté application)
+- `save(tables?)` : sans argument = pousse tout ; avec tableau = pousse uniquement les tables listées
+- Polling toutes les 10s pour synchroniser les données entre sessions
 
 ---
 
