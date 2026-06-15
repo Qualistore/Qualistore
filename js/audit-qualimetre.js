@@ -2,7 +2,7 @@
 // Dépend de : storage.js (DB, CU), config.js, ui.js
 const QA_TOTAL_POINTS=QUAL_ZONES.reduce((s,z)=>s+z.points.length,0);
 
-let qaStep=0, qaAnswers={}, qaCurrentZone=0;
+let qaStep=0, qaAnswers={}, qaCurrentZone=0, _currentQaDraftId=null;
 
 // ── Hidden helper: remplir toutes les réponses non renseignées avec N/A ──
 // Appelée silencieusement avant la soumission pour éviter tout blocage
@@ -41,7 +41,7 @@ function renderQualAudits(){
 }
 
 function openQualAuditModal(){
-  qaStep=0; qaAnswers={}; qaCurrentZone=0;
+  qaStep=0; qaAnswers={}; qaCurrentZone=0; _currentQaDraftId=null;
   // Init all answers
   QUAL_ZONES.forEach(z=>z.points.forEach(p=>{ qaAnswers[p.id]={rep:null,cmt:'',q:p.q}; }));
   // Populate magasin
@@ -71,6 +71,7 @@ function qaNext(){
     buildQaQuestions();
     el('qa-s1').style.display='none'; el('qa-s2').style.display=''; const rb=el('btn-ref-affichage'); if(rb) rb.style.display='';
     el('qa-next').innerHTML='Valider l\'audit <i class="ti ti-check"></i>';
+    const qapause=el('qa-pause'); if(qapause) qapause.style.display='';
     qaStep=2;
   } else if(qaStep===2){
     submitQualAudit();
@@ -80,6 +81,7 @@ function qaPrev(){
   if(qaStep===2){
     el('qa-s2').style.display='none'; el('qa-s1').style.display=''; const rb2=el('btn-ref-affichage'); if(rb2) rb2.style.display='none';
     el('qa-next').innerHTML='Commencer l\'audit <i class="ti ti-arrow-right"></i>';
+    const qapause=el('qa-pause'); if(qapause) qapause.style.display='none';
     qaStep=1;
   } else if(qaStep===1){
     el('qa-s1').style.display='none'; el('qa-s0').style.display='';
@@ -177,8 +179,9 @@ function submitQualAudit(){
   if(!DB.qualAudits) DB.qualAudits=[];
   const aid='QA-'+uid();
   DB.qualAudits.push({ id:aid, mid, mag:mag.nom||'', date, aud, cmt, score, nc:ncList.length, statut:ncList.length?'Ouvert':'Conforme', answers:{...qaAnswers} });
-  save();
+  if(_currentQaDraftId){ DB.drafts=DB.drafts.filter(d=>d.id!==_currentQaDraftId); sbDeleteWhere('drafts','id',_currentQaDraftId); save(['drafts','qualAudits']); _currentQaDraftId=null; } else { save(); }
   el('qa-s2').style.display='none'; el('qa-s3').style.display=''; el('qa-prev').style.display='none'; const rb3=el('btn-ref-affichage'); if(rb3) rb3.style.display='none';
+  const qapause2=el('qa-pause'); if(qapause2) qapause2.style.display='none';
   el('qa-next').innerHTML='Fermer'; el('qa-next').onclick=()=>{ closeModal('m-qual-audit'); renderQualAudits(); };
   el('qa-recap').textContent=(mag.nom||'')+' · '+fd(date)+' · Auditeur : '+aud;
   el('qa-score-fin').textContent=score+'%';
@@ -222,4 +225,50 @@ function deleteQualAudit(id){
   if(!confirm(`Supprimer l'audit Qualimètre ${id} ?`)) return;
   DB.qualAudits=(DB.qualAudits||[]).filter(x=>x.id!==id);
   save(); renderQualAudits();
+}
+
+function pauseQualAudit(){
+  const mid=v('qa-mag'), date=v('qa-date'), aud=v('qa-aud').trim(), cmt=v('qa-cmt');
+  const mag=DB.magasins.find(m=>m.id===mid)||{};
+  const draftId=_currentQaDraftId||'DRF-'+uid();
+  _currentQaDraftId=draftId;
+  const existing=DB.drafts.findIndex(d=>d.id===draftId);
+  const draft={ id:draftId, mid, mag:mag.nom||'', rayon:'Qualimètre', date, aud, cmt, answers:{...qaAnswers}, createdAt:today(), uid:CU?CU.id:'', type:'qualimetre' };
+  if(existing>=0) DB.drafts[existing]=draft;
+  else DB.drafts.push(draft);
+  save(['drafts']);
+  sbUpsert('drafts',[draft]);
+  const qapause=el('qa-pause'); if(qapause) qapause.style.display='none';
+  closeModal('m-qual-audit');
+  qaStep=0; _currentQaDraftId=null;
+  showToast('Audit Qualimètre mis en pause — retrouvez-le dans Brouillons','success');
+  renderQualAudits();
+}
+
+function resumeQualDraft(id){
+  const d=DB.drafts.find(x=>x.id===id); if(!d) return;
+  _currentQaDraftId=id;
+  const mids=visibleMids();
+  const msel=el('qa-mag'); msel.innerHTML='<option value="">Sélectionner...</option>'+DB.magasins.filter(m=>mids.includes(m.id)&&m.statut==='actif').map(m=>`<option value="${m.id}">${m.nom}</option>`).join('');
+  el('qa-mag').value=d.mid;
+  el('qa-date').value=d.date;
+  el('qa-date').readOnly=!(CU&&CU.role==='admin');
+  el('qa-aud').value=d.aud;
+  sv('qa-cmt',d.cmt||'');
+  qaAnswers={...d.answers};
+  el('qa-s0').style.display='none'; el('qa-s1').style.display='none'; el('qa-s2').style.display=''; el('qa-s3').style.display='none';
+  el('qa-prev').style.display='';
+  const qapause=el('qa-pause'); if(qapause) qapause.style.display='';
+  el('qa-next').innerHTML='Valider l\'audit <i class="ti ti-check"></i>';
+  el('qa-next').onclick=qaNext;
+  buildQaQuestions();
+  // Restore answers
+  Object.entries(d.answers).forEach(([pid,ans])=>{
+    if(!ans.rep) return;
+    const btns=document.querySelectorAll(`#qaaq-${pid} .rb`);
+    const map={'C':0,'NC':1,'NA':2};
+    if(btns[map[ans.rep]]) setQaRep(pid,ans.rep,btns[map[ans.rep]]);
+  });
+  qaStep=2;
+  openModal('m-qual-audit');
 }

@@ -791,7 +791,7 @@
       <div class="modal-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Nouvel audit Qualimètre</div>
       <div style="display:flex;align-items:center;gap:8px">
         <a id="btn-ref-affichage" href="assets/referentiel-affichage.pdf" target="_blank" style="display:none" class="btn btn-sm" style="background:#fbbf24;border-color:#f59e0b;color:#78350f;font-size:12px;padding:4px 10px"><i class="ti ti-file-text"></i> Référentiel affichage</a>
-        <button class="btn-x" onclick="closeModal('m-qual-audit')">&times;</button>
+        <button class="btn-x" onclick="qaStep===2?pauseQualAudit():closeModal('m-qual-audit')">&times;</button>
       </div>
     </div>
     <div class="modal-body">
@@ -843,6 +843,7 @@
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" id="qa-prev" onclick="qaPrev()" style="display:none"><i class="ti ti-arrow-left"></i> Retour</button>
+      <button class="btn btn-warning" id="qa-pause" onclick="pauseQualAudit()" style="display:none;background:#f59e0b;border-color:#f59e0b;color:#fff"><i class="ti ti-player-pause"></i> Pause</button>
       <button class="btn btn-primary" id="qa-next" style="background:#7c3aed;border-color:#7c3aed">Démarrer <i class="ti ti-arrow-right"></i></button>
     </div>
   </div>

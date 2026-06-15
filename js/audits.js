@@ -302,7 +302,7 @@ function renderDrafts(){
     <td>${fd(d.date)}</td>
     <td>${d.aud}</td>
     <td><div class="act-btns">
-      ${isOwner?`<button class="btn btn-primary btn-sm" onclick="resumeDraft('${d.id}')"><i class="ti ti-player-play"></i> Reprendre</button>`:''}
+      ${isOwner?`<button class="btn btn-primary btn-sm" onclick="${d.type==='qualimetre'?`resumeQualDraft('${d.id}')`:`resumeDraft('${d.id}')`}"><i class="ti ti-player-play"></i> Reprendre</button>`:''}
       ${canDelete?`<button class="btn btn-danger btn-sm" onclick="deleteDraft('${d.id}')"><i class="ti ti-trash"></i></button>`:''}
     </div></td>
   </tr>`;
