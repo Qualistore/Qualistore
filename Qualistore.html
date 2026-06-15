@@ -542,7 +542,7 @@
           <div class="form-group"><label class="form-label">Date *</label><input type="date" class="form-control" id="a-date"></div>
           <div class="form-group"><label class="form-label">Auditeur</label><input class="form-control" id="a-aud" readonly></div>
         </div>
-        
+      
       </div>
       <div id="as2" style="display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
@@ -622,9 +622,11 @@
         <label class="form-label">Photo(s)</label>
         <div class="photo-preview" id="al-photos-prev"></div>
         <input type="file" id="al-photo-input" accept="image/*" multiple style="display:none" onchange="handleAlertPhotos(this)">
-        <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="el('al-photo-input').click()">
-          <i class="ti ti-camera"></i> Ajouter une photo
-        </button>
+        <input type="file" id="al-photo-camera" accept="image/*" capture="environment" style="display:none" onchange="handleAlertPhotos(this)">
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-secondary btn-sm" onclick="el('al-photo-input').click()"><i class="ti ti-photo"></i> Galerie</button>
+          <button class="btn btn-secondary btn-sm" onclick="el('al-photo-camera').click()"><i class="ti ti-camera"></i> Appareil photo</button>
+        </div>
       </div>
     </div>
     <div class="modal-foot">
