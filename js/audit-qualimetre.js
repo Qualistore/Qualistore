@@ -48,7 +48,8 @@ function openQualAuditModal(){
   const msel=el('qa-mag'); msel.innerHTML='<option value="">Sélectionner...</option>'+DB.magasins.filter(m=>mids.includes(m.id)&&m.statut==='actif').map(m=>`<option value="${m.id}">${m.nom}</option>`).join('');
   el('qa-date').value=today();
   el('qa-date').readOnly=!(CU&&CU.role==='admin');
-  el('qa-aud').value=CU?CU.nom:'';
+  el('qa-aud').value=(CU&&CU.role!=='collaborateur')?CU.nom:'';
+  el('qa-aud').readOnly=(CU&&CU.role!=='collaborateur');
   sv('qa-cmt','');
   // Show step 0 (welcome), hide others
   el('qa-s0').style.display=''; el('qa-s1').style.display='none'; el('qa-s2').style.display='none'; el('qa-s3').style.display='none';

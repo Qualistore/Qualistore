@@ -74,7 +74,8 @@ function openAuditModal(){
   msel.innerHTML='<option value="">Sélectionner...</option>'+DB.magasins.filter(m=>mids.includes(m.id)&&m.statut==='actif').map(m=>`<option value="${m.id}">${m.nom}</option>`).join('');
   el('a-date').value=today();
   el('a-date').readOnly=!(CU&&CU.role==='admin');
-  el('a-aud').value=CU?CU.nom:'';
+  el('a-aud').value=(CU&&CU.role!=='collaborateur')?CU.nom:'';
+  el('a-aud').readOnly=(CU&&CU.role!=='collaborateur');
   el('as1').style.display=''; el('as2').style.display='none'; el('as3').style.display='none';
   el('a-prev').style.display='none';
   el('a-pause').style.display='none';
