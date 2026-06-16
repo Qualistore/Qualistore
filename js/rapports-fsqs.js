@@ -183,7 +183,10 @@ for(let i=0;i<annexes.length;i+=2){
           } catch(e){ pdf.setFontSize(9); pdf.setTextColor(150,150,150); pdf.text('Image non disponible', xOff+8, yOffset+20); }
         }
       }
-  
+      pdf.save('annexes-photos.pdf');
+    }, 500);
+  }
+
   el('rap-preview').style.display='';
   el('r-print-btn').style.display='';
   el('rap-preview').scrollIntoView({behavior:'smooth'});
