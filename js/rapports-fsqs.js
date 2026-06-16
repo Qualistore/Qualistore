@@ -118,8 +118,6 @@ function genRapport(){
     }).join('')}
   </div>`;
   el('rap-body').innerHTML=html;
-  // Générer les annexes photos
-// Générer les annexes photos dans un PDF séparé
   const annexes=auds.flatMap(a=>{
     const ncs=DB.ncs.filter(n=>n.aid===a.id);
     return ncs.flatMap(n=>{
@@ -136,60 +134,49 @@ function genRapport(){
     });
   });
 
-  if(annexes.length){
-    setTimeout(async ()=>{
-      const {jsPDF}=window.jspdf;
-      const pdf=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
-      const pW=pdf.internal.pageSize.getWidth();
-      const pH=pdf.internal.pageSize.getHeight();
-      const m=32;
-
-for(let i=0;i<annexes.length;i+=2){
-        if(i>0) pdf.addPage();
-        const items=[annexes[i], annexes[i+1]].filter(Boolean);
-        const colW=(pW-m*3)/2;
-
-        for(let j=0;j<items.length;j++){
-          const a=items[j];
-          const xOff=m+j*(colW+m);
-
-          // En-tête
-          pdf.setFillColor(232,240,252);
-          pdf.rect(xOff, m, colW, 60, 'F');
-          pdf.setFontSize(10); pdf.setTextColor(26,79,160); pdf.setFont(undefined,'bold');
-          pdf.text(`${a.mag} · ${a.rayon} · ${a.date}`, xOff+8, m+16, {maxWidth:colW-16});
-          pdf.setFontSize(9); pdf.setTextColor(185,28,28);
-          pdf.text(a.desc, xOff+8, m+30, {maxWidth:colW-16});
-          pdf.setFontSize(8); pdf.setTextColor(90,96,112); pdf.setFont(undefined,'normal');
-          pdf.text(a.crit, xOff+8, m+44);
-
-          let yOffset=m+68;
-
-          if(a.cmtSaisie){
-            pdf.setFontSize(8); pdf.setTextColor(229,57,53);
-            pdf.text(`→ ${a.cmtSaisie}`, xOff+8, yOffset, {maxWidth:colW-16});
-            yOffset+=14;
-          }
-          if(a.cmtSuivi){
-            pdf.setFontSize(8); pdf.setTextColor(146,64,14);
-            pdf.text(`💬 ${a.cmtSuivi}`, xOff+8, yOffset, {maxWidth:colW-16});
-            yOffset+=14;
-          }
-
-          try{
-            const img=await _loadImageAsDataURL(a.photo);
-            const maxH=pH-yOffset-m;
-            pdf.addImage(img,'JPEG',xOff,yOffset,colW,maxH,'','FAST');
-          } catch(e){ pdf.setFontSize(9); pdf.setTextColor(150,150,150); pdf.text('Image non disponible', xOff+8, yOffset+20); }
-        }
-      }
-      pdf.save('annexes-photos.pdf');
-    }, 500);
-  }
+  _pendingAnnexes=annexes;
 
   el('rap-preview').style.display='';
   el('r-print-btn').style.display='';
   el('rap-preview').scrollIntoView({behavior:'smooth'});
+}
+
+let _pendingAnnexes=[];
+
+function exportAnnexesPDF(){
+  if(!_pendingAnnexes.length) return;
+  setTimeout(async ()=>{
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
+    const pW=pdf.internal.pageSize.getWidth();
+    const pH=pdf.internal.pageSize.getHeight();
+    const m=32;
+    for(let i=0;i<_pendingAnnexes.length;i+=2){
+      if(i>0) pdf.addPage();
+      const items=[_pendingAnnexes[i],_pendingAnnexes[i+1]].filter(Boolean);
+      const colW=(pW-m*3)/2;
+      for(let j=0;j<items.length;j++){
+        const a=items[j];
+        const xOff=m+j*(colW+m);
+        pdf.setFillColor(232,240,252);
+        pdf.rect(xOff,m,colW,60,'F');
+        pdf.setFontSize(10); pdf.setTextColor(26,79,160); pdf.setFont(undefined,'bold');
+        pdf.text(`${a.mag} - ${a.rayon} - ${a.date}`,xOff+8,m+16,{maxWidth:colW-16});
+        pdf.setFontSize(9); pdf.setTextColor(185,28,28);
+        pdf.text(a.desc,xOff+8,m+30,{maxWidth:colW-16});
+        pdf.setFontSize(8); pdf.setTextColor(90,96,112); pdf.setFont(undefined,'normal');
+        pdf.text(a.crit,xOff+8,m+44);
+        let yOffset=m+68;
+        if(a.cmtSaisie){ pdf.setFontSize(8); pdf.setTextColor(229,57,53); pdf.text(`Constat : ${a.cmtSaisie}`,xOff+8,yOffset,{maxWidth:colW-16}); yOffset+=14; }
+        if(a.cmtSuivi){ pdf.setFontSize(8); pdf.setTextColor(146,64,14); pdf.text(`Suivi : ${a.cmtSuivi}`,xOff+8,yOffset,{maxWidth:colW-16}); yOffset+=14; }
+        try{
+          const img=await _loadImageAsDataURL(a.photo);
+          pdf.addImage(img,'JPEG',xOff,yOffset,colW,pH-yOffset-m,'','FAST');
+        } catch(e){ pdf.setFontSize(9); pdf.setTextColor(150,150,150); pdf.text('Image non disponible',xOff+8,yOffset+20); }
+      }
+    }
+    pdf.save('annexes-photos.pdf');
+  },500);
 }
 function deleteSelectedAudits(){
   const selected=[...document.querySelectorAll('.r-cb:checked')].map(c=>c.value);

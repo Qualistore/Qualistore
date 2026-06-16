@@ -262,7 +262,7 @@
             <div id="r-audit-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);padding:8px 12px"></div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
               <button class="btn btn-primary" onclick="genRapport()"><i class="ti ti-eye"></i> Générer l'aperçu</button>
-              <button class="btn btn-primary" id="r-print-btn" onclick="exportPDF('rap-body','rapport-fsqs')" style="display:none"><i class="ti ti-file-download"></i> Exporter en PDF</button>
+              <button class="btn btn-primary" id="r-print-btn" onclick="exportPDF('rap-body','rapport-fsqs');exportAnnexesPDF()" style="display:none"><i class="ti ti-file-download"></i> Exporter en PDF</button>
               <button class="btn btn-danger btn-sm" id="r-del-btn" onclick="deleteSelectedAudits()" style="display:none"><i class="ti ti-trash"></i> Supprimer la sélection</button>
             </div>
           </div>
