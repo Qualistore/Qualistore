@@ -52,6 +52,7 @@ async function loadDB(){
     if(!DB.users.length) DB.users=_defaultDB().users;
     _saveLocal();
     console.log('✅ Supabase chargé');
+    _cleanOldData();
     // Rafraîchir CU depuis la DB Supabase
     if(CU){ const fresh=DB.users.find(u=>u.id===CU.id); if(fresh) CU=fresh; else CU=null; }
 
@@ -94,6 +95,38 @@ async function _pushToSupabase(tables){
   } catch(e){
     console.warn('⚠️ Sync Supabase échouée:', e.message);
     _dirty=true;
+  }
+}
+async function _cleanOldData(){
+  const cutoff=new Date();
+  cutoff.setDate(cutoff.getDate()-180);
+  const cutoffStr=cutoff.toISOString().split('T')[0];
+
+  // Audits FSQS : supprimer si >180j ET toutes NC clôturées
+  const toDelete=DB.audits.filter(a=>{
+    if(a.date>=cutoffStr) return false;
+    const ncs=DB.ncs.filter(n=>n.aid===a.id);
+    return ncs.length===0||ncs.every(n=>n.statut==='Clôturée');
+  });
+  for(const a of toDelete){
+    const ncIds=DB.ncs.filter(n=>n.aid===a.id).map(n=>n.id);
+    ncIds.forEach(ncId=>{ sbDeleteWhere('actions','ncId',ncId); DB.actions=DB.actions.filter(x=>x.ncId!==ncId); });
+    sbDeleteWhere('ncs','aid',a.id);
+    sbDeleteWhere('audits','id',a.id);
+    DB.ncs=DB.ncs.filter(n=>n.aid!==a.id);
+  }
+  DB.audits=DB.audits.filter(a=>!toDelete.find(x=>x.id===a.id));
+
+  // Audits Qualimètre : supprimer si >180j
+  const qaToDelete=(DB.qualAudits||[]).filter(a=>a.date<cutoffStr);
+  for(const a of qaToDelete){
+    sbDeleteWhere('qual_audits','id',a.id);
+  }
+  DB.qualAudits=(DB.qualAudits||[]).filter(a=>!qaToDelete.find(x=>x.id===a.id));
+
+  if(toDelete.length||qaToDelete.length){
+    _saveLocal();
+    console.log(`🗑️ ${toDelete.length} audit(s) FSQS + ${qaToDelete.length} audit(s) Qualimètre supprimé(s) (>180 jours)`);
   }
 }
 
