@@ -17,10 +17,10 @@ function renderNC(){
   const sel=el('flt-nc-mag'); if(sel){ const cv=sel.value; while(sel.options.length>1) sel.remove(1); DB.magasins.filter(m=>mids.includes(m.id)).forEach(m=>{ const o=document.createElement('option'); o.value=m.id; o.textContent=m.nom; sel.appendChild(o); }); if(cv) sel.value=cv; }
   el('nc-cnt').textContent=list.length+' NC active(s)';
   const tb=el('nc-tb');
-  const isAdmin=CU&&CU.role==='admin';
-  if(!list.length){ tb.innerHTML=`<tr><td colspan="8"><div class="empty-state" style="padding:28px"><i class="ti ti-circle-check" style="color:var(--success);font-size:36px"></i><p>Aucune non-conformité active.</p></div></td></tr>`; }
+const isAdmin=CU&&CU.role==='admin';
   const delSelBtn=el('nc-del-sel-btn'); if(delSelBtn) delSelBtn.style.display=isAdmin?'':'none';
-  else tb.innerHTML=list.map(n=>`<tr>
+  if(!list.length){ tb.innerHTML=`<tr><td colspan="8"><div class="empty-state" style="padding:28px"><i class="ti ti-circle-check" style="color:var(--success);font-size:36px"></i><p>Aucune non-conformité active.</p></div></td></tr>`; renderNCArchives(fMag,fRay,fCrit); return; }
+  tb.innerHTML=list.map(n=>`<tr>
     <td style="vertical-align:top;padding-top:14px;width:32px"><input type="checkbox" class="nc-cb" value="${n.id}" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer" checked></td>
     <td style="vertical-align:top;padding-top:14px">${n.mag}</td>
     <td style="vertical-align:top;padding-top:14px"><div style="display:flex;align-items:center;gap:6px">${rIcon(n.rayon)} ${n.rayon}</div></td>
@@ -325,3 +325,68 @@ function saveNCEdit(){
 }
 
 function cycleNC(id){ const n=DB.ncs.find(x=>x.id===id); if(!n) return; const c=['Ouverte','En cours','Clôturée']; n.statut=c[(c.indexOf(n.statut)+1)%c.length]; save(); renderNC(); }
+
+function toggleAllNC(val){ document.querySelectorAll('.nc-cb').forEach(c=>c.checked=val); }
+
+function exportSelectedNC(){
+  const selected=[...document.querySelectorAll('.nc-cb:checked')].map(c=>c.value);
+  if(!selected.length){ alert('Sélectionnez au moins une NC.'); return; }
+  const mids=visibleMids();
+  const fMag=v('flt-nc-mag'), fRay=v('flt-nc-ray'), fCrit=v('flt-nc-crit'), fStat=v('flt-nc-stat');
+  const magLabel=(fMag&&DB.magasins.find(m=>m.id===fMag)?.nom)||'Tous les magasins';
+  let list=DB.ncs.filter(n=>selected.includes(n.id));
+  const html=`<div style="font-family:Arial,sans-serif;color:#1a1f36;padding:8px">
+    ${_pdfLogoHeader(magLabel)}
+    <div style="border-bottom:3px solid #e53935;padding-bottom:14px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h2 style="color:#b91c1c;margin:0;font-size:18px">Non-conformités sélectionnées</h2>
+        <div style="font-size:11px;color:#5a6070;margin-top:4px">${list.length} NC · Généré le ${new Date().toLocaleDateString('fr-FR')}</div>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead>
+        <tr style="background:#fdecea">
+          ${['Magasin','Rayon','Description','Criticité','Échéance','Statut','💬 Suivi'].map(h=>`<th style="padding:8px 10px;border:1px solid #fca5a5;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#b91c1c${h.includes('💬')?';background:#eef3fb;color:#1a4fa0':''}">${h}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map((n,i)=>{
+          const ac=DB.actions.find(x=>x.ncId===n.id);
+          const suiviCmt=ac?.cmt||n.cmt||'';
+          const critColor=n.crit==='Critique'?'#e53935':n.crit==='Majeure'?'#ea580c':'#f59e0b';
+          const statBg=n.statut==='Clôturée'?'#dcfce7':n.statut==='En cours'?'#fff8e1':'#fdecea';
+          const statColor=n.statut==='Clôturée'?'#15803d':n.statut==='En cours'?'#92400e':'#b91c1c';
+          const late=n.dl&&new Date(n.dl)<new Date()&&n.statut!=='Clôturée';
+          const audit=DB.audits.find(x=>x.id===n.aid);
+          const ans=audit&&audit.answers&&Object.values(audit.answers).find(x=>x.q===n.desc);
+          const photos=ans&&ans.photos&&ans.photos.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${ans.photos.map(p=>`<img src="${p}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #fca5a5">`).join('')}</div>`:'';
+          const alerte=n.isAlert&&DB.alertes.find(x=>x.id===n.aid);
+          const alertPhotos=alerte&&alerte.photos&&alerte.photos.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${alerte.photos.map(p=>`<img src="${p}" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #fca5a5">`).join('')}</div>`:'';
+          return `<tr style="background:${i%2===0?'#fff':'#fafafa'};border-left:3px solid ${critColor}">
+            <td style="padding:8px 10px;border:1px solid #e2e6ef;font-size:11px">${n.mag}</td>
+            <td style="padding:8px 10px;border:1px solid #e2e6ef;font-size:11px;white-space:nowrap">${n.rayon}</td>
+            <td style="padding:8px 10px;border:1px solid #e2e6ef">${n.desc}${photos||alertPhotos}</td>
+            <td style="padding:8px 10px;border:1px solid #e2e6ef;text-align:center"><span style="display:inline-block;padding:2px 7px;border-radius:10px;background:${critColor}18;color:${critColor};font-weight:700;font-size:10px">${n.crit}</span></td>
+            <td style="padding:8px 10px;border:1px solid #e2e6ef;font-size:11px;color:${late?'#e53935':'#374151'};font-weight:${late?'700':'400'};white-space:nowrap">${fd(n.dl)}${late?' ⚠':''}</td>
+            <td style="padding:8px 10px;border:1px solid #e2e6ef;text-align:center"><span style="display:inline-block;padding:2px 7px;border-radius:10px;background:${statBg};color:${statColor};font-weight:600;font-size:10px">${n.statut}</span></td>
+            <td style="padding:8px 10px;border:1px solid #e2e6ef;background:${suiviCmt?'#fffbeb':'#fafafa'}">${suiviCmt?`<span style="font-style:italic;color:#92400e;font-size:11px">${suiviCmt}</span>`:'<span style="color:#c0c4cc;font-size:10px">–</span>'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>`;
+  _renderAndExportPDF(html,'nc-selection','landscape');
+}
+
+function deleteSelectedNC(){
+  const selected=[...document.querySelectorAll('.nc-cb:checked')].map(c=>c.value);
+  if(!selected.length){ alert('Sélectionnez au moins une NC.'); return; }
+  if(!confirm('Supprimer '+selected.length+' NC et leurs actions associées ?')) return;
+  selected.forEach(id=>{
+    DB.actions=DB.actions.filter(a=>a.ncId!==id);
+    DB.ncs=DB.ncs.filter(n=>n.id!==id);
+    sbDeleteWhere('ncs','id',id);
+    sbDeleteWhere('actions','ncId',id);
+  });
+  save(['ncs','actions']);
+  renderNC();
+}
