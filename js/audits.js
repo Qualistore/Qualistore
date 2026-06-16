@@ -15,6 +15,7 @@ function renderAudits(){
   const tb=el('aud-tb');
   if(!list.length){ tb.innerHTML=`<tr><td colspan="9"><div class="empty-state"><i class="ti ti-clipboard-check"></i><p>Aucun audit.</p></div></td></tr>`; return; }
   tb.innerHTML=list.map(a=>`<tr>
+    <td style="font-weight:600;color:var(--primary)">${a.id}</td>
     <td>${a.mag}</td>
     <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(a.rayon)} ${a.rayon}</td>
     <td>${fd(a.date)}</td><td>${a.aud}</td>
@@ -32,6 +33,7 @@ function showAud(id){
   const ncs=DB.ncs.filter(n=>n.aid===id);
   let html=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
     <table style="font-size:13px">
+      <tr><td class="tm" style="padding:4px 0;width:40%">N° Audit</td><td style="font-weight:600;color:var(--primary)">${a.id}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Magasin</td><td>${a.mag}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Rayon</td><td>${a.rayon}</td></tr>
       <tr><td class="tm" style="padding:4px 0">Date</td><td>${fd(a.date)}</td></tr>
@@ -74,8 +76,7 @@ function openAuditModal(){
   msel.innerHTML='<option value="">Sélectionner...</option>'+DB.magasins.filter(m=>mids.includes(m.id)&&m.statut==='actif').map(m=>`<option value="${m.id}">${m.nom}</option>`).join('');
   el('a-date').value=today();
   el('a-date').readOnly=!(CU&&CU.role==='admin');
-  el('a-aud').value=(CU&&CU.role!=='collaborateur')?CU.nom:'';
-  el('a-aud').readOnly=(CU&&CU.role!=='collaborateur');
+  el('a-aud').value=CU?CU.nom:'';
   el('as1').style.display=''; el('as2').style.display='none'; el('as3').style.display='none';
   el('a-prev').style.display='none';
   el('a-pause').style.display='none';
@@ -123,24 +124,70 @@ function buildAuditQuestions(rayon){
   const qs=getGrille(rayon);
   auditAnswers={};
   qs.forEach(q=>{ auditAnswers[q.id]={q:q.q,rep:null,cmt:'',photos:[]}; });
-  el('a-prog').textContent=`0/${qs.length} réponses`;
-  el('a-qs').innerHTML=qs.map(q=>`
-    <div class="aq" id="aaq-${q.id}" style="margin-bottom:8px">
-      <div class="qt">${critBdg(q.c)} ${q.q}</div>
-      ${q.prec?`<div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-style:italic">${q.prec}</div>`:''}
-      <div class="rg">
-        <div class="rb" onclick="setAudRep('${q.id}','C',this)"><i class="ti ti-check" style="font-size:12px"></i> Conforme</div>
-        <div class="rb" onclick="setAudRep('${q.id}','NC',this)"><i class="ti ti-x" style="font-size:12px"></i> Non conforme</div>
-        <div class="rb" onclick="setAudRep('${q.id}','NA',this)"><i class="ti ti-minus" style="font-size:12px"></i> N/A</div>
-      </div>
-      <div class="nc-det" id="and-${q.id}">
-        <input type="text" class="form-control" style="font-size:12px;margin-top:6px" placeholder="Commentaire NC..." oninput="auditAnswers['${q.id}'].cmt=this.value">
-        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aphot-${q.id}"></div>
-        <input type="file" accept="image/*" multiple style="display:none" id="aphi-${q.id}" onchange="handleAuditPhoto('${q.id}',this)">
-        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:11px" onclick="el('aphi-${q.id}').click()"><i class="ti ti-camera"></i> Ajouter photo</button>
-      </div>
-    </div>`).join('');
+
+  // Grouper par zone (partie avant ' – ')
+  const zones={};
+  qs.forEach(q=>{
+    const zone=q.cat.split(' – ')[0];
+    if(!zones[zone]) zones[zone]=[];
+    zones[zone].push(q);
+  });
+  const zoneKeys=Object.keys(zones);
+
+  // Onglets
+  const tabs=el('a-zone-tabs');
+  if(tabs) tabs.innerHTML=zoneKeys.map((z,i)=>`
+    <button onclick="switchAuditZone('${z}')" id="atab-${i}" style="padding:5px 10px;border-radius:6px;border:1px solid var(--primary-light);background:${i===0?'var(--primary)':'var(--surface)'};color:${i===0?'#fff':'var(--primary)'};font-size:12px;cursor:pointer;font-weight:500">
+      ${z}
+    </button>`).join('');
+
+  window._auditZones=zones;
+  window._auditZoneKeys=zoneKeys;
+
+  window.switchAuditZone=function(zone){
+    zoneKeys.forEach((z,i)=>{
+      const btn=el('atab-'+i);
+      if(btn){ btn.style.background=z===zone?'var(--primary)':'var(--surface)'; btn.style.color=z===zone?'#fff':'var(--primary)'; }
+    });
+    el('a-qs').innerHTML=zones[zone].map(q=>`
+      <div class="aq" id="aaq-${q.id}" style="margin-bottom:8px">
+        <div class="qt">${critBdg(q.c)} ${q.q}</div>
+        ${q.prec?`<div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-style:italic">${q.prec}</div>`:''}
+        <div class="rg">
+          <div class="rb" onclick="setAudRep('${q.id}','C',this)"><i class="ti ti-check" style="font-size:12px"></i> Conforme</div>
+          <div class="rb" onclick="setAudRep('${q.id}','NC',this)"><i class="ti ti-x" style="font-size:12px"></i> Non conforme</div>
+          <div class="rb" onclick="setAudRep('${q.id}','NA',this)"><i class="ti ti-minus" style="font-size:12px"></i> N/A</div>
+        </div>
+        <div class="nc-det" id="and-${q.id}">
+          <input type="text" class="form-control" style="font-size:12px;margin-top:6px" placeholder="Commentaire NC..." oninput="auditAnswers['${q.id}'].cmt=this.value">
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aphot-${q.id}"></div>
+          <input type="file" accept="image/*" multiple style="display:none" id="aphi-${q.id}" onchange="handleAuditPhoto('${q.id}',this)">
+          <button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:11px" onclick="el('aphi-${q.id}').click()"><i class="ti ti-camera"></i> Ajouter photo</button>
+        </div>
+      </div>`).join('');
+    // Restaurer les réponses existantes
+    zones[zone].forEach(q=>{
+      const ans=auditAnswers[q.id]; if(!ans||!ans.rep) return;
+      const btns=document.querySelectorAll(`#aaq-${q.id} .rb`);
+      const map={'C':0,'NC':1,'NA':2};
+      if(btns[map[ans.rep]]) setAudRep(q.id,ans.rep,btns[map[ans.rep]]);
+    });
+    _updateAuditTabBadges(zones,zoneKeys);
+  };
+
+  switchAuditZone(zoneKeys[0]);
   updateAuditScore();
+}
+
+function _updateAuditTabBadges(zones,zoneKeys){
+  const done=Object.values(auditAnswers).filter(a=>a.rep).length;
+  const total=Object.values(auditAnswers).length;
+  el('a-prog').textContent=`${done}/${total} réponses`;
+  zoneKeys.forEach((z,i)=>{
+    const btn=el('atab-'+i); if(!btn) return;
+    const allDone=zones[z].every(q=>auditAnswers[q.id]?.rep);
+    btn.innerHTML=btn.innerHTML.replace(/\s*✓$/,'')+(allDone?' ✓':'');
+  });
 }
 
 function setAudRep(qid,r,btn){
@@ -162,6 +209,7 @@ function updateAuditScore(){
   const ok=qs.filter(q=>auditAnswers[q.id]?.rep==='C').reduce((s,q)=>s+q.p,0);
   const pct=total>0?Math.round((ok/total)*100):null;
   el('a-score-live').textContent=pct!==null?pct+'%':'–';
+  if(window._auditZones&&window._auditZoneKeys) _updateAuditTabBadges(window._auditZones,window._auditZoneKeys);
 }
 
 function submitAudit(){
@@ -295,6 +343,7 @@ function renderDrafts(){
     const isOwner=CU&&(CU.id===d.uid||CU.role==='admin');
     const canDelete=CU&&(CU.id===d.uid||CU.role==='admin');
     return `<tr>
+    <td style="font-weight:600;color:var(--primary)">${d.id}</td>
     <td>${d.mag}</td>
     <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(d.rayon)} ${d.rayon}</td>
     <td>${fd(d.date)}</td>
