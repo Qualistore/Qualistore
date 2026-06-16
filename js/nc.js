@@ -66,7 +66,10 @@ function renderNCArchives(fMag, fRay, fCrit){
     </td>
     <td style="vertical-align:top;padding-top:12px">${critBdg(n.crit)}</td>
     <td style="font-size:12px;vertical-align:top;padding-top:12px;color:var(--success)">${n.closedDate?fd(n.closedDate):'–'}</td>
-    <td style="vertical-align:top;padding-top:10px">${isAdmin?`<button class="btn btn-danger btn-sm" onclick="confirmDel('nc','${n.id}','${n.id}')"><i class="ti ti-trash"></i></button>`:''}</td>
+    <td style="vertical-align:top;padding-top:10px"><div class="act-btns">
+      ${isAdmin?`<button class="btn btn-secondary btn-sm" title="Rouvrir" onclick="reopenNC('${n.id}')"><i class="ti ti-refresh"></i></button>`:''}
+      ${isAdmin?`<button class="btn btn-danger btn-sm" onclick="confirmDel('nc','${n.id}','${n.id}')"><i class="ti ti-trash"></i></button>`:''}
+    </div></td>
   </tr>`).join('');
 }
 
@@ -387,5 +390,20 @@ function deleteSelectedNC(){
     sbDeleteWhere('actions','ncId',id);
   });
   save(['ncs','actions']);
+  renderNC();
+}
+
+function reopenNC(id){
+  if(!confirm('Rouvrir cette NC ?')) return;
+  const n=DB.ncs.find(x=>x.id===id); if(!n) return;
+  n.statut='Ouverte';
+  n.closedDate=null;
+  // Rouvrir l'action corrective liée
+  const ac=DB.actions.find(a=>a.ncId===id);
+  if(ac) ac.statut='Ouverte';
+  save(['ncs','actions']);
+  sbUpsert('ncs',[n]);
+  if(ac) sbUpsert('actions',[ac]);
+  const nb=el('nc-bdg'); if(nb) nb.textContent=DB.ncs.filter(x=>x.statut==='Ouverte').length;
   renderNC();
 }
