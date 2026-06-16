@@ -19,7 +19,9 @@ function renderNC(){
   const tb=el('nc-tb');
   const isAdmin=CU&&CU.role==='admin';
   if(!list.length){ tb.innerHTML=`<tr><td colspan="8"><div class="empty-state" style="padding:28px"><i class="ti ti-circle-check" style="color:var(--success);font-size:36px"></i><p>Aucune non-conformité active.</p></div></td></tr>`; }
+  const delSelBtn=el('nc-del-sel-btn'); if(delSelBtn) delSelBtn.style.display=isAdmin?'':'none';
   else tb.innerHTML=list.map(n=>`<tr>
+    <td style="vertical-align:top;padding-top:14px;width:32px"><input type="checkbox" class="nc-cb" value="${n.id}" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer" checked></td>
     <td style="vertical-align:top;padding-top:14px">${n.mag}</td>
     <td style="vertical-align:top;padding-top:14px"><div style="display:flex;align-items:center;gap:6px">${rIcon(n.rayon)} ${n.rayon}</div></td>
     <td style="max-width:220px;font-size:12px;vertical-align:top;padding-top:14px">

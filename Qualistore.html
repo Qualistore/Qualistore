@@ -164,7 +164,13 @@
             <select class="form-control" style="width:auto" id="flt-nc-crit" onchange="renderNC()"><option value="">Toutes criticités</option><option>Critique</option><option>Majeure</option><option>Mineure</option></select>
             <select class="form-control" style="width:auto" id="flt-nc-stat" onchange="renderNC()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
           </div>
-          <span class="tsm tm" id="nc-cnt"></span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="tsm tm" id="nc-cnt"></span>
+            <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(true)"><i class="ti ti-check-all"></i> Tout</button>
+            <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(false)"><i class="ti ti-x"></i> Aucun</button>
+            <button class="btn btn-primary btn-sm" onclick="exportSelectedNC()"><i class="ti ti-file-download"></i> Exporter sélection</button>
+            <button class="btn btn-danger btn-sm" id="nc-del-sel-btn" style="display:none" onclick="deleteSelectedNC()"><i class="ti ti-trash"></i> Supprimer sélection</button>
+          </div>
         </div>
         <!-- Tableau actif -->
         <div class="card mb-6">
