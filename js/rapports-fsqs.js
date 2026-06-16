@@ -118,6 +118,38 @@ function genRapport(){
     }).join('')}
   </div>`;
   el('rap-body').innerHTML=html;
+  // Générer les annexes photos
+  const annexes=auds.flatMap(a=>{
+    const ncs=DB.ncs.filter(n=>n.aid===a.id);
+    return ncs.flatMap(n=>{
+      const audit=DB.audits.find(x=>x.id===n.aid);
+      const ans=audit&&audit.answers&&Object.values(audit.answers).find(x=>x.q===n.desc);
+      const photos=(ans?.photos||[]);
+      const alerte=n.isAlert&&DB.alertes.find(x=>x.id===n.aid);
+      const alertPhotos=(alerte?.photos||[]);
+      const allPhotos=[...photos,...alertPhotos];
+      return allPhotos.map(p=>({ mag:a.mag, rayon:a.rayon, date:fd(a.date), desc:n.desc, crit:n.crit, photo:p }));
+    });
+  });
+  if(annexes.length){
+    const annexeHtml=`<div style="page-break-before:always;font-family:Arial,sans-serif;color:#1a1f36">
+      <div style="border-bottom:3px solid #1a4fa0;padding-bottom:12px;margin-bottom:24px">
+        <h2 style="color:#1a4fa0;margin:0;font-size:18px">Annexes — Photos des non-conformités</h2>
+      </div>
+      ${annexes.map(a=>`
+        <div style="page-break-inside:avoid;margin-bottom:40px;border:1px solid #e2e6ef;border-radius:10px;overflow:hidden">
+          <div style="background:linear-gradient(90deg,#e8f0fc,#f3f5f9);padding:12px 18px">
+            <div style="font-size:13px;font-weight:700;color:#1a4fa0">${a.mag} · ${a.rayon} · ${a.date}</div>
+            <div style="font-size:12px;color:#b91c1c;margin-top:4px;font-weight:600">${a.desc}</div>
+            <div style="font-size:11px;color:#5a6070;margin-top:2px">${a.crit}</div>
+          </div>
+          <div style="padding:16px 18px;text-align:center">
+            <img src="${a.photo}" style="max-width:100%;max-height:600px;border-radius:8px;border:1px solid #e2e6ef;object-fit:contain">
+          </div>
+        </div>`).join('')}
+    </div>`;
+    el('rap-body').innerHTML+=annexeHtml;
+  }
   el('rap-preview').style.display='';
   el('r-print-btn').style.display='';
   el('rap-preview').scrollIntoView({behavior:'smooth'});
