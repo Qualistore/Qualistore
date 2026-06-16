@@ -9,7 +9,7 @@ function buildSidebar(){
     hasPerm('aud-r')&&{id:'audits',ic:'ti-clipboard-check',lb:'Audits FSQS'},
     hasPerm('aud-w')&&{id:'brouillons',ic:'ti-player-pause',lb:'Brouillons'},
     hasPerm('ac')&&{id:'actions',ic:'ti-tool',lb:'Actions correctives'},
-    {id:'audit-qualimetre',ic:'ti-rosette',lb:'Audit Qualimètre',style:'color:#c4b5fd'},
+    CU&&CU.role!=='collaborateur'&&{id:'audit-qualimetre',ic:'ti-rosette',lb:'Audit Qualimètre',style:'color:#c4b5fd'},
     {sec:'Analyse'},
     hasPerm('rap')&&{id:'rapports',ic:'ti-file-analytics',lb:'Rapport FSQS'},
     hasPerm('rap')&&{id:'rapport-qualimetre',ic:'ti-gauge',lb:'Rapport Qualimètre',style:'color:#c4b5fd'},
@@ -42,9 +42,10 @@ function buildSidebar(){
       +(x.bdg?`<span class="nav-badge" id="${x.bdg}">0</span>`:'')+`</div>`;
   }).join('');
 
+  const isCollab=CU&&CU.role==='collaborateur';
   el('hdr-actions').innerHTML = hasPerm('aud-w')
-    ? `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" onclick="openAuditModal()"><i class="ti ti-plus"></i> Nouvel audit</button><button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`
-    : `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`;
+    ? `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button><button class="btn btn-primary" onclick="openAuditModal()"><i class="ti ti-plus"></i> Nouvel audit</button>${!isCollab?`<button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`:''}`
+    : `<button class="btn btn-danger" onclick="openAlertModal()"><i class="ti ti-bell-ringing"></i> Alerte terrain</button>${!isCollab?`<button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()"><i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre</button>`:''}`;
 
   const toggle=document.querySelector('.menu-toggle');
   if(toggle) toggle.onclick=()=>{ el('sidebar').classList.toggle('open'); const ov=el('sb-overlay'); if(ov) ov.style.display=el('sidebar').classList.contains('open')?'block':'none'; };
