@@ -134,3 +134,30 @@ setInterval(async ()=>{
 window.addEventListener('online', ()=>{
   if(_dirty){ console.log('🔄 Reconnexion — sync Supabase...'); _pushToSupabase(); }
 });
+
+function exportBackup(){
+  const data=JSON.stringify(DB, null, 2);
+  const blob=new Blob([data],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='qualistore-backup-'+today()+'.json';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+function importBackup(input){
+  const file=input.files[0]; if(!file) return;
+  if(!confirm('Importer cette sauvegarde ? Toutes les données actuelles seront écrasées.')) return;
+  const r=new FileReader();
+  r.onload=async e=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      DB=data;
+      _saveLocal();
+      await _pushToSupabase();
+      alert('Restauration réussie !');
+      location.reload();
+    } catch(err){ alert('Erreur lors de l\'import : '+err.message); }
+  };
+  r.readAsText(file);
+  input.value='';
+}

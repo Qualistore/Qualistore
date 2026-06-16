@@ -19,6 +19,7 @@ function buildSidebar(){
     hasPerm('grille')&&{id:'grille',ic:'ti-list-check',lb:'Grille d\'audit'},
     hasPerm('mag')&&{id:'magasins',ic:'ti-building-store',lb:'Magasins'},
     hasPerm('mag')&&{id:'rayons',ic:'ti-category',lb:'Rayons'},
+    CU&&CU.role==='admin'&&{id:'backup',ic:'ti-database-export',lb:'Sauvegarde'},
   ].filter(Boolean);
 
   const built=navItems.filter(Boolean);
@@ -68,6 +69,7 @@ var PM={
   'audit-qualimetre':['Audit Qualimètre','Parcours client – Œil du client'],
   'rapport-qualimetre':['Rapport Qualimètre','Historique et exports des audits Qualimètre'],
   brouillons:['Brouillons','Audits en cours de saisie'],
+  backup:['Sauvegarde','Export & import des données'],
 };
 function navigate(pg){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -84,7 +86,8 @@ function navigate(pg){
     grille:()=>{ const sel=el('grille-ray-sel'); showGrille(sel?sel.value:'Boucherie'); },
     qualimetre:()=>{ showQualimetre(); },
     'audit-qualimetre':()=>{ renderQualAudits(); },
-    brouillons:()=>{ renderDrafts(); }
+    brouillons:()=>{ renderDrafts(); },
+    backup:()=>{},
   })[pg]?.();
 }
 

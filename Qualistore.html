@@ -366,6 +366,29 @@
           </table></div>
         </div>
       </div>
+      
+<!-- BACKUP -->
+      <div class="page" id="page-backup">
+        <div class="card mb-4">
+          <div class="card-hdr"><div class="card-title"><i class="ti ti-database-export"></i> Sauvegarde & Restauration</div></div>
+          <div class="card-body">
+            <p style="font-size:13px;color:var(--text2);margin-bottom:16px">
+              Cet onglet vous permet de <strong>sauvegarder toutes les données</strong> de l'application (audits, NC, actions, magasins, utilisateurs…) dans un fichier JSON, et de les <strong>restaurer</strong> en cas de problème.
+            </p>
+            <div style="background:var(--warning-light);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;font-size:13px;color:#92400e">
+              <i class="ti ti-alert-triangle"></i> <strong>Comment faire une sauvegarde ?</strong><br>
+              Cliquez sur <em>Exporter les données</em> régulièrement (hebdomadaire recommandé). Conservez le fichier JSON dans un endroit sûr (cloud, disque dur…).<br><br>
+              <strong>Comment restaurer ?</strong><br>
+              En cas de perte de données, cliquez sur <em>Importer une sauvegarde</em>, sélectionnez votre fichier JSON. <span style="color:#b91c1c;font-weight:600">Attention : l'import écrase toutes les données actuelles.</span>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <button class="btn btn-primary" onclick="exportBackup()"><i class="ti ti-download"></i> Exporter les données</button>
+              <button class="btn btn-secondary" onclick="el('backup-import-input').click()"><i class="ti ti-upload"></i> Importer une sauvegarde</button>
+              <input type="file" id="backup-import-input" accept=".json" style="display:none" onchange="importBackup(this)">
+            </div>
+          </div>
+        </div>
+      </div>
 
     </div>
   </div>
