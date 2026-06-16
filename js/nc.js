@@ -27,6 +27,15 @@ const isAdmin=CU&&CU.role==='admin';
     <td style="max-width:220px;font-size:12px;vertical-align:top;padding-top:14px">
       <div style="color:var(--text)">${n.desc.slice(0,80)}${n.desc.length>80?'...':''}</div>
       ${n.cmt?`<div style="margin-top:5px;padding:5px 8px;background:var(--bg);border-left:3px solid var(--primary-mid);border-radius:0 4px 4px 0;font-style:italic;color:var(--text2);font-size:11px">💬 ${n.cmt}</div>`:''}
+      ${(()=>{
+        const audit=DB.audits.find(x=>x.id===n.aid);
+        const ans=audit&&audit.answers&&Object.values(audit.answers).find(x=>x.q===n.desc);
+        const photos=ans&&ans.photos&&ans.photos.length?ans.photos:[];
+        const alerte=n.isAlert&&DB.alertes.find(x=>x.id===n.aid);
+        const alertPhotos=alerte&&alerte.photos&&alerte.photos.length?alerte.photos:[];
+        const all=[...photos,...alertPhotos];
+        return all.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${all.map(p=>`<img src="${p}" style="width:44px;height:44px;object-fit:cover;border-radius:5px;border:1px solid var(--border);cursor:pointer" onclick="openPhotoViewer('${p}')">`).join('')}</div>`:'';
+      })()}
     </td>
     <td style="vertical-align:top;padding-top:14px">${critBdg(n.crit)}</td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px;color:${overdue(n.dl)&&n.statut==='Ouverte'?'var(--danger)':'inherit'}">${fd(n.dl)}</td>
