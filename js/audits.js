@@ -15,7 +15,6 @@ function renderAudits(){
   const tb=el('aud-tb');
   if(!list.length){ tb.innerHTML=`<tr><td colspan="9"><div class="empty-state"><i class="ti ti-clipboard-check"></i><p>Aucun audit.</p></div></td></tr>`; return; }
   tb.innerHTML=list.map(a=>`<tr>
-    <td style="font-weight:600;color:var(--primary)">${a.id}</td>
     <td>${a.mag}</td>
     <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(a.rayon)} ${a.rayon}</td>
     <td>${fd(a.date)}</td><td>${a.aud}</td>
