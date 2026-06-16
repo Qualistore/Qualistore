@@ -119,6 +119,7 @@ function genRapport(){
   </div>`;
   el('rap-body').innerHTML=html;
   // Générer les annexes photos
+// Générer les annexes photos dans un PDF séparé
   const annexes=auds.flatMap(a=>{
     const ncs=DB.ncs.filter(n=>n.aid===a.id);
     return ncs.flatMap(n=>{
@@ -128,28 +129,61 @@ function genRapport(){
       const alerte=n.isAlert&&DB.alertes.find(x=>x.id===n.aid);
       const alertPhotos=(alerte?.photos||[]);
       const allPhotos=[...photos,...alertPhotos];
-      return allPhotos.map(p=>({ mag:a.mag, rayon:a.rayon, date:fd(a.date), desc:n.desc, crit:n.crit, photo:p }));
+      const ac=DB.actions.find(x=>x.ncId===n.id);
+      const cmtSaisie=ans?.cmt||n.cmt||'';
+      const cmtSuivi=ac?.cmt||'';
+      return allPhotos.map(p=>({ mag:a.mag, rayon:a.rayon, date:fd(a.date), desc:n.desc, crit:n.crit, photo:p, cmtSaisie, cmtSuivi }));
     });
   });
+
   if(annexes.length){
-    const annexeHtml=`<div style="page-break-before:always;font-family:Arial,sans-serif;color:#1a1f36">
-      <div style="border-bottom:3px solid #1a4fa0;padding-bottom:12px;margin-bottom:24px">
-        <h2 style="color:#1a4fa0;margin:0;font-size:18px">Annexes — Photos des non-conformités</h2>
-      </div>
-      ${annexes.map(a=>`
-        <div style="page-break-before:always;margin-bottom:40px;border:1px solid #e2e6ef;border-radius:10px;overflow:hidden">
-          <div style="background:linear-gradient(90deg,#e8f0fc,#f3f5f9);padding:12px 18px">
-            <div style="font-size:13px;font-weight:700;color:#1a4fa0">${a.mag} · ${a.rayon} · ${a.date}</div>
-            <div style="font-size:12px;color:#b91c1c;margin-top:4px;font-weight:600">${a.desc}</div>
-            <div style="font-size:11px;color:#5a6070;margin-top:2px">${a.crit}</div>
-          </div>
-          <div style="padding:16px 18px;text-align:center">
-            <img src="${a.photo}" style="max-width:100%;max-height:600px;border-radius:8px;border:1px solid #e2e6ef;object-fit:contain">
-          </div>
-        </div>`).join('')}
-    </div>`;
-    el('rap-body').innerHTML+=annexeHtml;
+    setTimeout(async ()=>{
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
+      const pW=pdf.internal.pageSize.getWidth();
+      const pH=pdf.internal.pageSize.getHeight();
+      const m=32;
+
+      for(let i=0;i<annexes.length;i++){
+        const a=annexes[i];
+        if(i>0) pdf.addPage();
+
+        // En-tête
+        pdf.setFillColor(232,240,252);
+        pdf.rect(m, m, pW-m*2, 70, 'F');
+        pdf.setFontSize(13); pdf.setTextColor(26,79,160); pdf.setFont(undefined,'bold');
+        pdf.text(`${a.mag} · ${a.rayon} · ${a.date}`, m+10, m+22);
+        pdf.setFontSize(11); pdf.setTextColor(185,28,28);
+        pdf.text(a.desc, m+10, m+40, {maxWidth: pW-m*2-20});
+        pdf.setFontSize(10); pdf.setTextColor(90,96,112); pdf.setFont(undefined,'normal');
+        pdf.text(a.crit, m+10, m+58);
+
+        let yOffset=m+80;
+
+        // Commentaires
+        if(a.cmtSaisie){
+          pdf.setFontSize(10); pdf.setTextColor(229,57,53);
+          pdf.text(`→ Constat : ${a.cmtSaisie}`, m, yOffset, {maxWidth: pW-m*2});
+          yOffset+=20;
+        }
+        if(a.cmtSuivi){
+          pdf.setFontSize(10); pdf.setTextColor(146,64,14);
+          pdf.text(`💬 Suivi : ${a.cmtSuivi}`, m, yOffset, {maxWidth: pW-m*2});
+          yOffset+=20;
+        }
+
+        // Photo
+        try{
+          const img=await _loadImageAsDataURL(a.photo);
+          const maxW=pW-m*2;
+          const maxH=pH-yOffset-m;
+          pdf.addImage(img,'JPEG',m,yOffset,maxW,maxH,'','FAST');
+        } catch(e){ pdf.setFontSize(10); pdf.setTextColor(150,150,150); pdf.text('Image non disponible', m, yOffset+20); }
+      }
+      pdf.save('annexes-photos.pdf');
+    }, 500);
   }
+  
   el('rap-preview').style.display='';
   el('r-print-btn').style.display='';
   el('rap-preview').scrollIntoView({behavior:'smooth'});
@@ -171,4 +205,18 @@ function deleteSelectedAudits(){
   });
   save(['audits','ncs','actions']);
   renderRap();
+}
+function _loadImageAsDataURL(url){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.crossOrigin='anonymous';
+    img.onload=()=>{
+      const c=document.createElement('canvas');
+      c.width=img.width; c.height=img.height;
+      c.getContext('2d').drawImage(img,0,0);
+      resolve(c.toDataURL('image/jpeg',0.92));
+    };
+    img.onerror=reject;
+    img.src=url;
+  });
 }
