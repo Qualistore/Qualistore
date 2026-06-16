@@ -144,45 +144,45 @@ function genRapport(){
       const pH=pdf.internal.pageSize.getHeight();
       const m=32;
 
-      for(let i=0;i<annexes.length;i++){
-        const a=annexes[i];
+for(let i=0;i<annexes.length;i+=2){
         if(i>0) pdf.addPage();
+        const items=[annexes[i], annexes[i+1]].filter(Boolean);
+        const colW=(pW-m*3)/2;
 
-        // En-tête
-        pdf.setFillColor(232,240,252);
-        pdf.rect(m, m, pW-m*2, 70, 'F');
-        pdf.setFontSize(13); pdf.setTextColor(26,79,160); pdf.setFont(undefined,'bold');
-        pdf.text(`${a.mag} · ${a.rayon} · ${a.date}`, m+10, m+22);
-        pdf.setFontSize(11); pdf.setTextColor(185,28,28);
-        pdf.text(a.desc, m+10, m+40, {maxWidth: pW-m*2-20});
-        pdf.setFontSize(10); pdf.setTextColor(90,96,112); pdf.setFont(undefined,'normal');
-        pdf.text(a.crit, m+10, m+58);
+        for(let j=0;j<items.length;j++){
+          const a=items[j];
+          const xOff=m+j*(colW+m);
 
-        let yOffset=m+80;
+          // En-tête
+          pdf.setFillColor(232,240,252);
+          pdf.rect(xOff, m, colW, 60, 'F');
+          pdf.setFontSize(10); pdf.setTextColor(26,79,160); pdf.setFont(undefined,'bold');
+          pdf.text(`${a.mag} · ${a.rayon} · ${a.date}`, xOff+8, m+16, {maxWidth:colW-16});
+          pdf.setFontSize(9); pdf.setTextColor(185,28,28);
+          pdf.text(a.desc, xOff+8, m+30, {maxWidth:colW-16});
+          pdf.setFontSize(8); pdf.setTextColor(90,96,112); pdf.setFont(undefined,'normal');
+          pdf.text(a.crit, xOff+8, m+44);
 
-        // Commentaires
-        if(a.cmtSaisie){
-          pdf.setFontSize(10); pdf.setTextColor(229,57,53);
-          pdf.text(`→ Constat : ${a.cmtSaisie}`, m, yOffset, {maxWidth: pW-m*2});
-          yOffset+=20;
+          let yOffset=m+68;
+
+          if(a.cmtSaisie){
+            pdf.setFontSize(8); pdf.setTextColor(229,57,53);
+            pdf.text(`→ ${a.cmtSaisie}`, xOff+8, yOffset, {maxWidth:colW-16});
+            yOffset+=14;
+          }
+          if(a.cmtSuivi){
+            pdf.setFontSize(8); pdf.setTextColor(146,64,14);
+            pdf.text(`💬 ${a.cmtSuivi}`, xOff+8, yOffset, {maxWidth:colW-16});
+            yOffset+=14;
+          }
+
+          try{
+            const img=await _loadImageAsDataURL(a.photo);
+            const maxH=pH-yOffset-m;
+            pdf.addImage(img,'JPEG',xOff,yOffset,colW,maxH,'','FAST');
+          } catch(e){ pdf.setFontSize(9); pdf.setTextColor(150,150,150); pdf.text('Image non disponible', xOff+8, yOffset+20); }
         }
-        if(a.cmtSuivi){
-          pdf.setFontSize(10); pdf.setTextColor(146,64,14);
-          pdf.text(`💬 Suivi : ${a.cmtSuivi}`, m, yOffset, {maxWidth: pW-m*2});
-          yOffset+=20;
-        }
-
-        // Photo
-        try{
-          const img=await _loadImageAsDataURL(a.photo);
-          const maxW=pW-m*2;
-          const maxH=pH-yOffset-m;
-          pdf.addImage(img,'JPEG',m,yOffset,maxW,maxH,'','FAST');
-        } catch(e){ pdf.setFontSize(10); pdf.setTextColor(150,150,150); pdf.text('Image non disponible', m, yOffset+20); }
       }
-      pdf.save('annexes-photos.pdf');
-    }, 500);
-  }
   
   el('rap-preview').style.display='';
   el('r-print-btn').style.display='';
