@@ -81,7 +81,7 @@ function renderAlertsDash(){
           ${a.photos&&a.photos.length?`· <i class="ti ti-camera" style="font-size:12px"></i> ${a.photos.length} photo(s)`:''}
         </div>
         ${a.cmt?`<div style="font-size:12px;color:var(--text2);margin-top:3px;font-style:italic">${a.cmt.slice(0,100)}${a.cmt.length>100?'...':''}</div>`:''}
-        ${a.photos&&a.photos.length?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${a.photos.slice(0,3).map(p=>`<img src="${p}" class="photo-thumb" style="width:52px;height:52px">`).join('')}</div>`:''}
+        ${a.photos&&a.photos.length?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${a.photos.slice(0,3).map(p=>`<img src="${p}" class="photo-thumb" style="width:52px;height:52px;cursor:pointer" onclick="openPhotoViewer('${p}')">`).join('')}</div>`:''}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="closeAlerte('${a.id}')" title="Clôturer"><i class="ti ti-check"></i></button>
       ${CU&&CU.role==='admin'?`<button class="btn btn-danger btn-sm" onclick="confirmDel('alert','${a.id}','${a.titre.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>`:''}
