@@ -137,7 +137,7 @@ function genRapport(){
         <h2 style="color:#1a4fa0;margin:0;font-size:18px">Annexes — Photos des non-conformités</h2>
       </div>
       ${annexes.map(a=>`
-        <div style="page-break-inside:avoid;margin-bottom:40px;border:1px solid #e2e6ef;border-radius:10px;overflow:hidden">
+        <div style="page-break-before:always;margin-bottom:40px;border:1px solid #e2e6ef;border-radius:10px;overflow:hidden">
           <div style="background:linear-gradient(90deg,#e8f0fc,#f3f5f9);padding:12px 18px">
             <div style="font-size:13px;font-weight:700;color:#1a4fa0">${a.mag} · ${a.rayon} · ${a.date}</div>
             <div style="font-size:12px;color:#b91c1c;margin-top:4px;font-weight:600">${a.desc}</div>
