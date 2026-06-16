@@ -574,15 +574,20 @@
         </div>
       
       </div>
-      <div id="as2" style="display:none">
+<div id="as2" style="display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
           <div><div style="font-size:15px;font-weight:600" id="a-ray-ttl"></div><div class="tsm tm" id="a-prog"></div></div>
           <div style="text-align:right"><div style="font-size:24px;font-weight:700" id="a-score-live">–</div><div class="tsm tm">Score provisoire</div></div>
         </div>
-        <div id="a-zone-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
-        <div id="a-zone-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
-        <div id="a-zone-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div id="a-zone-tabs" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
         <div id="a-qs"></div>
+        <div style="display:flex;justify-content:space-between;margin-top:14px" id="a-zone-nav">
+          <button class="btn btn-secondary btn-sm" id="a-zone-prev" onclick="navAuditZone(-1)"><i class="ti ti-arrow-left"></i> Précédent</button>
+          <span id="a-zone-label" class="tsm tm" style="align-self:center"></span>
+          <button class="btn btn-secondary btn-sm" id="a-zone-next" onclick="navAuditZone(1)">Suivant <i class="ti ti-arrow-right"></i></button>
+        </div>
         <div style="margin-top:16px;padding:14px 16px;background:#f5f8ff;border-radius:var(--radius);border:1px solid var(--primary-light)">
           <label class="form-label" style="margin-bottom:6px"><i class="ti ti-message-circle" style="color:var(--primary-mid)"></i> Commentaire général de fin d'audit</label>
           <textarea class="form-control" id="a-cmt" rows="2" placeholder="Observations générales, points particuliers à signaler..."></textarea>

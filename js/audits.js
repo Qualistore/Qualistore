@@ -173,6 +173,10 @@ function buildAuditQuestions(rayon){
       if(btns[map[ans.rep]]) setAudRep(q.id,ans.rep,btns[map[ans.rep]]);
     });
     _updateAuditTabBadges(zones,zoneKeys);
+    const zIdx=zoneKeys.indexOf(zone);
+    const prevBtn=el('a-zone-prev'); if(prevBtn) prevBtn.style.visibility=zIdx===0?'hidden':'visible';
+    const nextBtn=el('a-zone-next'); if(nextBtn) nextBtn.style.visibility=zIdx===zoneKeys.length-1?'hidden':'visible';
+    const label=el('a-zone-label'); if(label) label.textContent=`${zIdx+1} / ${zoneKeys.length}`;
   };
 
   switchAuditZone(zoneKeys[0]);
@@ -188,6 +192,13 @@ function _updateAuditTabBadges(zones,zoneKeys){
     const allDone=zones[z].every(q=>auditAnswers[q.id]?.rep);
     btn.innerHTML=btn.innerHTML.replace(/\s*✓$/,'')+(allDone?' ✓':'');
   });
+}
+
+function navAuditZone(dir){
+  const keys=window._auditZoneKeys; if(!keys) return;
+  const idx=keys.findIndex((z,i)=>{ const b=el('atab-'+i); return b&&b.style.color==='rgb(255, 255, 255)'; });
+  const newIdx=Math.max(0,Math.min(keys.length-1,(idx===-1?0:idx)+dir));
+  switchAuditZone(keys[newIdx]);
 }
 
 function setAudRep(qid,r,btn){
