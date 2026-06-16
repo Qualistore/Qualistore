@@ -219,17 +219,20 @@ DB = {
 - **Session** : CU persisté dans `localStorage` (`fsqs_cu`), expiré après 10min d'inactivité (`_resetSessionTimer`).
 - **Pull-to-refresh** désactivé (`overscroll-behavior-y: contain`).
 - **beforeunload** : audit en cours → mis en pause automatiquement.
-- **Photos** : Supabase Storage bucket `photos` (public). Dossiers `alertes/` et `audits/`. Alertes : 2 boutons (galerie + caméra).
-- **IDs** : `uid()` partout — plus de compteurs.
+- **Photos** : Supabase Storage bucket `photos` (public). Dossiers `alertes/` et `audits/`. Alertes : 2 boutons (galerie + caméra). Cliquables pour agrandir (`openPhotoViewer`) partout.
+- **IDs** : `uid()` partout — plus de compteurs. IDs masqués dans toutes les listes UI.
 - **Brouillons** : table `drafts`. `type='qualimetre'` pour Qualimètre. `resumeQualDraft` vs `resumeDraft` selon le type.
-- **NC** : checkboxes de sélection, export PDF sélection, suppression sélection (admin). IDs masqués partout dans l'UI.
-- **Rapports FSQS** : export PDF portrait + export annexes photos automatique (paysage 2 col, `_pendingAnnexes`).
+- **NC** : checkboxes de sélection, export PDF sélection, suppression sélection (admin). Photos affichées dans la liste. Bouton rouvrir dans les archives (admin).
+- **Rapports FSQS** : export PDF portrait + export annexes photos automatique (paysage 2 col, `_pendingAnnexes`, `exportAnnexesPDF()`).
 - **Sauvegarde** : page `backup` (admin). `exportBackup()` → JSON. `importBackup()` → restaure DB + Supabase.
-- **Alertes** : photos via galerie ou caméra. NC/actions créées avec `uid()`. Photos supprimées de Storage lors de `confirmDel('alert')`.
-- **Collaborateur magasin** : peut créer des audits, champ auditeur vide et obligatoire.
+- **Alertes** : photos via galerie ou caméra. NC/actions créées avec `uid()`. Photos cliquables dans le dashboard.
+- **Collaborateur magasin** : peut créer des audits FSQS uniquement, champ auditeur vide et obligatoire. Pas accès Qualimètre.
 - **Date audit** : modifiable uniquement par admin.
-- **DPERMS/PIDS/GRILLE_BASE_COMMUNE/QUAL_ZONES/FORMAT_INFO** : dans `config.js` uniquement.
+- **Rayons** : Boucherie, Boulangerie, Drive, Marée, Charcuterie, Fromage, Fruits & Légumes, Traiteur, Snacking, Pâtisserie.
+- **Grille d'audit** : onglets par section (Stockage / Vente trad. / Libre-service) dans la modal audit. Boutons Précédent/Suivant (`navAuditZone`). Points de contrôle custom multi-rayons avec section/catégorie/précision.
+- **Nettoyage auto** : `_cleanOldData()` appelée au démarrage — supprime audits FSQS >180j (si toutes NC clôturées) et audits Qualimètre >180j.
 - **`save(tables?)`** : sans argument = tout pusher ; avec tableau = tables ciblées.
+- **DPERMS/PIDS/GRILLE_BASE_COMMUNE/QUAL_ZONES/FORMAT_INFO** : dans `config.js` uniquement.
 
 ---
 
