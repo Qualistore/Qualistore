@@ -35,32 +35,49 @@ function openCtrlModal(rayon,qid){
   el('m-ctrl-ttl').innerHTML=isEdit?'<i class="ti ti-pencil" style="color:var(--primary)"></i> Modifier le point de contrôle':'<i class="ti ti-list-check" style="color:var(--primary)"></i> Nouveau point de contrôle';
   el('ctrl-err').classList.remove('show');
   sv('ctrl-id',qid||'');
-  el('ctrl-rayon').value=ctrlRayonCurrent;
+  // Cocher le rayon courant par défaut
+  document.querySelectorAll('.ctrl-ray-cb').forEach(cb=>{ cb.checked=cb.value===ctrlRayonCurrent; });
   if(isEdit){
     const q=(DB.grilleCustom[rayon]||[]).find(x=>x.id===qid); if(!q) return;
-    sv('ctrl-q',q.q); sv('ctrl-cat',q.cat); el('ctrl-crit').value=q.c; sv('ctrl-poids',q.p);
+    sv('ctrl-q',q.q); sv('ctrl-cat',q.cat||''); sv('ctrl-prec',q.prec||'');
+    el('ctrl-crit').value=q.c; sv('ctrl-poids',q.p);
+    // Déduire la section depuis la cat
+    const sec=q.cat?q.cat.split(' – ')[0]:'Stockage';
+    el('ctrl-section').value=['Stockage','Vente trad.','Libre-service'].includes(sec)?sec:'Stockage';
   } else {
-    sv('ctrl-q',''); sv('ctrl-cat',''); el('ctrl-crit').value='Majeure'; sv('ctrl-poids','');
+    sv('ctrl-q',''); sv('ctrl-cat',''); sv('ctrl-prec','');
+    el('ctrl-crit').value='Majeure'; sv('ctrl-poids','');
+    el('ctrl-section').value='Stockage';
   }
   openModal('m-ctrl');
 }
+
 function saveCtrl(){
-  const rayon=el('ctrl-rayon').value;
-  const q=v('ctrl-q').trim(), cat=v('ctrl-cat').trim()||'Général', crit=el('ctrl-crit').value;
+  const rayons=[...document.querySelectorAll('.ctrl-ray-cb:checked')].map(cb=>cb.value);
+  const q=v('ctrl-q').trim(), cat=v('ctrl-cat').trim(), prec=v('ctrl-prec').trim();
+  const section=el('ctrl-section').value;
+  const fullCat=section+(cat?' – '+cat:'');
+  const crit=el('ctrl-crit').value;
   const err=el('ctrl-err');
   if(!q){ err.textContent='L\'intitulé est requis.'; err.classList.add('show'); return; }
+  if(!rayons.length){ err.textContent='Sélectionnez au moins un rayon.'; err.classList.add('show'); return; }
   const defPoids={'Critique':10,'Majeure':5,'Mineure':2};
   const poids=parseInt(v('ctrl-poids'))||defPoids[crit];
-  if(!DB.grilleCustom[rayon]) DB.grilleCustom[rayon]=[];
   const existId=v('ctrl-id');
-  if(existId){
-    const idx=DB.grilleCustom[rayon].findIndex(x=>x.id===existId);
-    if(idx>=0) DB.grilleCustom[rayon][idx]={id:existId,cat,q,p:poids,c:crit};
-  } else {
-    DB.grilleCustom[rayon].push({id:'cust-'+uid(),cat,q,p:poids,c:crit});
-  }
-  save(); closeModal('m-ctrl'); el('grille-ray-sel').value=rayon; showGrille(rayon);
+  rayons.forEach(rayon=>{
+    if(!DB.grilleCustom[rayon]) DB.grilleCustom[rayon]=[];
+    if(existId&&rayon===ctrlRayonCurrent){
+      const idx=DB.grilleCustom[rayon].findIndex(x=>x.id===existId);
+      if(idx>=0) DB.grilleCustom[rayon][idx]={id:existId,cat:fullCat,q,p:poids,c:crit,prec};
+    } else {
+      DB.grilleCustom[rayon].push({id:'cust-'+uid(),cat:fullCat,q,p:poids,c:crit,prec});
+    }
+  });
+  save(); closeModal('m-ctrl');
+  const currentRay=el('grille-ray-sel').value||ctrlRayonCurrent;
+  showGrille(currentRay);
 }
+
 function delCtrl(rayon,qid){
   if(!confirm('Supprimer ce point de contrôle personnalisé ?')) return;
   DB.grilleCustom[rayon]=(DB.grilleCustom[rayon]||[]).filter(x=>x.id!==qid);

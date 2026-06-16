@@ -684,21 +684,40 @@
     <div class="modal-body">
       <div class="form-err" id="ctrl-err"></div>
       <input type="hidden" id="ctrl-id">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Rayon *</label>
-          <select class="form-control" id="ctrl-rayon">
-            <option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option>
-          </select>
+      <div class="form-group">
+        <label class="form-label">Rayon(s) * <span class="tsm tm">(plusieurs possibles)</span></label>
+        <div id="ctrl-rayon-cbs" class="cb-group" style="max-height:150px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)">
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Boucherie"> Boucherie</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Boulangerie"> Boulangerie</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Drive"> Drive</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Marée"> Marée</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Charcuterie"> Charcuterie</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Fromage"> Fromage</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Fruits & Légumes"> Fruits & Légumes</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Traiteur"> Traiteur</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Snacking"> Snacking</label>
+          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Pâtisserie"> Pâtisserie</label>
         </div>
-        <div class="form-group">
-          <label class="form-label">Catégorie</label>
-          <input class="form-control" id="ctrl-cat" placeholder="ex : Température, Hygiène...">
-        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Section (onglet) *</label>
+        <select class="form-control" id="ctrl-section">
+          <option value="Stockage">Stockage</option>
+          <option value="Vente trad.">Vente trad.</option>
+          <option value="Libre-service">Libre-service</option>
+        </select>
+      </div>
+<div class="form-group">
+        <label class="form-label">Catégorie <span class="tsm tm">(sous-section)</span></label>
+        <input class="form-control" id="ctrl-cat" placeholder="ex : Température, Hygiène...">
       </div>
       <div class="form-group">
         <label class="form-label">Intitulé du point de contrôle *</label>
         <input class="form-control" id="ctrl-q" placeholder="Décrivez ce qui doit être vérifié...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Précision <span class="tsm tm">(optionnel)</span></label>
+        <input class="form-control" id="ctrl-prec" placeholder="Détails supplémentaires...">
       </div>
       <div class="form-row">
         <div class="form-group">
