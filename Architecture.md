@@ -128,15 +128,17 @@ DB = {
 | `fsqs` | Auditeur FSQS | Audits, NC, actions, rapports, grille |
 | `directeur` | Directeur | Lecture audits, actions, rapports |
 | `direction` | Associé | Lecture audits, rapports |
+| `collaborateur` | Collaborateur magasin | Créer audits uniquement (champ auditeur vide, obligatoire) |
 
 ---
 
 ## Sidebar — visibilité des onglets
 
-- **Magasins** et **Rayons** : visibles uniquement si `hasPerm('mag')` (admin uniquement par défaut)
-- **Brouillons** : visible si `hasPerm('aud-w')` — admin voit tous les brouillons, les autres voient uniquement les leurs
-- **Audit Qualimètre** : visible par tous les rôles
-- **Nouvel audit Qualimètre** : bouton dans le bandeau du haut (violet), à côté de Nouvel audit
+- **Magasins** et **Rayons** : visibles si `hasPerm('mag')` (admin uniquement par défaut)
+- **Brouillons** : visible si `hasPerm('aud-w')` — admin voit tous, les autres voient les leurs
+- **Non-conformités** : dans la section Analyse (sous Rapport Qualimètre)
+- **Sauvegarde** : visible admin uniquement (`id='backup'`)
+- **Audit Qualimètre** : visible par tous
 - Burger menu mobile : toggle `sidebar.open` + overlay `sb-overlay`
 
 ---
@@ -167,20 +169,21 @@ DB = {
 
 | Fonction | Définie dans | Rôle |
 |---|---|---|
-| `confirmDel(type, id, nom)` | `magasins.js` | Suppression avec modal de confirmation (types : mag, user, alert, nc) |
-| `roleBdg(r)` | `users.js` | Génère le badge HTML pour un rôle |
-| `openAuditModal()` | `audits.js` | Ouvre le modal de création d'audit FSQS |
-| `auditNext()` / `auditPrev()` | `audits.js` | Navigation dans le modal audit FSQS |
-| `submitAudit()` | `audits.js` | Enregistre l'audit FSQS et génère les NC + actions |
-| `pauseAudit()` | `audits.js` | Sauvegarde brouillon FSQS et ferme le modal |
-| `resumeDraft(id)` | `audits.js` | Reprend un brouillon FSQS |
-| `deleteAudit(id)` | `audits.js` | Supprime un audit et ses NC/actions associées |
-| `openQualAuditModal()` | `audit-qualimetre.js` | Ouvre le modal de création d'audit Qualimètre |
-| `pauseQualAudit()` | `audit-qualimetre.js` | Sauvegarde brouillon Qualimètre et ferme le modal |
-| `resumeQualDraft(id)` | `audit-qualimetre.js` | Reprend un brouillon Qualimètre |
-| `openPhotoViewer(url)` | `audits.js` | Affiche une photo en plein écran |
-| `handleAuditPhoto(qid, input)` | `audits.js` | Upload photo vers Supabase Storage pour un point de contrôle |
-| `renderDrafts()` | `audits.js` | Affiche la liste des brouillons |
+| `confirmDel(type, id, nom)` | `magasins.js` | Suppression modale (types : mag, user, alert, nc) |
+| `roleBdg(r)` | `users.js` | Badge HTML pour un rôle |
+| `openAuditModal()` | `audits.js` | Ouvre modal audit FSQS |
+| `submitAudit()` | `audits.js` | Enregistre audit + NC + actions |
+| `pauseAudit()` / `resumeDraft(id)` | `audits.js` | Pause/reprise brouillon FSQS |
+| `pauseQualAudit()` / `resumeQualDraft(id)` | `audit-qualimetre.js` | Pause/reprise brouillon Qualimètre |
+| `openPhotoViewer(url)` | `audits.js` | Photo plein écran |
+| `handleAuditPhoto(qid, input)` | `audits.js` | Upload photo NC → Supabase Storage |
+| `handleAlertPhotos(input)` | `alertes.js` | Upload photos alerte → Supabase Storage (galerie + caméra) |
+| `renderDrafts()` | `audits.js` | Liste des brouillons |
+| `exportBackup()` | `storage.js` | Exporte DB en JSON |
+| `importBackup(input)` | `storage.js` | Importe JSON → DB + Supabase |
+| `exportAnnexesPDF()` | `rapports-fsqs.js` | PDF paysage 2 col avec photos NC (déclenché par bouton export) |
+| `_loadImageAsDataURL(url)` | `rapports-fsqs.js` | Charge une image distante en base64 pour jsPDF |
+| `toggleAllNC(val)` / `exportSelectedNC()` / `deleteSelectedNC()` | `nc.js` | Sélection NC avec export/suppression |
 
 ---
 
@@ -211,27 +214,22 @@ DB = {
 
 ## Notes importantes
 
-- **GitHub Pages** : l'appli est hébergée publiquement sur https://qualistore.github.io/Qualistore/
-- **Pas de framework** : JS vanilla pur, pas de React/Vue/Angular.
-- **Supabase** : base de données principale. localStorage = cache offline. Sync automatique toutes les 10s (polling).
-- **Offline** : l'appli fonctionne sans connexion. Les données sont poussées vers Supabase dès que la connexion revient.
-- **Compte par défaut** : login `admin` / mot de passe `admin`.
-- **Session persistante** : CU sauvegardé dans `localStorage` (`fsqs_cu`). Restauré au démarrage — pas de déconnexion au F5.
-- **Pull-to-refresh désactivé** sur mobile (`overscroll-behavior-y: contain`).
-- **beforeunload** : si un audit est en cours (step 1 ou 2), il est automatiquement mis en pause.
-- **Photos** : uploadées dans Supabase Storage bucket `photos`. Dossier `alertes/` pour les alertes, `audits/` pour les points de contrôle. URLs publiques stockées dans DB.
-- **IDs** : tous générés via `uid()` (timestamp+random) — plus de compteurs nAud/nNc/nAc/nQAud.
-- **Brouillons** (`DB.drafts`) : table Supabase `drafts`. Champ `type='qualimetre'` pour distinguer les brouillons Qualimètre. Admin voit tous les brouillons, les autres voient uniquement les leurs.
-- **Suppression audits** : admin peut supprimer des audits depuis les pages Rapports FSQS et Rapport Qualimètre. Supprime aussi les NC et actions liées.
-- **Date d'audit** : pré-remplie avec la date du jour, modifiable uniquement par admin.
-- **GRILLE_BASE_COMMUNE** : dans `config.js` uniquement.
-- **QUAL_ZONES** : dans `config.js` uniquement.
-- **DPERMS / PIDS** : dans `config.js` uniquement.
-- **FORMAT_INFO / SHEETJS_URL / PDFJS_URL** : dans `config.js` uniquement.
-- **confirmDel** : définie dans `magasins.js`, types : `mag`, `user`, `alert`, `nc`. Supprime aussi les photos Supabase Storage pour les alertes.
-- **roleBdg** : définie dans `users.js`.
-- **Permission `aud-w`** : contrôle création audits FSQS ET Qualimètre.
-- **Permission `rap`** : contrôle accès rapports FSQS ET Qualimètre.
+- **GitHub Pages** : https://qualistore.github.io/Qualistore/
+- **Supabase** : backend principal. localStorage = cache offline. Polling 10s entre sessions.
+- **Session** : CU persisté dans `localStorage` (`fsqs_cu`), expiré après 10min d'inactivité (`_resetSessionTimer`).
+- **Pull-to-refresh** désactivé (`overscroll-behavior-y: contain`).
+- **beforeunload** : audit en cours → mis en pause automatiquement.
+- **Photos** : Supabase Storage bucket `photos` (public). Dossiers `alertes/` et `audits/`. Alertes : 2 boutons (galerie + caméra).
+- **IDs** : `uid()` partout — plus de compteurs.
+- **Brouillons** : table `drafts`. `type='qualimetre'` pour Qualimètre. `resumeQualDraft` vs `resumeDraft` selon le type.
+- **NC** : checkboxes de sélection, export PDF sélection, suppression sélection (admin). IDs masqués partout dans l'UI.
+- **Rapports FSQS** : export PDF portrait + export annexes photos automatique (paysage 2 col, `_pendingAnnexes`).
+- **Sauvegarde** : page `backup` (admin). `exportBackup()` → JSON. `importBackup()` → restaure DB + Supabase.
+- **Alertes** : photos via galerie ou caméra. NC/actions créées avec `uid()`. Photos supprimées de Storage lors de `confirmDel('alert')`.
+- **Collaborateur magasin** : peut créer des audits, champ auditeur vide et obligatoire.
+- **Date audit** : modifiable uniquement par admin.
+- **DPERMS/PIDS/GRILLE_BASE_COMMUNE/QUAL_ZONES/FORMAT_INFO** : dans `config.js` uniquement.
+- **`save(tables?)`** : sans argument = tout pusher ; avec tableau = tables ciblées.
 
 ---
 
