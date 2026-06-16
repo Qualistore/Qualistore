@@ -17,6 +17,7 @@ function buildSidebar(){
     {sec:'Paramètres'},
     hasPerm('usr')&&{id:'utilisateurs',ic:'ti-users',lb:'Utilisateurs'},
     hasPerm('grille')&&{id:'grille',ic:'ti-list-check',lb:'Grille d\'audit'},
+hasPerm('grille')&&{id:'grille-qualimetre',ic:'ti-adjustments',lb:'Grille Qualimètre',style:'color:#c4b5fd'},
     hasPerm('mag')&&{id:'magasins',ic:'ti-building-store',lb:'Magasins'},
     hasPerm('mag')&&{id:'rayons',ic:'ti-category',lb:'Rayons'},
     CU&&CU.role==='admin'&&{id:'backup',ic:'ti-database-export',lb:'Sauvegarde'},
@@ -69,6 +70,7 @@ var PM={
   grille:['Grille d\'audit','Référentiels'], qualimetre:['Qualimètre','Référentiel par magasin'],
   'audit-qualimetre':['Audit Qualimètre','Parcours client – Œil du client'],
   'rapport-qualimetre':['Rapport Qualimètre','Historique et exports des audits Qualimètre'],
+'grille-qualimetre':['Grille Qualimètre','Points de contrôle par zone'],
   brouillons:['Brouillons','Audits en cours de saisie'],
   backup:['Sauvegarde','Export & import des données'],
 };
@@ -87,6 +89,7 @@ function navigate(pg){
     grille:()=>{ const sel=el('grille-ray-sel'); showGrille(sel?sel.value:'Boucherie'); },
     qualimetre:()=>{ showQualimetre(); },
     'audit-qualimetre':()=>{ renderQualAudits(); },
+'grille-qualimetre':()=>{ showGrilleQualimetre(); },
     brouillons:()=>{ renderDrafts(); },
     backup:()=>{},
   })[pg]?.();

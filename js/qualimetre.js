@@ -1,123 +1,94 @@
 // ══════════════ QUALIMETRE ══════════════
-// Dépend de : storage.js (DB, CU), config.js, ui.js
+// Dépend de : storage.js (DB, CU), config.js, ui.js, grille-qualimetre.js
+// La logique d'accès aux points (getQualimetrePoints, getQualimetreGrille) est dans grille-qualimetre.js
 
-// ══════════════ QUALIMÈTRE ══════════════
-// Data structure: qualimetreCustom[magasinId][rayon] = [{id,cat,q,p,c}]
-function getQualimetrePoints(mid,rayon){
-  if(!DB.qualimetreCustom) DB.qualimetreCustom={};
-  if(!DB.qualimetreCustom[mid]) return [];
-  return (DB.qualimetreCustom[mid][rayon]||[]);
-}
+// ─────────────────────────────────────────────
+// PAGE RÉFÉRENTIEL QUALIMÈTRE
+// Affiche la grille résolue pour un magasin/zone donné (lecture seule pour non-admin)
+// L'édition et l'import se font depuis la page "Grille Qualimètre"
+// ─────────────────────────────────────────────
 
-function onQualMagChange(){
-  // Rebuild the magasin selector options then show current rayon
-  showQualimetre();
-}
+function onQualMagChange() { showQualimetre(); }
 
-function renderQualimetreNav(){
-  // Populate the magasin selector with visible magasins
-  const mids=visibleMids();
-  const sel=el('qual-mag-sel'); if(!sel) return;
-  const cv=sel.value;
-  while(sel.options.length>1) sel.remove(1);
-  DB.magasins.filter(m=>mids.includes(m.id)).forEach(m=>{
-    const o=document.createElement('option'); o.value=m.id; o.textContent=m.nom; sel.appendChild(o);
+function renderQualimetreNav() {
+  const mids = visibleMids();
+  const sel = el('qual-mag-sel'); if (!sel) return;
+  const cv = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  DB.magasins.filter(m => mids.includes(m.id)).forEach(m => {
+    const o = document.createElement('option'); o.value = m.id; o.textContent = m.nom; sel.appendChild(o);
   });
-  // Restore or set default
-  if(cv && [...sel.options].some(o=>o.value===cv)) sel.value=cv;
-  else if(DB.magasins.filter(m=>mids.includes(m.id)).length) sel.value=DB.magasins.find(m=>mids.includes(m.id)).id;
+  if (cv && [...sel.options].some(o => o.value === cv)) sel.value = cv;
+  else if (DB.magasins.filter(m => mids.includes(m.id)).length) {
+    sel.value = DB.magasins.find(m => mids.includes(m.id)).id;
+  }
 }
 
-function showQualimetre(){
+function showQualimetre() {
   renderQualimetreNav();
-  const mid=v('qual-mag-sel');
-  const rayon=v('qual-ray-sel')||'Boucherie';
-  const mag=DB.magasins.find(m=>m.id===mid);
+  const mid = v('qual-mag-sel');
+  const zoneId = v('qual-zone-sel') || (QUAL_ZONES[0] && QUAL_ZONES[0].id);
+  const mag = DB.magasins.find(m => m.id === mid);
+  const zone = QUAL_ZONES.find(z => z.id === zoneId);
+  const isAdmin = CU && CU.role === 'admin';
 
-  // Show add button only for admin
-  const addBtn=el('btn-add-qual');
-  if(addBtn) addBtn.style.display=CU&&CU.role==='admin'&&mid?'':'none';
+  // Bouton "Gérer la grille" visible admin uniquement
+  const editBtn = el('btn-edit-qual-grille');
+  if (editBtn) editBtn.style.display = isAdmin ? '' : 'none';
 
-  if(!mid){
-    el('qual-ttl').textContent='–';
-    el('qual-body').innerHTML=`<div class="empty-state" style="padding:40px"><i class="ti ti-building-store" style="font-size:40px;color:#ddd8ff"></i><p style="color:var(--text2)">Sélectionnez un magasin pour afficher son Qualimètre.</p></div>`;
-    return;
-  }
-
-  el('qual-ttl').textContent=(mag?mag.nom:'?')+' – '+rayon;
-  const qs=getQualimetrePoints(mid,rayon);
-
-  if(!qs.length){
-    el('qual-body').innerHTML=`<div class="empty-state" style="padding:40px">
-      <i class="ti ti-gauge" style="font-size:40px;color:#ddd8ff"></i>
-      <p style="color:var(--text2)">Aucun point de contrôle pour ${mag?mag.nom:''} – ${rayon}.<br>
-      ${CU&&CU.role==='admin'?'Utilisez « Ajouter un point » ou « Importer » pour commencer.':'Les points seront ajoutés par l\'administrateur.'}</p>
+  if (!mid) {
+    el('qual-ttl').textContent = '–';
+    el('qual-body').innerHTML = `<div class="empty-state" style="padding:40px">
+      <i class="ti ti-building-store" style="font-size:40px;color:#ddd8ff"></i>
+      <p style="color:var(--text2)">Sélectionnez un magasin pour afficher son Qualimètre.</p>
     </div>`;
     return;
   }
-  const cats=[...new Set(qs.map(q=>q.cat))];
-  el('qual-body').innerHTML=cats.map(cat=>{
-    const cqs=qs.filter(q=>q.cat===cat);
-    return `<div>
-      <div style="padding:10px 20px;background:linear-gradient(90deg,#f3e8ff,#ede9fe);font-size:11px;font-weight:600;color:#5b21b6;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #ddd6fe">${cat}</div>
-      ${cqs.map(q=>`<div style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
-        <div style="flex:1;font-size:13px">${q.q}</div>
+
+  const zoneName = zone ? (zone.emoji + ' ' + zone.label) : zoneId;
+  el('qual-ttl').textContent = (mag ? mag.nom : '?') + ' – ' + zoneName;
+
+  const qs = getQualimetrePoints(mid, zoneId);
+
+  if (!qs.length) {
+    el('qual-body').innerHTML = `<div class="empty-state" style="padding:40px">
+      <i class="ti ti-gauge" style="font-size:40px;color:#ddd8ff"></i>
+      <p style="color:var(--text2)">Aucun point de contrôle pour ${mag ? mag.nom : ''} – ${zoneName}.<br>
+      ${isAdmin ? 'Utilisez <strong>Gérer la grille</strong> pour en ajouter.' : 'Les points seront ajoutés par l\'administrateur.'}</p>
+    </div>`;
+    return;
+  }
+
+  // Détecter la source de la grille pour afficher un badge
+  const isCustomMag = mid && DB.qualimetreCustom && DB.qualimetreCustom[mid] && (DB.qualimetreCustom[mid][zoneId] || []).length > 0;
+  const isCustomGlobal = DB.qualimetreGlobal && (DB.qualimetreGlobal[zoneId] || []).length > 0;
+  const sourceBadge = isCustomMag
+    ? `<span style="background:#ede9fe;color:#6d28d9;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Personnalisé</span>`
+    : isCustomGlobal
+      ? `<span style="background:#f0fdf4;color:#15803d;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Grille globale</span>`
+      : `<span style="background:#f1f5f9;color:#64748b;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Référentiel de base</span>`;
+
+  el('qual-body').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)">
+      ${sourceBadge}
+      <span class="tsm tm">${qs.length} point(s)</span>
+    </div>
+    ${qs.map(q => `
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500">${q.q}</div>
+          ${q.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;font-style:italic">${q.prec}</div>` : ''}
+        </div>
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
           ${critBdg(q.c)}
           <span class="tsm tm">Poids : <strong>${q.p}</strong></span>
-          ${CU&&CU.role==='admin'?`<button class="btn btn-secondary btn-sm" onclick="openQualCtrlModal('${mid}','${rayon}','${q.id}')"><i class="ti ti-pencil"></i></button><button class="btn btn-danger btn-sm" onclick="delQualCtrl('${mid}','${rayon}','${q.id}')"><i class="ti ti-trash"></i></button>`:''}
         </div>
-      </div>`).join('')}
-    </div>`;
-  }).join('');
+      </div>`).join('')}`;
 }
 
-function openQualCtrlModal(mid, rayon, qid){
-  const m=mid||v('qual-mag-sel');
-  const r=rayon||v('qual-ray-sel')||'Boucherie';
-  const isEdit=!!qid;
-  el('m-qual-ctrl-ttl').innerHTML=isEdit?'<i class="ti ti-pencil" style="color:#7c3aed"></i> Modifier le point Qualimètre':'<i class="ti ti-gauge" style="color:#7c3aed"></i> Nouveau point Qualimètre';
-  el('qual-ctrl-err').classList.remove('show');
-  sv('qc-id',qid||'');
-  sv('qc-mid',m);
-  el('qc-rayon').value=r;
-  if(isEdit){
-    const q=getQualimetrePoints(m,r).find(x=>x.id===qid); if(!q) return;
-    sv('qc-q',q.q); sv('qc-cat',q.cat); el('qc-crit').value=q.c; sv('qc-poids',q.p);
-  } else {
-    sv('qc-q',''); sv('qc-cat',''); el('qc-crit').value='Majeure'; sv('qc-poids','');
-  }
-  openModal('m-qual-ctrl');
-}
-
-function saveQualCtrl(){
-  const mid=v('qc-mid');
-  const rayon=el('qc-rayon').value;
-  const q=v('qc-q').trim(), cat=v('qc-cat').trim()||'Général', crit=el('qc-crit').value;
-  const err=el('qual-ctrl-err');
-  if(!q){ err.textContent='L\'intitulé est requis.'; err.classList.add('show'); return; }
-  const defP={'Critique':10,'Majeure':5,'Mineure':2};
-  const poids=parseInt(v('qc-poids'))||defP[crit];
-  if(!DB.qualimetreCustom) DB.qualimetreCustom={};
-  if(!DB.qualimetreCustom[mid]) DB.qualimetreCustom[mid]={};
-  if(!DB.qualimetreCustom[mid][rayon]) DB.qualimetreCustom[mid][rayon]=[];
-  const existId=v('qc-id');
-  if(existId){
-    const idx=DB.qualimetreCustom[mid][rayon].findIndex(x=>x.id===existId);
-    if(idx>=0) DB.qualimetreCustom[mid][rayon][idx]={id:existId,cat,q,p:poids,c:crit};
-  } else {
-    DB.qualimetreCustom[mid][rayon].push({id:'qc-'+uid(),cat,q,p:poids,c:crit});
-  }
-  save(); closeModal('m-qual-ctrl');
-  // Refresh view
-  const magSel=el('qual-mag-sel'); if(magSel) magSel.value=mid;
-  const raySel=el('qual-ray-sel'); if(raySel) raySel.value=rayon;
-  showQualimetre();
-}
-
-function delQualCtrl(mid,rayon,qid){
-  if(!confirm('Supprimer ce point du Qualimètre ?')) return;
-  if(!DB.qualimetreCustom||!DB.qualimetreCustom[mid]) return;
-  DB.qualimetreCustom[mid][rayon]=(DB.qualimetreCustom[mid][rayon]||[]).filter(x=>x.id!==qid);
-  save(); showQualimetre();
+// Alias pour compatibilité avec les appels existants dans l'app
+// L'édition réelle est dans grille-qualimetre.js (showGrilleQualimetre)
+function openQualCtrlModal(mid, rayon, qid) {
+  // Redirige vers la gestion de grille
+  openGqCtrlModal(mid, rayon, qid);
 }

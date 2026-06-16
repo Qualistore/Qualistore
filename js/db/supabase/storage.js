@@ -14,7 +14,8 @@ function _defaultDB(){
     users:[{id:'admin1',nom:'Administrateur',login:'admin',pwd:btoa('admin'),role:'admin',statut:'actif',magasins:[],
       perms:{'aud-r':1,'aud-w':1,'nc':1,'ac':1,'mag':1,'rap':1,'grille':1,'usr':1}}],
     magasins:[], audits:[], ncs:[], actions:[], alertes:[],
-    grilleCustom:{}, qualimetreCustom:{}, qualAudits:[], drafts:[]
+    grilleCustom:{}, qualimetreCustom:{}, qualAudits:[], drafts:[],
+    qualimetreGlobal:{},
   };
 }
 

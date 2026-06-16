@@ -290,6 +290,9 @@
               <button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="genRapportQualimetre()"><i class="ti ti-eye"></i> Générer l'aperçu</button>
               <button class="btn btn-primary" id="rq-print-btn" onclick="exportPDF('rq-body','rapport-qualimetre')" style="display:none;background:#7c3aed;border-color:#7c3aed"><i class="ti ti-file-download"></i> Exporter en PDF</button>
               <button class="btn btn-danger btn-sm" id="rq-del-btn" onclick="deleteSelectedQualAudits()" style="display:none"><i class="ti ti-trash"></i> Supprimer la sélection</button>
+              <button id="rq-annexes-btn" class="btn btn-secondary" onclick="exportAnnexesQualimetre()" style="display:none">
+              <i class="ti ti-photo"></i> Annexes photos PDF
+</button>
             </div>
           </div>
         </div>
@@ -326,25 +329,36 @@
         <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-list-check"></i> Grille commune – <span id="grille-ttl">Boucherie</span></div><div style="display:flex;gap:6px;align-items:center" id="grille-hdr-btns"><span class="badge" style="background:var(--success-light);color:#15803d"><i class="ti ti-table-import" style="font-size:12px"></i> 48 points – Grille inspection interne</span></div></div><div id="grille-body"></div></div>
       </div>
 
-      <!-- QUALIMÈTRE -->
-      <div class="page" id="page-qualimetre">
+<!-- GRILLE QUALIMÈTRE -->
+      <div class="page" id="page-grille-qualimetre" style="display:none">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select class="form-control" style="width:auto" id="qual-mag-sel" onchange="onQualMagChange()">
-              <option value="">– Sélectionner un magasin –</option>
-            </select>
-            <select class="form-control" style="width:auto" id="qual-ray-sel" onchange="showQualimetre()">
-              <option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option>
-            </select>
+          <div>
+            <div style="font-size:18px;font-weight:700;color:#1a1f36"><i class="ti ti-adjustments" style="color:#7c3aed"></i> Grille Qualimètre</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">Gérez les points de contrôle par zone — global ou par magasin</div>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-secondary btn-sm" onclick="openImportModal('qualimetre')"><i class="ti ti-upload"></i> Importer</button>
-            <button class="btn btn-primary btn-sm" id="btn-add-qual" onclick="openQualCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
+          <div style="display:flex;gap:8px">
+            <button id="gq-btn-import" class="btn btn-secondary btn-sm" onclick="openGqImportModal()" style="display:none"><i class="ti ti-upload"></i> Importer</button>
+            <button id="gq-btn-add" class="btn btn-primary btn-sm" onclick="openGqCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
           </div>
         </div>
-        <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-gauge" style="color:#7c3aed"></i> Qualimètre – <span id="qual-ttl">–</span></div></div><div id="qual-body"></div></div>
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:14px 18px">
+            <div style="flex:1;min-width:180px">
+              <label class="form-label">Magasin</label>
+              <select class="form-control" id="gq-mag-sel" onchange="onGqMagChange()">
+                <option value="">— Global (tous magasins) —</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:180px">
+              <label class="form-label">Zone</label>
+              <select class="form-control" id="gq-zone-sel" onchange="onGqZoneChange()"></select>
+            </div>
+          </div>
+          <div style="padding:4px 18px 12px;font-size:12px;color:var(--text2)" id="gq-scope-label"></div>
+        </div>
+        <div class="card" id="gq-body"></div>
       </div>
-
+      
       <!-- AUDIT QUALIMÈTRE -->
       <div class="page" id="page-audit-qualimetre">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
@@ -908,6 +922,111 @@
   </div>
 </div>
 
+<!-- Modal ajout/édition point Qualimètre -->
+<div class="modal-ov" id="m-gq-ctrl">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="m-gq-ctrl-ttl"><i class="ti ti-gauge" style="color:#7c3aed"></i> Point Qualimètre</div>
+      <button class="btn-x" onclick="closeModal('m-gq-ctrl')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-danger" id="gq-ctrl-err"></div>
+      <input type="hidden" id="gqc-id">
+      <input type="hidden" id="gqc-mid">
+      <input type="hidden" id="gqc-zone">
+
+      <!-- Scope : global ou magasin -->
+      <div class="form-group">
+        <label class="form-label">Appliquer à</label>
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="radio" name="gqc-scope" value="global" onchange="_gqToggleScopeUI('global')"> Tous les magasins (global)
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="radio" name="gqc-scope" value="mag" onchange="_gqToggleScopeUI('mag')"> Un magasin spécifique
+          </label>
+        </div>
+      </div>
+      <div class="form-group" id="gqc-mag-row" style="display:none">
+        <label class="form-label">Magasin</label>
+        <select class="form-control" id="gqc-mag-sel"></select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Zone</label>
+        <select class="form-control" id="gqc-zone-sel"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Intitulé <span style="color:var(--danger)">*</span></label>
+        <input type="text" class="form-control" id="gqc-q" placeholder="Ex : Badge nominatif visible…">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Précision / détail</label>
+        <input type="text" class="form-control" id="gqc-prec" placeholder="Ex : Coiffe, calot ou casquette obligatoire">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Criticité</label>
+          <select class="form-control" id="gqc-crit">
+            <option value="Critique">Critique</option>
+            <option value="Majeure" selected>Majeure</option>
+            <option value="Mineure">Mineure</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Poids (pts)</label>
+          <input type="number" class="form-control" id="gqc-poids" min="1" max="20" placeholder="Auto selon criticité">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-gq-ctrl')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveGqCtrl()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal import grille Qualimètre -->
+<div class="modal-ov" id="m-gq-import">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-upload" style="color:#7c3aed"></i> Importer une grille Qualimètre</div>
+      <button class="btn-x" onclick="closeModal('m-gq-import')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-danger" id="gq-import-err"></div>
+
+      <div class="form-group">
+        <label class="form-label">Appliquer à</label>
+        <select class="form-control" id="gqi-mag-sel" onchange="_gqRenderImportPreview()">
+          <option value="">— Tous les magasins (global) —</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Fichier <span style="color:var(--text2);font-size:11px">(CSV, XLSX ou PDF)</span></label>
+        <input type="file" class="form-control" id="gq-import-file" accept=".csv,.xlsx,.xls,.pdf" onchange="handleGqImportFile(this)">
+        <div style="font-size:11px;color:var(--text2);margin-top:6px">
+          Colonnes attendues : <code>zone | question | precision | criticite | poids</code>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="gqi-replace" checked>
+          Remplacer les points existants des zones importées
+        </label>
+      </div>
+
+      <div id="gq-import-preview"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-gq-import')">Annuler</button>
+      <button class="btn btn-primary" onclick="confirmGqImport()"><i class="ti ti-check"></i> Importer</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: DÉTAIL AUDIT QUALIMÈTRE -->
 <div class="modal-ov" id="m-qual-audit-detail">
   <div class="modal modal-lg">
@@ -947,6 +1066,7 @@
 <script src="js/alertes.js"></script>
 <script src="js/users.js"></script>
 <script src="js/rapports-fsqs.js"></script>
+<script src="js/grille-qualimetre.js"></script> 
 <script src="js/qualimetre.js"></script>
 <script src="js/audit-qualimetre.js"></script>
 <script src="js/rapport-qualimetre.js"></script>
