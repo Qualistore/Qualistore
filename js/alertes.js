@@ -67,7 +67,7 @@ function renderAlertsDash(){
   if(!DB.alertes.length){ el('d-alerts-list').innerHTML='<div class="empty-state" style="padding:24px"><i class="ti ti-bell" style="font-size:28px"></i><p>Aucune alerte</p></div>'; return; }
   const gravColor={'Critique':'#e53935','Majeure':'#ea580c','Mineure':'#f59e0b'};
   const typeIcon={'Matériel':'ti-tool','Structure':'ti-building','Produit':'ti-package','Hygiène':'ti-droplet','Sécurité':'ti-shield'};
-  el('d-alerts-list').innerHTML=[...DB.alertes].reverse().slice(0,8).map(a=>`
+  el('d-alerts-list').innerHTML=[...DB.alertes].reverse().filter(a=>a.statut==='Active').slice(0,8).map(a=>`
     <div class="alert-item">
       <div class="alert-dot" style="background:${gravColor[a.gravite]||'#888'}"></div>
       <div style="flex:1">

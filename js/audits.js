@@ -295,7 +295,6 @@ function renderDrafts(){
     const isOwner=CU&&(CU.id===d.uid||CU.role==='admin');
     const canDelete=CU&&(CU.id===d.uid||CU.role==='admin');
     return `<tr>
-    <td style="font-weight:600;color:var(--primary)">${d.id}</td>
     <td>${d.mag}</td>
     <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(d.rayon)} ${d.rayon}</td>
     <td>${fd(d.date)}</td>

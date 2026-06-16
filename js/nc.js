@@ -33,7 +33,6 @@ const isAdmin=CU&&CU.role==='admin';
     <td style="vertical-align:top;padding-top:14px">${statBdg(n.statut)}</td>
     <td style="vertical-align:top;padding-top:10px"><div class="act-btns">
       ${isAdmin?`<button class="btn btn-secondary btn-sm" title="Modifier" onclick="openNCEdit('${n.id}')"><i class="ti ti-pencil"></i></button>`:''}
-      ${isAdmin?`<button class="btn btn-danger btn-sm" title="Supprimer" onclick="confirmDel('nc','${n.id}','${n.id}')"><i class="ti ti-trash"></i></button>`:''}
     </div></td>
   </tr>`).join('');
   // Always render archives too
