@@ -78,10 +78,10 @@ function _gqRender() {
     }
   }
 
-  const pts = getQualimetrePoints(mid || null, zoneId);
+const pts = getQualimetrePoints(mid || null, zoneId);
   const isCustomMag = mid && DB.qualimetreCustom && DB.qualimetreCustom[mid] && (DB.qualimetreCustom[mid][zoneId] || []).length > 0;
-  const isCustomGlobal = !mid && DB.qualimetreGlobal && (DB.qualimetreGlobal[zoneId] || []).length > 0;
-console.log('mid:', mid, 'zoneId:', zoneId, 'pts:', pts.length, 'isCustomGlobal:', isCustomGlobal);
+  const isCustomGlobal = DB.qualimetreGlobal && (DB.qualimetreGlobal[zoneId] || []).length > 0;
+  const isBase = !isCustomMag && !isCustomGlobal;
 
   const body = el('gq-body'); if (!body) return;
 
@@ -105,7 +105,7 @@ console.log('mid:', mid, 'zoneId:', zoneId, 'pts:', pts.length, 'isCustomGlobal:
     <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)">
       ${sourceBadge}
       <span class="tsm tm">${pts.length} point(s)</span>
-      ${isAdmin && (isCustomMag || isCustomGlobal) ? `<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="_gqResetZone('${mid || ''}','${zoneId}')"><i class="ti ti-refresh"></i> Réinitialiser cette zone</button>` : ''}
+      ${isAdmin ? `<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="_gqResetZone('${mid || ''}','${zoneId}')"><i class="ti ti-refresh"></i> Réinitialiser cette zone</button>` : ''}
     </div>
     ${pts.map(p => `
       <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
@@ -116,7 +116,7 @@ console.log('mid:', mid, 'zoneId:', zoneId, 'pts:', pts.length, 'isCustomGlobal:
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
           ${critBdg(p.c)}
           <span class="tsm tm">Poids : <strong>${p.p}</strong></span>
-          ${isAdmin && (isCustomMag || isCustomGlobal) ? `
+          ${isAdmin && !isBase ? `
             <button class="btn btn-secondary btn-sm" onclick="openGqCtrlModal('${mid || ''}','${zoneId}','${p.id}')"><i class="ti ti-pencil"></i></button>
             <button class="btn btn-danger btn-sm" onclick="delGqCtrl('${mid || ''}','${zoneId}','${p.id}')"><i class="ti ti-trash"></i></button>
           ` : ''}
