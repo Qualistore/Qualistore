@@ -346,6 +346,8 @@ console.log('Headers:', headers, 'idxQ:', headers.findIndex(h => ['question', 'q
 
   if (!rows.length) { _gqImportErr('Aucune ligne valide trouvée.'); return; }
   _gqImportData = rows;
+  _gqImportData = rows;
+  console.log('rows sauvegardés:', _gqImportData.length);
   _gqRenderImportPreview();
 }
 
