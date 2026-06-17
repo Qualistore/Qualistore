@@ -461,7 +461,7 @@ function confirmGqImport() {
   }
   save(['qualimetreCustom', 'qualimetreGlobal']);
   closeModal('m-gq-import');
-  showToast('Grille Qualimètre importée (' + _gqImportData.length + ' point(s))', 'success');
+  alert('Grille Qualimètre importée (' + _gqImportData.length + ' point(s))');
   _gqImportData = [];
   _gqRender();
 }
