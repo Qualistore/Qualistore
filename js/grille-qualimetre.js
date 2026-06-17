@@ -81,6 +81,7 @@ function _gqRender() {
   const pts = getQualimetrePoints(mid || null, zoneId);
   const isCustomMag = mid && DB.qualimetreCustom && DB.qualimetreCustom[mid] && (DB.qualimetreCustom[mid][zoneId] || []).length > 0;
   const isCustomGlobal = !mid && DB.qualimetreGlobal && (DB.qualimetreGlobal[zoneId] || []).length > 0;
+console.log('mid:', mid, 'zoneId:', zoneId, 'pts:', pts.length, 'isCustomGlobal:', isCustomGlobal);
 
   const body = el('gq-body'); if (!body) return;
 
