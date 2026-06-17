@@ -319,6 +319,7 @@ console.log('Lignes détectées:', lines.length, 'Première ligne:', lines[0]);
   // Détection séparateur
   const sep = lines[0].includes(';') ? ';' : ',';
   const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+console.log('Headers:', headers, 'idxQ:', headers.findIndex(h => ['question', 'q', 'intitulé', 'intitule', 'libelle', 'libellé'].includes(h)));
 
   const idxZone = headers.findIndex(h => h.includes('zone'));
   const idxQ = headers.findIndex(h => ['question', 'q', 'intitulé', 'intitule', 'libelle', 'libellé'].includes(h));
