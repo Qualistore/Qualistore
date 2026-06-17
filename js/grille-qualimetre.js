@@ -314,6 +314,7 @@ function _gqLoadPDFJS(cb) {
 function _gqParseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) { _gqImportErr('Le fichier est vide ou ne contient pas de données.'); return; }
+console.log('Lignes détectées:', lines.length, 'Première ligne:', lines[0]);
 
   // Détection séparateur
   const sep = lines[0].includes(';') ? ';' : ',';
