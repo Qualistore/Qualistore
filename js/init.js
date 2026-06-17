@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 
   buildSidebar();
   updateSBUser();
+  initQualimetreGlobal();
   navigate('dashboard');
 document.querySelectorAll('.modal-ov').forEach(m=>m.addEventListener('click',e=>{
     if(e.target===m){

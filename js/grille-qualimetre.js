@@ -471,3 +471,17 @@ function _gqImportErr(msg) {
   if (err) { err.textContent = msg; err.classList.add('show'); }
   el('gq-import-preview').innerHTML = '';
 }
+function initQualimetreGlobal() {
+  if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
+  // Injecter QUAL_ZONES dans qualimetreGlobal si vide
+  let injected = false;
+  QUAL_ZONES.forEach(z => {
+    if (!DB.qualimetreGlobal[z.id] || DB.qualimetreGlobal[z.id].length === 0) {
+      DB.qualimetreGlobal[z.id] = z.points.map(p => ({
+        id: p.id, q: p.q, prec: p.prec || '', cat: 'Général', p: 1, c: 'Majeure'
+      }));
+      injected = true;
+    }
+  });
+  if (injected) save(['qualimetreGlobal']);
+}
