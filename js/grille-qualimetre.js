@@ -435,6 +435,7 @@ function _gqRenderImportPreview() {
 }
 
 function confirmGqImport() {
+  console.log('Import data:', _gqImportData.length, 'mid:', el('gqi-mag-sel') ? el('gqi-mag-sel').value : 'no sel');
   if (!_gqImportData.length) { _gqImportErr('Aucune donnée à importer.'); return; }
   const mid = el('gqi-mag-sel') ? el('gqi-mag-sel').value : '';
   const replace = el('gqi-replace') ? el('gqi-replace').checked : true;
