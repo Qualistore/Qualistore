@@ -333,6 +333,7 @@ console.log('Headers:', headers, 'idxQ:', headers.findIndex(h => ['question', 'q
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
     const q = cols[idxQ]; if (!q) continue;
+    if (i <= 3) console.log('Ligne', i, ':', cols, 'zone:', cols[idxZone], 'q:', q);
     const zoneRaw = idxZone >= 0 ? cols[idxZone] : '';
     const zoneId = _gqResolveZoneId(zoneRaw);
     const critRaw = idxCrit >= 0 ? cols[idxCrit] : 'Majeure';
