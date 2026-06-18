@@ -24,10 +24,16 @@ function getQualimetrePoints(mid, zoneId) {
 
 // Retourne toutes les zones avec leurs points résolus pour un magasin donné
 function getQualimetreGrille(mid) {
-  return QM_ZONES.map(z => ({
-    ...z,
-    points: getQualimetrePoints(mid, z.id)
-  })).filter(z => z.points.length > 0);
+  // Construire la liste des zones depuis QM_ZONES + qualimetreGlobal
+  const zoneIds = new Set([
+    ...QM_ZONES.map(z => z.id),
+    ...Object.keys(DB.qualimetreGlobal || {})
+  ]);
+  return [...zoneIds].map(zid => {
+    const zoneMeta = QM_ZONES.find(z => z.id === zid) || { id: zid, emoji: '', label: zid };
+    const points = getQualimetrePoints(mid, zid);
+    return { ...zoneMeta, points };
+  }).filter(z => z.points.length > 0);
 }
 
 // ─────────────────────────────────────────────
