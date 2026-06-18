@@ -228,7 +228,8 @@ function delGqCtrl(mid, zoneId, qid) {
     DB.qualimetreGlobal[zoneId] = (DB.qualimetreGlobal[zoneId] || []).filter(x => x.id !== qid);
   }
   save(['qualimetreCustom', 'qualimetreGlobal']);
-  _gqRender();
+  // Recharger le sélecteur de zones car une zone peut être devenue vide
+  showGrilleQualimetre();
 }
 
 function _gqResetZone(mid, zoneId) {
@@ -242,7 +243,8 @@ function _gqResetZone(mid, zoneId) {
     if (DB.qualimetreGlobal) delete DB.qualimetreGlobal[zoneId];
   }
   save(['qualimetreCustom', 'qualimetreGlobal']);
-  _gqRender();
+  // Recharger le sélecteur de zones car une zone peut être devenue vide
+  showGrilleQualimetre();
 }
 
 // ─────────────────────────────────────────────
