@@ -35,10 +35,12 @@ function getQualimetreGrille(mid) {
 // ─────────────────────────────────────────────
 
 function showGrilleQualimetre() {
-  // Remplir le sélecteur de zones
+  // Remplir le sélecteur de zones depuis QUAL_ZONES ou DB.qualimetreGlobal
   const zsel = el('gq-zone-sel');
-  if (zsel && !zsel.options.length) {
-    zsel.innerHTML = QUAL_ZONES.map(z =>
+  if (zsel) {
+    const zones = QUAL_ZONES.length ? QUAL_ZONES : 
+      Object.keys(DB.qualimetreGlobal || {}).map(id => ({ id, emoji: '', label: id }));
+    zsel.innerHTML = zones.map(z =>
       `<option value="${z.id}">${z.emoji} ${z.label}</option>`
     ).join('');
   }
