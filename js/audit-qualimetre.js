@@ -188,7 +188,7 @@ async function handleQaPhoto(pid, input) {
   if (ans.photos.length >= 2) { alert('2 photos maximum par point de contrôle.'); input.value = ''; return; }
 
   const path = `audits/qualimetre/qa-${pid}-${uid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-  const url = await sbUploadPhoto(path, file);
+  const url = await sbUploadPhoto(file, path);
   if (!url) { alert('Erreur upload photo. Vérifiez votre connexion.'); input.value = ''; return; }
   ans.photos.push(url);
   input.value = '';
