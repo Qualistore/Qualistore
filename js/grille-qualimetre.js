@@ -494,15 +494,6 @@ function _gqImportErr(msg) {
 }
 function initQualimetreGlobal() {
   if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
-  // Injecter QM_ZONES dans qualimetreGlobal si vide
-  let injected = false;
-  QM_ZONES.forEach(z => {
-    if (!DB.qualimetreGlobal[z.id] || DB.qualimetreGlobal[z.id].length === 0) {
-      DB.qualimetreGlobal[z.id] = z.points.map(p => ({
-        id: p.id, q: p.q, prec: p.prec || '', cat: 'Général', p: 1, c: 'Majeure'
-      }));
-      injected = true;
-    }
-  });
-  if (injected) save(['qualimetreGlobal']);
+  // QM_ZONES ne contient plus de points — rien à injecter automatiquement
+  // Les points viennent uniquement de l'import ou de la saisie manuelle
 }
