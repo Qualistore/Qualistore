@@ -384,19 +384,24 @@ async function _gqParsePDF(file) {
 }
 
 function _gqResolveZoneId(raw) {
-  if (!raw) return QUAL_ZONES[0] ? QUAL_ZONES[0].id : 'z1';
-  const r = raw.trim().toLowerCase();
-  // Correspondance directe d'id (z1, z2…)
-  const direct = QUAL_ZONES.find(z => z.id.toLowerCase() === r);
-  if (direct) return direct.id;
-  // Correspondance par numéro (1, 2, zone 1…)
-  const num = r.match(/\d+/); if (num) {
-    const byNum = QUAL_ZONES.find(z => z.id === 'z' + num[0]);
-    if (byNum) return byNum.id;
+  if (!raw) return 'z0';
+  const r = raw.trim();
+  // Si ça ressemble déjà à un id valide (z0, z1, z2... z10), retourner directement
+  if (/^z\d+$/.test(r)) return r;
+  // Correspondance dans QUAL_ZONES si non vide
+  if (QUAL_ZONES.length) {
+    const direct = QUAL_ZONES.find(z => z.id.toLowerCase() === r.toLowerCase());
+    if (direct) return direct.id;
+    const num = r.match(/\d+/);
+    if (num) {
+      const byNum = QUAL_ZONES.find(z => z.id === 'z' + num[0]);
+      if (byNum) return byNum.id;
+    }
   }
-  // Correspondance par label partiel
-  const byLabel = QUAL_ZONES.find(z => z.label.toLowerCase().includes(r) || r.includes(z.label.toLowerCase().split('–')[1]?.trim() || ''));
-  return byLabel ? byLabel.id : (QUAL_ZONES[0] ? QUAL_ZONES[0].id : 'z1');
+  // Extraire le numéro et construire l'id
+  const num = r.match(/\d+/);
+  if (num) return 'z' + num[0];
+  return 'z0';
 }
 
 function _gqNormalizeCrit(raw) {
