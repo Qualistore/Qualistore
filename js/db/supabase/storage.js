@@ -42,12 +42,17 @@ async function loadDB(){
     const grilleCustom={};
     (grilleRows||[]).forEach(r=>{ grilleCustom[r.rayon]=r.data; });
     const qualimetreCustom={};
-    (qualRows||[]).forEach(r=>{ qualimetreCustom[r.mid]=r.data; });
+    let qualimetreGlobal={};
+    (qualRows||[]).forEach(r=>{
+      if(r.mid==='__global__') qualimetreGlobal=r.data;
+      else qualimetreCustom[r.mid]=r.data;
+    });
     DB={
       users: users||[], magasins: magasins||[],
       audits: audits||[], ncs: ncs||[],
       actions: actions||[], alertes: alertes||[],
-      grilleCustom, qualimetreCustom, qualAudits: qualAudits||[],
+      grilleCustom, qualimetreCustom, qualimetreGlobal,
+      qualAudits: qualAudits||[],
       drafts: drafts||[],
     };
     if(!DB.users.length) DB.users=_defaultDB().users;
@@ -86,8 +91,11 @@ async function _pushToSupabase(tables){
       const rows=Object.entries(DB.grilleCustom).map(([rayon,data])=>({id:rayon,rayon,data}));
       if(rows.length) ops.push(sbUpsert('grille_custom', rows));
     }
-    if(all||tables.includes('qualimetreCustom')){
+    if(all||tables.includes('qualimetreCustom')||tables.includes('qualimetreGlobal')){
       const rows=Object.entries(DB.qualimetreCustom).map(([mid,data])=>({id:mid,mid,data}));
+      if(DB.qualimetreGlobal&&Object.keys(DB.qualimetreGlobal).length){
+        rows.push({id:'__global__',mid:'__global__',data:DB.qualimetreGlobal});
+      }
       if(rows.length) ops.push(sbUpsert('qualimetre_custom', rows));
     }
     await Promise.all(ops);
