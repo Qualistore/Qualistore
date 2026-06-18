@@ -1,9 +1,9 @@
 // ══════════════ GRILLE-QUALIMETRE ══════════════
-// Dépend de : storage.js (DB, CU, save, uid), config.js (qm_zones, SHEETJS_URL, PDFJS_URL), ui.js
+// Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, SHEETJS_URL, PDFJS_URL), ui.js
 
 // ─────────────────────────────────────────────
 // ACCÈS AUX POINTS — source de vérité unique
-// Priorité : custom magasin > global custom > qm_zones (référentiel de base)
+// Priorité : custom magasin > global custom > QM_ZONES (référentiel de base)
 // ─────────────────────────────────────────────
 
 function getQualimetrePoints(mid, zoneId) {
@@ -17,14 +17,14 @@ function getQualimetrePoints(mid, zoneId) {
     const pts = DB.qualimetreGlobal[zoneId];
     if (pts.length) return pts;
   }
-  // 3. Référentiel de base qm_zones
-  const zone = qm_zones.find(z => z.id === zoneId);
+  // 3. Référentiel de base QM_ZONES
+  const zone = QM_ZONES.find(z => z.id === zoneId);
   return zone ? zone.points.map(p => ({ id: p.id, q: p.q, prec: p.prec || '', p: 1, c: 'Majeure' })) : [];
 }
 
 // Retourne toutes les zones avec leurs points résolus pour un magasin donné
 function getQualimetreGrille(mid) {
-  return qm_zones.map(z => ({
+  return QM_ZONES.map(z => ({
     ...z,
     points: getQualimetrePoints(mid, z.id)
   })).filter(z => z.points.length > 0);
@@ -35,10 +35,10 @@ function getQualimetreGrille(mid) {
 // ─────────────────────────────────────────────
 
 function showGrilleQualimetre() {
-  // Remplir le sélecteur de zones depuis qm_zones ou DB.qualimetreGlobal
+  // Remplir le sélecteur de zones depuis QM_ZONES ou DB.qualimetreGlobal
   const zsel = el('gq-zone-sel');
   if (zsel) {
-    const zones = qm_zones.length ? qm_zones : 
+    const zones = QM_ZONES.length ? QM_ZONES : 
       Object.keys(DB.qualimetreGlobal || {}).map(id => ({ id, emoji: '', label: id }));
     zsel.innerHTML = zones.map(z =>
       `<option value="${z.id}">${z.emoji} ${z.label}</option>`
@@ -61,7 +61,7 @@ function _gqBuildMagSel() {
 
 function _gqRender() {
   const mid = v('gq-mag-sel');  // vide = affichage grille globale
-  const zoneId = v('gq-zone-sel') || (qm_zones[0] && qm_zones[0].id);
+  const zoneId = v('gq-zone-sel') || (QM_ZONES[0] && QM_ZONES[0].id);
   const isAdmin = CU && CU.role === 'admin';
 
   // Boutons admin
@@ -135,7 +135,7 @@ function onGqZoneChange() { _gqRender(); }
 
 function openGqCtrlModal(mid, zoneId, qid) {
   const m = mid || v('gq-mag-sel') || '';
-  const z = zoneId || v('gq-zone-sel') || (qm_zones[0] && qm_zones[0].id);
+  const z = zoneId || v('gq-zone-sel') || (QM_ZONES[0] && QM_ZONES[0].id);
   const isEdit = !!qid;
   el('m-gq-ctrl-ttl').innerHTML = isEdit
     ? '<i class="ti ti-pencil" style="color:#7c3aed"></i> Modifier le point Qualimètre'
@@ -153,7 +153,7 @@ function openGqCtrlModal(mid, zoneId, qid) {
   // Populate zone selector in modal
   const zsel = el('gqc-zone-sel');
   if (zsel) {
-    zsel.innerHTML = qm_zones.map(zone => `<option value="${zone.id}"${zone.id === z ? ' selected' : ''}>${zone.emoji} ${zone.label}</option>`).join('');
+    zsel.innerHTML = QM_ZONES.map(zone => `<option value="${zone.id}"${zone.id === z ? ' selected' : ''}>${zone.emoji} ${zone.label}</option>`).join('');
   }
   // Populate magasin selector in modal
   const msel = el('gqc-mag-sel');
@@ -251,7 +251,7 @@ function _gqResetZone(mid, zoneId) {
 
 // Format attendu des colonnes :
 // zone | question | precision | criticite | poids
-// La colonne "zone" doit correspondre à un id de qm_zones (ex: z1, z2) OU au label (ex: "Zone 1 – Accueil")
+// La colonne "zone" doit correspondre à un id de QM_ZONES (ex: z1, z2) OU au label (ex: "Zone 1 – Accueil")
 
 let _gqImportData = [];   // lignes parsées en attente de confirmation
 let _gqImportScope = 'global';
@@ -390,13 +390,13 @@ function _gqResolveZoneId(raw) {
   const r = raw.trim();
   // Si ça ressemble déjà à un id valide (z0, z1, z2... z10), retourner directement
   if (/^z\d+$/.test(r)) return r;
-  // Correspondance dans qm_zones si non vide
-  if (qm_zones.length) {
-    const direct = qm_zones.find(z => z.id.toLowerCase() === r.toLowerCase());
+  // Correspondance dans QM_ZONES si non vide
+  if (QM_ZONES.length) {
+    const direct = QM_ZONES.find(z => z.id.toLowerCase() === r.toLowerCase());
     if (direct) return direct.id;
     const num = r.match(/\d+/);
     if (num) {
-      const byNum = qm_zones.find(z => z.id === 'z' + num[0]);
+      const byNum = QM_ZONES.find(z => z.id === 'z' + num[0]);
       if (byNum) return byNum.id;
     }
   }
@@ -429,7 +429,7 @@ function _gqRenderImportPreview() {
       <strong>${rows.length} point(s)</strong> détecté(s) → appliqués à la ${scopeLabel}
     </div>
     ${Object.entries(byZone).map(([zid, pts]) => {
-      const zone = qm_zones.find(z => z.id === zid);
+      const zone = QM_ZONES.find(z => z.id === zid);
       return `<div style="margin-bottom:10px">
         <div style="font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;padding:6px 10px;background:#f5f3ff;border-radius:6px;margin-bottom:4px">
           ${zone ? zone.emoji + ' ' + zone.label : zid} (${pts.length})
@@ -486,9 +486,9 @@ function _gqImportErr(msg) {
 }
 function initQualimetreGlobal() {
   if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
-  // Injecter qm_zones dans qualimetreGlobal si vide
+  // Injecter QM_ZONES dans qualimetreGlobal si vide
   let injected = false;
-  qm_zones.forEach(z => {
+  QM_ZONES.forEach(z => {
     if (!DB.qualimetreGlobal[z.id] || DB.qualimetreGlobal[z.id].length === 0) {
       DB.qualimetreGlobal[z.id] = z.points.map(p => ({
         id: p.id, q: p.q, prec: p.prec || '', cat: 'Général', p: 1, c: 'Majeure'
