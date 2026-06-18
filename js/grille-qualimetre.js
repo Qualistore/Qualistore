@@ -3,27 +3,22 @@
 
 // ─────────────────────────────────────────────
 // ACCÈS AUX POINTS — source de vérité unique
-// Priorité : custom magasin > global custom > QM_ZONES (référentiel de base)
+// Priorité : custom magasin > global custom > []
 // ─────────────────────────────────────────────
 
 function getQualimetrePoints(mid, zoneId) {
-  // 1. Custom magasin
   if (mid && DB.qualimetreCustom && DB.qualimetreCustom[mid] && DB.qualimetreCustom[mid][zoneId]) {
     const pts = DB.qualimetreCustom[mid][zoneId];
     if (pts.length) return pts;
   }
-  // 2. Grille globale custom
   if (DB.qualimetreGlobal && DB.qualimetreGlobal[zoneId]) {
     const pts = DB.qualimetreGlobal[zoneId];
     if (pts.length) return pts;
   }
-  // 3. Référentiel de base QM_ZONES (sans points désormais)
   return [];
 }
 
-// Retourne toutes les zones avec leurs points résolus pour un magasin donné
 function getQualimetreGrille(mid) {
-  // Construire la liste des zones depuis QM_ZONES + qualimetreGlobal
   const zoneIds = new Set([
     ...QM_ZONES.map(z => z.id),
     ...Object.keys(DB.qualimetreGlobal || {})
@@ -40,13 +35,18 @@ function getQualimetreGrille(mid) {
 // ─────────────────────────────────────────────
 
 function showGrilleQualimetre() {
-  // Remplir le sélecteur de zones depuis QM_ZONES ou DB.qualimetreGlobal
   const zsel = el('gq-zone-sel');
   if (zsel) {
-    const zones = QM_ZONES.length ? QM_ZONES : 
-      Object.keys(DB.qualimetreGlobal || {}).map(id => ({ id, emoji: '', label: id }));
-    zsel.innerHTML = zones.map(z =>
-      `<option value="${z.id}">${z.emoji} ${z.label}</option>`
+    // Fusionner QM_ZONES + zones présentes dans qualimetreGlobal
+    const globalZoneIds = Object.keys(DB.qualimetreGlobal || {});
+    const allZones = [
+      ...QM_ZONES,
+      ...globalZoneIds
+        .filter(id => !QM_ZONES.find(z => z.id === id))
+        .map(id => ({ id, emoji: '', label: id }))
+    ];
+    zsel.innerHTML = allZones.map(z =>
+      `<option value="${z.id}">${z.emoji ? z.emoji + ' ' : ''}${z.label}</option>`
     ).join('');
   }
   _gqBuildMagSel();
@@ -65,16 +65,14 @@ function _gqBuildMagSel() {
 }
 
 function _gqRender() {
-  const mid = v('gq-mag-sel');  // vide = affichage grille globale
+  const mid = v('gq-mag-sel');
   const zoneId = v('gq-zone-sel') || (QM_ZONES[0] && QM_ZONES[0].id);
   const isAdmin = CU && CU.role === 'admin';
 
-  // Boutons admin
   const btnAdd = el('gq-btn-add'); if (btnAdd) btnAdd.style.display = isAdmin ? '' : 'none';
   const btnImport = el('gq-btn-import'); if (btnImport) btnImport.style.display = isAdmin ? '' : 'none';
   const btnReset = el('gq-btn-reset'); if (btnReset) btnReset.style.display = isAdmin ? '' : 'none';
 
-  // Label scope
   const scopeEl = el('gq-scope-label');
   if (scopeEl) {
     if (mid) {
@@ -85,7 +83,7 @@ function _gqRender() {
     }
   }
 
-const pts = getQualimetrePoints(mid || null, zoneId);
+  const pts = getQualimetrePoints(mid || null, zoneId);
   const isCustomMag = mid && DB.qualimetreCustom && DB.qualimetreCustom[mid] && (DB.qualimetreCustom[mid][zoneId] || []).length > 0;
   const isCustomGlobal = DB.qualimetreGlobal && (DB.qualimetreGlobal[zoneId] || []).length > 0;
   const isBase = !isCustomMag && !isCustomGlobal;
@@ -101,7 +99,6 @@ const pts = getQualimetrePoints(mid || null, zoneId);
     return;
   }
 
-  // Badge source
   const sourceBadge = isCustomMag
     ? `<span style="background:#ede9fe;color:#6d28d9;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Personnalisé magasin</span>`
     : isCustomGlobal
@@ -112,7 +109,7 @@ const pts = getQualimetrePoints(mid || null, zoneId);
     <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)">
       ${sourceBadge}
       <span class="tsm tm">${pts.length} point(s)</span>
-      ${isAdmin ? `<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="_gqResetZone('${mid || ''}','${zoneId}')"><i class="ti ti-refresh"></i> Réinitialiser cette zone</button>` : ''}
+      ${isAdmin && !isBase ? `<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="_gqResetZone('${mid || ''}','${zoneId}')"><i class="ti ti-refresh"></i> Réinitialiser cette zone</button>` : ''}
     </div>
     ${pts.map(p => `
       <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
@@ -123,7 +120,7 @@ const pts = getQualimetrePoints(mid || null, zoneId);
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
           ${critBdg(p.c)}
           <span class="tsm tm">Poids : <strong>${p.p}</strong></span>
-          ${isAdmin && !isBase ? `
+          ${isAdmin ? `
             <button class="btn btn-secondary btn-sm" onclick="openGqCtrlModal('${mid || ''}','${zoneId}','${p.id}')"><i class="ti ti-pencil"></i></button>
             <button class="btn btn-danger btn-sm" onclick="delGqCtrl('${mid || ''}','${zoneId}','${p.id}')"><i class="ti ti-trash"></i></button>
           ` : ''}
@@ -150,17 +147,21 @@ function openGqCtrlModal(mid, zoneId, qid) {
   sv('gqc-mid', m);
   sv('gqc-zone', z);
 
-  // Scope radio
   const radios = document.querySelectorAll('input[name="gqc-scope"]');
   radios.forEach(r => { r.checked = r.value === (m ? 'mag' : 'global'); });
   _gqToggleScopeUI(m ? 'mag' : 'global');
 
-  // Populate zone selector in modal
   const zsel = el('gqc-zone-sel');
   if (zsel) {
-    zsel.innerHTML = QM_ZONES.map(zone => `<option value="${zone.id}"${zone.id === z ? ' selected' : ''}>${zone.emoji} ${zone.label}</option>`).join('');
+    // Fusionner QM_ZONES + zones globales
+    const globalZoneIds = Object.keys(DB.qualimetreGlobal || {});
+    const allZones = [
+      ...QM_ZONES,
+      ...globalZoneIds.filter(id => !QM_ZONES.find(qz => qz.id === id)).map(id => ({ id, emoji: '', label: id }))
+    ];
+    zsel.innerHTML = allZones.map(zone => `<option value="${zone.id}"${zone.id === z ? ' selected' : ''}>${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}</option>`).join('');
   }
-  // Populate magasin selector in modal
+
   const msel = el('gqc-mag-sel');
   if (msel) {
     msel.innerHTML = '<option value="">— Tous les magasins —</option>' +
@@ -168,10 +169,9 @@ function openGqCtrlModal(mid, zoneId, qid) {
   }
 
   if (isEdit) {
-    // Chercher dans custom mag, puis global
     let pts = [];
     if (m && DB.qualimetreCustom && DB.qualimetreCustom[m] && DB.qualimetreCustom[m][z]) pts = DB.qualimetreCustom[m][z];
-    else if (!m && DB.qualimetreGlobal && DB.qualimetreGlobal[z]) pts = DB.qualimetreGlobal[z];
+    else if (DB.qualimetreGlobal && DB.qualimetreGlobal[z]) pts = DB.qualimetreGlobal[z];
     const q = pts.find(x => x.id === qid); if (!q) return;
     sv('gqc-q', q.q); sv('gqc-prec', q.prec || ''); el('gqc-crit').value = q.c; sv('gqc-poids', q.p);
   } else {
@@ -189,7 +189,6 @@ function saveGqCtrl() {
   const qText = v('gqc-q').trim();
   const prec = v('gqc-prec').trim();
   const crit = el('gqc-crit').value;
-  const cat = 'Général';
   const err = el('gq-ctrl-err');
   if (!qText) { err.textContent = 'L\'intitulé est requis.'; err.classList.add('show'); return; }
   const defP = { 'Critique': 10, 'Majeure': 5, 'Mineure': 2 };
@@ -199,7 +198,7 @@ function saveGqCtrl() {
   const scope = scopeVal ? scopeVal.value : 'global';
   const mid = scope === 'mag' ? (el('gqc-mag-sel') ? el('gqc-mag-sel').value : v('gqc-mid')) : '';
   const existId = v('gqc-id');
-  const newPoint = { id: existId || 'gq-' + uid(), q: qText, prec, cat, p: poids, c: crit };
+  const newPoint = { id: existId || 'gq-' + uid(), q: qText, prec, cat: 'Général', p: poids, c: crit };
 
   if (mid) {
     if (!DB.qualimetreCustom) DB.qualimetreCustom = {};
@@ -217,10 +216,9 @@ function saveGqCtrl() {
   }
   save(['qualimetreCustom', 'qualimetreGlobal']);
   closeModal('m-gq-ctrl');
-  // Sync sélecteurs
   if (el('gq-mag-sel') && mid) el('gq-mag-sel').value = mid;
   if (el('gq-zone-sel') && zoneId) el('gq-zone-sel').value = zoneId;
-  _gqRender();
+  showGrilleQualimetre();
 }
 
 function delGqCtrl(mid, zoneId, qid) {
@@ -233,22 +231,18 @@ function delGqCtrl(mid, zoneId, qid) {
     DB.qualimetreGlobal[zoneId] = (DB.qualimetreGlobal[zoneId] || []).filter(x => x.id !== qid);
   }
   save(['qualimetreCustom', 'qualimetreGlobal']);
-  // Recharger le sélecteur de zones car une zone peut être devenue vide
   showGrilleQualimetre();
 }
 
 function _gqResetZone(mid, zoneId) {
   const label = mid ? 'la personnalisation magasin' : 'la grille globale';
-  if (!confirm(`Réinitialiser ${label} pour cette zone ? Les points reviendront au référentiel de base.`)) return;
+  if (!confirm(`Réinitialiser ${label} pour cette zone ? Les points seront supprimés.`)) return;
   if (mid) {
-    if (DB.qualimetreCustom && DB.qualimetreCustom[mid]) {
-      delete DB.qualimetreCustom[mid][zoneId];
-    }
+    if (DB.qualimetreCustom && DB.qualimetreCustom[mid]) delete DB.qualimetreCustom[mid][zoneId];
   } else {
     if (DB.qualimetreGlobal) delete DB.qualimetreGlobal[zoneId];
   }
   save(['qualimetreCustom', 'qualimetreGlobal']);
-  // Recharger le sélecteur de zones car une zone peut être devenue vide
   showGrilleQualimetre();
 }
 
@@ -256,13 +250,7 @@ function _gqResetZone(mid, zoneId) {
 // IMPORT CSV / XLSX / PDF
 // ─────────────────────────────────────────────
 
-// Format attendu des colonnes :
-// zone | question | precision | criticite | poids
-// La colonne "zone" doit correspondre à un id de QM_ZONES (ex: z1, z2) OU au label (ex: "Zone 1 – Accueil")
-
-let _gqImportData = [];   // lignes parsées en attente de confirmation
-let _gqImportScope = 'global';
-let _gqImportMid = '';
+let _gqImportData = [];
 
 function openGqImportModal() {
   _gqImportData = [];
@@ -293,7 +281,7 @@ function handleGqImportFile(input) {
       reader.onload = e => {
         const wb = XLSX.read(e.target.result, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const csv = XLSX.utils.sheet_to_csv(ws);
+        const csv = XLSX.utils.sheet_to_csv(ws, { FS: ';' });
         _gqParseCSV(csv);
       };
       reader.readAsArrayBuffer(file);
@@ -323,12 +311,9 @@ function _gqLoadPDFJS(cb) {
 function _gqParseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) { _gqImportErr('Le fichier est vide ou ne contient pas de données.'); return; }
-console.log('Lignes détectées:', lines.length, 'Première ligne:', lines[0]);
 
-  // Détection séparateur
   const sep = lines[0].includes(';') ? ';' : ',';
   const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
-console.log('Headers:', headers, 'idxQ:', headers.findIndex(h => ['question', 'q', 'intitulé', 'intitule', 'libelle', 'libellé'].includes(h)));
 
   const idxZone = headers.findIndex(h => h.includes('zone'));
   const idxQ = headers.findIndex(h => ['question', 'q', 'intitulé', 'intitule', 'libelle', 'libellé'].includes(h));
@@ -342,7 +327,10 @@ console.log('Headers:', headers, 'idxQ:', headers.findIndex(h => ['question', 'q
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
     const q = cols[idxQ]; if (!q) continue;
-    if (i <= 3) console.log('Ligne', i, ':', cols, 'zone:', cols[idxZone], 'q:', q);
+    // Ignorer les lignes de titre de zone (criticite et poids vides)
+    const critCheck = idxCrit >= 0 ? cols[idxCrit] : '';
+    const poidsCheck = idxPoids >= 0 ? cols[idxPoids] : '';
+    if (!critCheck && !poidsCheck) continue;
     const zoneRaw = idxZone >= 0 ? cols[idxZone] : '';
     const zoneId = _gqResolveZoneId(zoneRaw);
     const critRaw = idxCrit >= 0 ? cols[idxCrit] : 'Majeure';
@@ -355,8 +343,6 @@ console.log('Headers:', headers, 'idxQ:', headers.findIndex(h => ['question', 'q
 
   if (!rows.length) { _gqImportErr('Aucune ligne valide trouvée.'); return; }
   _gqImportData = rows;
-  _gqImportData = rows;
-  console.log('rows sauvegardés:', _gqImportData.length);
   _gqRenderImportPreview();
 }
 
@@ -370,7 +356,7 @@ async function _gqParsePDF(file) {
       const content = await page.getTextContent();
       text += content.items.map(it => it.str).join(' ') + '\n';
     }
-    // Essayer d'extraire des lignes séparées par | ou tabulation
+    // Extraire les lignes séparées par | ou tabulation
     const lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 8);
     const rows = [];
     lines.forEach(l => {
@@ -393,24 +379,21 @@ async function _gqParsePDF(file) {
 }
 
 function _gqResolveZoneId(raw) {
-  if (!raw) return 'z0';
+  if (!raw) return QM_ZONES.length ? QM_ZONES[0].id : 'z0';
   const r = raw.trim();
-  // Si ça ressemble déjà à un id valide (z0, z1, z2... z10), retourner directement
-  if (/^z\d+$/.test(r)) return r;
-  // Correspondance dans QM_ZONES si non vide
+  // Déjà un id valide : z0, z1... z10
+  if (/^z\d+$/i.test(r)) return r.toLowerCase();
+  // Chercher dans QM_ZONES par id ou label
   if (QM_ZONES.length) {
     const direct = QM_ZONES.find(z => z.id.toLowerCase() === r.toLowerCase());
     if (direct) return direct.id;
-    const num = r.match(/\d+/);
-    if (num) {
-      const byNum = QM_ZONES.find(z => z.id === 'z' + num[0]);
-      if (byNum) return byNum.id;
-    }
+    const byLabel = QM_ZONES.find(z => z.label.toLowerCase().includes(r.toLowerCase()) || r.toLowerCase().includes(z.label.toLowerCase().split('–')[1]?.trim().toLowerCase() || '~~~'));
+    if (byLabel) return byLabel.id;
   }
-  // Extraire le numéro et construire l'id
-  const num = r.match(/\d+/);
-  if (num) return 'z' + num[0];
-  return 'z0';
+  // Extraire le numéro : "Zone 1", "zone1", "Zone 1 – Abords", "1"
+  const num = r.replace(/[^\d]/g, '');
+  if (num) return 'z' + num;
+  return QM_ZONES.length ? QM_ZONES[0].id : 'z0';
 }
 
 function _gqNormalizeCrit(raw) {
@@ -427,7 +410,6 @@ function _gqRenderImportPreview() {
     ? `magasin <strong>${DB.magasins.find(m => m.id === scope)?.nom || scope}</strong>`
     : `grille <strong>globale</strong>`;
 
-  // Grouper par zone
   const byZone = {};
   rows.forEach(r => { if (!byZone[r.zoneId]) byZone[r.zoneId] = []; byZone[r.zoneId].push(r); });
 
@@ -439,7 +421,7 @@ function _gqRenderImportPreview() {
       const zone = QM_ZONES.find(z => z.id === zid);
       return `<div style="margin-bottom:10px">
         <div style="font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;padding:6px 10px;background:#f5f3ff;border-radius:6px;margin-bottom:4px">
-          ${zone ? zone.emoji + ' ' + zone.label : zid} (${pts.length})
+          ${zone ? (zone.emoji ? zone.emoji + ' ' : '') + zone.label : zid} (${pts.length})
         </div>
         ${pts.map(p => `<div style="display:flex;gap:8px;align-items:center;padding:5px 10px;font-size:12px;border-bottom:1px solid var(--border)">
           <span style="flex:1">${p.q}</span>
@@ -451,7 +433,6 @@ function _gqRenderImportPreview() {
 }
 
 function confirmGqImport() {
-  console.log('Import data:', _gqImportData.length, 'mid:', el('gqi-mag-sel') ? el('gqi-mag-sel').value : 'no sel');
   if (!_gqImportData.length) { _gqImportErr('Aucune donnée à importer.'); return; }
   const mid = el('gqi-mag-sel') ? el('gqi-mag-sel').value : '';
   const replace = el('gqi-replace') ? el('gqi-replace').checked : true;
@@ -460,7 +441,6 @@ function confirmGqImport() {
     if (!DB.qualimetreCustom) DB.qualimetreCustom = {};
     if (!DB.qualimetreCustom[mid]) DB.qualimetreCustom[mid] = {};
     if (replace) {
-      // Vider uniquement les zones concernées
       const zones = [...new Set(_gqImportData.map(r => r.zoneId))];
       zones.forEach(z => { DB.qualimetreCustom[mid][z] = []; });
     }
@@ -483,7 +463,7 @@ function confirmGqImport() {
   closeModal('m-gq-import');
   alert('Grille Qualimètre importée (' + _gqImportData.length + ' point(s))');
   _gqImportData = [];
-  _gqRender();
+  showGrilleQualimetre();
 }
 
 function _gqImportErr(msg) {
@@ -491,8 +471,26 @@ function _gqImportErr(msg) {
   if (err) { err.textContent = msg; err.classList.add('show'); }
   el('gq-import-preview').innerHTML = '';
 }
+
 function initQualimetreGlobal() {
   if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
-  // QM_ZONES ne contient plus de points — rien à injecter automatiquement
   // Les points viennent uniquement de l'import ou de la saisie manuelle
+}
+
+function exportGrilleCSV() {
+  const mid = v('gq-mag-sel') || '';
+  const rows = [['zone', 'question', 'precision', 'criticite', 'poids']];
+  const grille = getQualimetreGrille(mid || null);
+  grille.forEach(z => {
+    z.points.forEach(p => {
+      rows.push([z.id, p.q, p.prec || '', p.c, p.p]);
+    });
+  });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'grille-qualimetre.csv';
+  a.click(); URL.revokeObjectURL(url);
+  alert('Grille exportée en CSV');
 }
