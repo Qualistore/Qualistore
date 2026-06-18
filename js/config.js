@@ -89,4 +89,15 @@ const FORMAT_INFO={
     <span style="color:var(--orange)">⚠ Les PDFs scannés (images) ne fonctionnent pas.</span>`
 };
 
-const QUAL_ZONES=[];
+const QM_ZONES=[
+  {id:'z0', emoji:'🚩', label:'Référentiel Affichage'},
+  {id:'z1', emoji:'🟢', label:'Zone 1 – Abords & Accueil'},
+  {id:'z2', emoji:'🥖', label:'Zone 2 – Boulangerie & Pâtisserie'},
+  {id:'z4', emoji:'🥩', label:'Zone 4 – Boucherie & Volaille'},
+  {id:'z5', emoji:'🧀', label:'Zone 5 – Charcuterie / Traiteur / Fromage'},
+  {id:'z6', emoji:'🐟', label:'Zone 6 – Marée'},
+  {id:'z7', emoji:'🥛', label:'Zone 7 – Frais LS (Charcuterie, Crémerie, Traiteur)'},
+  {id:'z8', emoji:'🍝', label:'Zone 8 – Épicerie / Liquide / Surgelés'},
+  {id:'z9', emoji:'🧼', label:'Zone 9 – DPH / Bazar / Textile'},
+  {id:'z10', emoji:'🛒', label:'Zone 10 – Ligne de caisse & Sécurité'},
+];
