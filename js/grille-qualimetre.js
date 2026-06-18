@@ -17,9 +17,8 @@ function getQualimetrePoints(mid, zoneId) {
     const pts = DB.qualimetreGlobal[zoneId];
     if (pts.length) return pts;
   }
-  // 3. Référentiel de base QM_ZONES
-  const zone = QM_ZONES.find(z => z.id === zoneId);
-  return zone ? zone.points.map(p => ({ id: p.id, q: p.q, prec: p.prec || '', p: 1, c: 'Majeure' })) : [];
+  // 3. Référentiel de base QM_ZONES (sans points désormais)
+  return [];
 }
 
 // Retourne toutes les zones avec leurs points résolus pour un magasin donné
