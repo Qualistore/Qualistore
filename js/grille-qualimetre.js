@@ -1,288 +1,776 @@
-// ══════════════ GRILLE-QUALIMETRE ══════════════
-// Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, SHEETJS_URL, PDFJS_URL), ui.js
+// ══════════════════════════════════════════════════════════════
+// GRILLE-QUALIMETRE — Gestion de la grille Qualimètre par zone
+// Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, CDN_SHEETJS, CDN_PDFJS), ui.js
+// ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
-// ACCÈS AUX POINTS — source de vérité unique
-// Priorité : custom magasin > global custom > []
+// 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
+//    ⚠️ Déduits de l'usage dans ce fichier.
+//
+//    ✅ CONFIRMATION DÉFINITIVE (déjà pressentie dans qualimetre.js) :
+//    DB.qualimetreCustom est Record<storeId, Record<zoneId, GrillePoint[]>>
+//    et DB.qualimetreGlobal est Record<zoneId, GrillePoint[]> — ce
+//    fichier les construit explicitement avec cette forme exacte
+//    (voir _upsertQualimetrePoint, _applyImportToStore).
 // ─────────────────────────────────────────────
 
-function getQualimetrePoints(mid, zoneId) {
-  if (mid && DB.qualimetreCustom && DB.qualimetreCustom[mid] && DB.qualimetreCustom[mid][zoneId]) {
-    const pts = DB.qualimetreCustom[mid][zoneId];
-    if (pts.length) return pts;
+/**
+ * Niveau de criticité (voir config.js/grille.js/nc.js pour la
+ * définition canonique).
+ * @typedef {'Critique'|'Majeure'|'Mineure'} GrilleCriticite
+ */
+
+/**
+ * Point de contrôle Qualimètre. Pour les points créés via ce
+ * fichier (saisie manuelle ou import), .cat vaut toujours 'Général'
+ * — contrairement à la grille FSQS où cat varie selon
+ * section/sous-catégorie (voir grille.js).
+ * @typedef {Object} GrillePoint
+ * @property {string} id - Préfixé 'gq-' + uid().
+ * @property {string} q
+ * @property {string} prec - Chaîne vide si absent.
+ * @property {string} cat - Toujours 'Général' pour les points créés ici.
+ * @property {number} p
+ * @property {GrilleCriticite} c
+ */
+
+/**
+ * Zone de contrôle du parcours Qualimètre (voir config.js). Peut
+ * aussi être une zone "ad hoc" non définie dans QM_ZONES mais
+ * présente dans DB.qualimetreGlobal (label de fallback = son id,
+ * emoji vide) — voir _getAllZones.
+ * @typedef {Object} QMZone
+ * @property {string} id
+ * @property {string} emoji
+ * @property {string} label
+ */
+
+/**
+ * Zone enrichie de ses points de contrôle résolus pour un magasin
+ * donné (résultat de getQualimetreGrille).
+ * @typedef {Object} QMZoneWithPoints
+ * @property {string} id
+ * @property {string} emoji
+ * @property {string} label
+ * @property {GrillePoint[]} points
+ */
+
+/**
+ * Dictionnaire des points Qualimètre personnalisés par magasin,
+ * indexé par Magasin.id puis par QMZone.id.
+ * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreCustomMap
+ */
+
+/**
+ * Dictionnaire des points Qualimètre globaux, indexé par QMZone.id.
+ * @typedef {Record<string, GrillePoint[]>} QualimetreGlobalMap
+ */
+
+/**
+ * Portée d'édition d'un point Qualimètre : un magasin spécifique ou
+ * la grille globale.
+ * @typedef {'mag'|'global'} GqScope
+ */
+
+/**
+ * Ligne de données importée (CSV/XLSX/PDF), avant confirmation et
+ * application à DB.qualimetreCustom/qualimetreGlobal.
+ * @typedef {Object} GqImportRow
+ * @property {string} zoneId - Id de zone résolu (voir _gqResolveZoneId).
+ * @property {string} zoneName - Valeur brute de zone telle que lue dans le fichier source, non résolue.
+ * @property {string} q
+ * @property {string} prec
+ * @property {GrilleCriticite} c
+ * @property {number} p
+ */
+
+/**
+ * Magasin. Seules .id et .nom sont accédées dans ce fichier ;
+ * structure complète dans magasins.js.
+ * @typedef {Object} Magasin
+ * @property {string} id
+ * @property {string} nom
+ */
+
+// ─────────────────────────────────────────────
+// 1. CONSTANTES
+// ─────────────────────────────────────────────
+
+/**
+ * Poids par défaut selon la criticité.
+ * @type {Record<GrilleCriticite, number>}
+ */
+const GQ_DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
+
+// ─────────────────────────────────────────────
+// 2. ÉTAT
+// ─────────────────────────────────────────────
+
+/**
+ * Données parsées en attente de confirmation d'import.
+ * @type {GqImportRow[]}
+ */
+let _gqImportData = [];
+
+// ─────────────────────────────────────────────
+// 3. ACCÈS AUX POINTS — source de vérité unique
+// Priorité : personnalisation magasin > grille globale > vide
+// ─────────────────────────────────────────────
+
+/**
+ * Retourne les points de contrôle d'une zone pour un magasin donné.
+ * Respecte la priorité : custom magasin > global > [].
+ * @param {string | null} storeId - Référence vers Magasin.id, ou null/chaîne vide pour ignorer la personnalisation magasin.
+ * @param {string} zoneId - Référence vers QMZone.id.
+ * @returns {GrillePoint[]}
+ */
+function getQualimetrePoints(storeId, zoneId) {
+  if (storeId) {
+    /** @type {GrillePoint[]} */
+    const storePoints = DB.qualimetreCustom?.[storeId]?.[zoneId] || [];
+    if (storePoints.length) return storePoints;
   }
-  if (DB.qualimetreGlobal && DB.qualimetreGlobal[zoneId]) {
-    const pts = DB.qualimetreGlobal[zoneId];
-    if (pts.length) return pts;
-  }
+  /** @type {GrillePoint[]} */
+  const globalPoints = DB.qualimetreGlobal?.[zoneId] || [];
+  if (globalPoints.length) return globalPoints;
   return [];
 }
 
-function getQualimetreGrille(mid) {
+/**
+ * Retourne la grille complète d'un magasin :
+ * toutes les zones qui ont au moins un point.
+ * @param {string | null} storeId
+ * @returns {QMZoneWithPoints[]}
+ */
+function getQualimetreGrille(storeId) {
+  /** @type {Set<string>} */
   const zoneIds = new Set([
     ...QM_ZONES.map(z => z.id),
-    ...Object.keys(DB.qualimetreGlobal || {})
+    ...Object.keys(DB.qualimetreGlobal || {}),
   ]);
-  return [...zoneIds].map(zid => {
-    const zoneMeta = QM_ZONES.find(z => z.id === zid) || { id: zid, emoji: '', label: zid };
-    const points = getQualimetrePoints(mid, zid);
-    return { ...zoneMeta, points };
-  }).filter(z => z.points.length > 0);
+
+  return [...zoneIds]
+    .map(zoneId => {
+      /** @type {QMZone} */
+      const zoneMeta = QM_ZONES.find(z => z.id === zoneId) || { id: zoneId, emoji: '', label: zoneId };
+      return { ...zoneMeta, points: getQualimetrePoints(storeId, zoneId) };
+    })
+    .filter(zone => zone.points.length > 0);
 }
 
 // ─────────────────────────────────────────────
-// PAGE GRILLE QUALIMÈTRE
+// 4. PAGE GRILLE QUALIMÈTRE
 // ─────────────────────────────────────────────
 
+/**
+ * Affiche la page de gestion de la grille Qualimètre : peuple les
+ * sélecteurs de zone/magasin puis rend le contenu.
+ * @returns {void}
+ */
 function showGrilleQualimetre() {
-  const zsel = el('gq-zone-sel');
-  if (zsel) {
-    // Fusionner QM_ZONES + zones présentes dans qualimetreGlobal
-    const globalZoneIds = Object.keys(DB.qualimetreGlobal || {});
-    const allZones = [
-      ...QM_ZONES,
-      ...globalZoneIds
-        .filter(id => !QM_ZONES.find(z => z.id === id))
-        .map(id => ({ id, emoji: '', label: id }))
-    ];
-    zsel.innerHTML = allZones.map(z =>
-      `<option value="${z.id}">${z.emoji ? z.emoji + ' ' : ''}${z.label}</option>`
-    ).join('');
-  }
-  _gqBuildMagSel();
+  _buildGqZoneSelect();
+  _buildGqMagSelect();
   _gqRender();
 }
 
-function _gqBuildMagSel() {
-  const mids = visibleMids();
-  const sel = el('gq-mag-sel'); if (!sel) return;
-  const cv = sel.value;
-  while (sel.options.length > 1) sel.remove(1);
-  DB.magasins.filter(m => mids.includes(m.id)).forEach(m => {
-    const o = document.createElement('option'); o.value = m.id; o.textContent = m.nom; sel.appendChild(o);
-  });
-  if (cv && [...sel.options].some(o => o.value === cv)) sel.value = cv;
+/** @returns {void} */
+function onGqMagChange()  { _gqRender(); }
+/** @returns {void} */
+function onGqZoneChange() { _gqRender(); }
+
+/**
+ * Peuple le select de zones (QM_ZONES + zones ad hoc présentes dans
+ * qualimetreGlobal).
+ * @returns {void}
+ */
+function _buildGqZoneSelect() {
+  const select = el('gq-zone-sel');
+  if (!select) return;
+
+  /** @type {QMZone[]} */
+  const allZones = _getAllZones();
+  select.innerHTML = allZones.map(zone =>
+    `<option value="${zone.id}">${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}</option>`
+  ).join('');
 }
 
-function _gqRender() {
-  const mid = v('gq-mag-sel');
-  const zoneId = v('gq-zone-sel') || (QM_ZONES[0] && QM_ZONES[0].id);
-  const isAdmin = CU && CU.role === 'admin';
+/**
+ * Peuple le select de magasins visibles, en préservant la sélection
+ * courante si elle reste valide.
+ * @returns {void}
+ */
+function _buildGqMagSelect() {
+  const select = el('gq-mag-sel');
+  if (!select) return;
 
-  const btnAdd = el('gq-btn-add'); if (btnAdd) btnAdd.style.display = isAdmin ? '' : 'none';
-  const btnImport = el('gq-btn-import'); if (btnImport) btnImport.style.display = isAdmin ? '' : 'none';
-  const btnReset = el('gq-btn-reset'); if (btnReset) btnReset.style.display = isAdmin ? '' : 'none';
+  /** @type {string} */
+  const currentValue = select.value;
+  while (select.options.length > 1) select.remove(1);
 
-  const scopeEl = el('gq-scope-label');
-  if (scopeEl) {
-    if (mid) {
-      const mag = DB.magasins.find(m => m.id === mid);
-      scopeEl.innerHTML = `Grille personnalisée pour <strong>${mag ? mag.nom : mid}</strong>`;
-    } else {
-      scopeEl.innerHTML = `Grille <strong>globale</strong> (appliquée à tous les magasins sans personnalisation)`;
-    }
+  DB.magasins
+    .filter(m => visibleMids().includes(m.id))
+    .forEach(m => {
+      const option = document.createElement('option');
+      option.value       = m.id;
+      option.textContent = m.nom;
+      select.appendChild(option);
+    });
+
+  if (currentValue && [...select.options].some(o => o.value === currentValue)) {
+    select.value = currentValue;
   }
+}
 
-  const pts = getQualimetrePoints(mid || null, zoneId);
-  const isCustomMag = mid && DB.qualimetreCustom && DB.qualimetreCustom[mid] && (DB.qualimetreCustom[mid][zoneId] || []).length > 0;
-  const isCustomGlobal = DB.qualimetreGlobal && (DB.qualimetreGlobal[zoneId] || []).length > 0;
-  const isBase = !isCustomMag && !isCustomGlobal;
+/**
+ * Fusionne QM_ZONES avec les zones présentes dans qualimetreGlobal
+ * (zones "ad hoc" créées via import, sans métadonnées emoji/label).
+ * @returns {QMZone[]}
+ */
+function _getAllZones() {
+  /** @type {string[]} */
+  const globalZoneIds = Object.keys(DB.qualimetreGlobal || {});
+  return [
+    ...QM_ZONES,
+    ...globalZoneIds
+      .filter(id => !QM_ZONES.find(z => z.id === id))
+      .map(id => ({ id, emoji: '', label: id })),
+  ];
+}
 
-  const body = el('gq-body'); if (!body) return;
+/**
+ * Affiche le contenu de la zone Qualimètre sélectionnée (barre de
+ * source + liste des points), ou un état vide si aucun point.
+ * @returns {void}
+ */
+function _gqRender() {
+  /** @type {string} */
+  const storeId  = v('gq-mag-sel');
+  /** @type {string} */
+  const zoneId   = v('gq-zone-sel') || QM_ZONES[0]?.id;
+  /** @type {boolean} */
+  const isAdmin  = CU && CU.role === 'admin';
 
-  if (!pts.length) {
+  _gqUpdateAdminButtons(isAdmin);
+  _gqUpdateScopeLabel(storeId);
+
+  /** @type {GrillePoint[]} */
+  const points         = getQualimetrePoints(storeId || null, zoneId);
+  /** @type {boolean} */
+  const isCustomStore  = storeId && (DB.qualimetreCustom?.[storeId]?.[zoneId] || []).length > 0;
+  /** @type {boolean} */
+  const isCustomGlobal = (DB.qualimetreGlobal?.[zoneId] || []).length > 0;
+  /** @type {boolean} */
+  const isBase         = !isCustomStore && !isCustomGlobal;
+
+  const body = el('gq-body');
+  if (!body) return;
+
+  if (!points.length) {
+    /** @type {string} */
+    const helpText = isAdmin
+      ? 'Utilisez « Ajouter » ou « Importer » pour commencer.'
+      : 'Les points seront ajoutés par l\'administrateur.';
     body.innerHTML = `<div class="empty-state" style="padding:40px">
       <i class="ti ti-gauge" style="font-size:40px;color:#ddd8ff"></i>
-      <p style="color:var(--text2)">Aucun point de contrôle pour cette zone.<br>
-      ${isAdmin ? 'Utilisez « Ajouter » ou « Importer » pour commencer.' : 'Les points seront ajoutés par l\'administrateur.'}</p>
+      <p style="color:var(--text2)">Aucun point de contrôle pour cette zone.<br>${helpText}</p>
     </div>`;
     return;
   }
 
-  const sourceBadge = isCustomMag
+  body.innerHTML =
+    _buildGqSourceBar(isCustomStore, isCustomGlobal, isBase, isAdmin, storeId, zoneId, points.length) +
+    points.map(point => _buildGqPointRow(point, isAdmin, storeId, zoneId)).join('');
+}
+
+/**
+ * Affiche/masque les boutons réservés aux administrateurs
+ * (ajouter, importer, réinitialiser).
+ * @param {boolean} isAdmin
+ * @returns {void}
+ */
+function _gqUpdateAdminButtons(isAdmin) {
+  ['gq-btn-add', 'gq-btn-import', 'gq-btn-reset'].forEach(id => {
+    const btn = el(id);
+    if (btn) btn.style.display = isAdmin ? '' : 'none';
+  });
+}
+
+/**
+ * Met à jour le libellé indiquant la portée de la grille affichée
+ * (magasin spécifique ou grille globale).
+ * @param {string} storeId - Référence vers Magasin.id, ou chaîne vide pour la grille globale.
+ * @returns {void}
+ */
+function _gqUpdateScopeLabel(storeId) {
+  const scopeEl = el('gq-scope-label');
+  if (!scopeEl) return;
+  if (storeId) {
+    /** @type {Magasin | undefined} */
+    const store = DB.magasins.find(m => m.id === storeId);
+    scopeEl.innerHTML = `Grille personnalisée pour <strong>${store ? store.nom : storeId}</strong>`;
+  } else {
+    scopeEl.innerHTML = `Grille <strong>globale</strong> (appliquée à tous les magasins sans personnalisation)`;
+  }
+}
+
+/**
+ * Construit la barre d'info indiquant la source de la grille
+ * affichée, avec un bouton de réinitialisation pour les admins si
+ * la zone n'est pas au référentiel de base.
+ * @param {boolean} isCustomStore
+ * @param {boolean} isCustomGlobal
+ * @param {boolean} isBase
+ * @param {boolean} isAdmin
+ * @param {string} storeId
+ * @param {string} zoneId
+ * @param {number} pointCount
+ * @returns {string}
+ */
+function _buildGqSourceBar(isCustomStore, isCustomGlobal, isBase, isAdmin, storeId, zoneId, pointCount) {
+  /** @type {string} */
+  const badge = isCustomStore
     ? `<span style="background:#ede9fe;color:#6d28d9;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Personnalisé magasin</span>`
     : isCustomGlobal
       ? `<span style="background:#f0fdf4;color:#15803d;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Grille globale</span>`
       : `<span style="background:#f1f5f9;color:#64748b;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Référentiel de base</span>`;
 
-  body.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)">
-      ${sourceBadge}
-      <span class="tsm tm">${pts.length} point(s)</span>
-      ${isAdmin && !isBase ? `<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="_gqResetZone('${mid || ''}','${zoneId}')"><i class="ti ti-refresh"></i> Réinitialiser cette zone</button>` : ''}
-    </div>
-    ${pts.map(p => `
-      <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500">${p.q}</div>
-          ${p.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;font-style:italic">${p.prec}</div>` : ''}
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-          ${critBdg(p.c)}
-          <span class="tsm tm">Poids : <strong>${p.p}</strong></span>
-          ${isAdmin ? `
-            <button class="btn btn-secondary btn-sm" onclick="openGqCtrlModal('${mid || ''}','${zoneId}','${p.id}')"><i class="ti ti-pencil"></i></button>
-            <button class="btn btn-danger btn-sm" onclick="delGqCtrl('${mid || ''}','${zoneId}','${p.id}')"><i class="ti ti-trash"></i></button>
-          ` : ''}
-        </div>
-      </div>`).join('')}`;
+  /** @type {string} */
+  const resetBtn = isAdmin && !isBase
+    ? `<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="_gqResetZone('${storeId || ''}','${zoneId}')">
+         <i class="ti ti-refresh"></i> Réinitialiser cette zone
+       </button>`
+    : '';
+
+  return `<div style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)">
+    ${badge}
+    <span class="tsm tm">${pointCount} point(s)</span>
+    ${resetBtn}
+  </div>`;
 }
 
-function onGqMagChange() { _gqRender(); }
-function onGqZoneChange() { _gqRender(); }
+/**
+ * Construit la ligne HTML d'un point de contrôle Qualimètre, avec
+ * boutons modifier/supprimer pour les admins.
+ * @param {GrillePoint} point
+ * @param {boolean} isAdmin
+ * @param {string} storeId
+ * @param {string} zoneId
+ * @returns {string}
+ */
+function _buildGqPointRow(point, isAdmin, storeId, zoneId) {
+  /** @type {string} */
+  const actionButtons = isAdmin
+    ? `<button class="btn btn-secondary btn-sm" onclick="openGqCtrlModal('${storeId || ''}','${zoneId}','${point.id}')" aria-label="Modifier">
+         <i class="ti ti-pencil"></i>
+       </button>
+       <button class="btn btn-danger btn-sm" onclick="delGqCtrl('${storeId || ''}','${zoneId}','${point.id}')" aria-label="Supprimer">
+         <i class="ti ti-trash"></i>
+       </button>`
+    : '';
+
+  return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:500">${point.q}</div>
+      ${point.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;font-style:italic">${point.prec}</div>` : ''}
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+      ${critBdg(point.c)}
+      <span class="tsm tm">Poids : <strong>${point.p}</strong></span>
+      ${actionButtons}
+    </div>
+  </div>`;
+}
 
 // ─────────────────────────────────────────────
-// MODAL AJOUT / ÉDITION D'UN POINT
+// 5. MODAL AJOUT / ÉDITION D'UN POINT
 // ─────────────────────────────────────────────
 
-function openGqCtrlModal(mid, zoneId, qid) {
-  const m = mid || v('gq-mag-sel') || '';
-  const z = zoneId || v('gq-zone-sel') || (QM_ZONES[0] && QM_ZONES[0].id);
-  const isEdit = !!qid;
+/**
+ * Ouvre la modale de création/édition d'un point Qualimètre.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * @param {string} zoneId - Référence vers QMZone.id.
+ * @param {string} [pointId] - Référence vers GrillePoint.id à éditer ; absent/falsy pour une création.
+ * @returns {void}
+ */
+function openGqCtrlModal(storeId, zoneId, pointId) {
+  /** @type {string} */
+  const resolvedStoreId = storeId || v('gq-mag-sel') || '';
+  /** @type {string} */
+  const resolvedZoneId  = zoneId  || v('gq-zone-sel') || QM_ZONES[0]?.id;
+  /** @type {boolean} */
+  const isEdit          = !!pointId;
+
   el('m-gq-ctrl-ttl').innerHTML = isEdit
     ? '<i class="ti ti-pencil" style="color:#7c3aed"></i> Modifier le point Qualimètre'
     : '<i class="ti ti-gauge" style="color:#7c3aed"></i> Nouveau point Qualimètre';
+
   el('gq-ctrl-err').classList.remove('show');
-  sv('gqc-id', qid || '');
-  sv('gqc-mid', m);
-  sv('gqc-zone', z);
+  sv('gqc-id',   pointId      || '');
+  sv('gqc-mid',  resolvedStoreId);
+  sv('gqc-zone', resolvedZoneId);
 
-  const radios = document.querySelectorAll('input[name="gqc-scope"]');
-  radios.forEach(r => { r.checked = r.value === (m ? 'mag' : 'global'); });
-  _gqToggleScopeUI(m ? 'mag' : 'global');
+  // Scope radio
+  /** @type {GqScope} */
+  const scope = resolvedStoreId ? 'mag' : 'global';
+  document.querySelectorAll('input[name="gqc-scope"]').forEach(radio => {
+    radio.checked = radio.value === scope;
+  });
+  _gqToggleScopeUI(scope);
 
-  const zsel = el('gqc-zone-sel');
-  if (zsel) {
-    // Fusionner QM_ZONES + zones globales
-    const globalZoneIds = Object.keys(DB.qualimetreGlobal || {});
-    const allZones = [
-      ...QM_ZONES,
-      ...globalZoneIds.filter(id => !QM_ZONES.find(qz => qz.id === id)).map(id => ({ id, emoji: '', label: id }))
-    ];
-    zsel.innerHTML = allZones.map(zone => `<option value="${zone.id}"${zone.id === z ? ' selected' : ''}>${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}</option>`).join('');
-  }
-
-  const msel = el('gqc-mag-sel');
-  if (msel) {
-    msel.innerHTML = '<option value="">— Tous les magasins —</option>' +
-      DB.magasins.filter(mag => visibleMids().includes(mag.id)).map(mag => `<option value="${mag.id}"${mag.id === m ? ' selected' : ''}>${mag.nom}</option>`).join('');
-  }
+  _buildGqCtrlZoneSelect(resolvedZoneId);
+  _buildGqCtrlMagSelect(resolvedStoreId);
 
   if (isEdit) {
-    let pts = [];
-    if (m && DB.qualimetreCustom && DB.qualimetreCustom[m] && DB.qualimetreCustom[m][z]) pts = DB.qualimetreCustom[m][z];
-    else if (DB.qualimetreGlobal && DB.qualimetreGlobal[z]) pts = DB.qualimetreGlobal[z];
-    const q = pts.find(x => x.id === qid); if (!q) return;
-    sv('gqc-q', q.q); sv('gqc-prec', q.prec || ''); el('gqc-crit').value = q.c; sv('gqc-poids', q.p);
+    _populateGqCtrlForm(resolvedStoreId, resolvedZoneId, pointId);
   } else {
-    sv('gqc-q', ''); sv('gqc-prec', ''); el('gqc-crit').value = 'Majeure'; sv('gqc-poids', '');
+    _resetGqCtrlForm();
   }
+
   openModal('m-gq-ctrl');
 }
 
-function _gqToggleScopeUI(scope) {
-  const mRow = el('gqc-mag-row');
-  if (mRow) mRow.style.display = scope === 'mag' ? '' : 'none';
+/**
+ * Peuple le select de zones de la modale d'édition de point.
+ * @param {string} selectedZoneId
+ * @returns {void}
+ */
+function _buildGqCtrlZoneSelect(selectedZoneId) {
+  const select = el('gqc-zone-sel');
+  if (!select) return;
+  /** @type {QMZone[]} */
+  const allZones = _getAllZones();
+  select.innerHTML = allZones
+    .map(zone => `<option value="${zone.id}"${zone.id === selectedZoneId ? ' selected' : ''}>${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}</option>`)
+    .join('');
 }
 
-function saveGqCtrl() {
-  const qText = v('gqc-q').trim();
-  const prec = v('gqc-prec').trim();
-  const crit = el('gqc-crit').value;
-  const err = el('gq-ctrl-err');
-  if (!qText) { err.textContent = 'L\'intitulé est requis.'; err.classList.add('show'); return; }
-  const defP = { 'Critique': 10, 'Majeure': 5, 'Mineure': 2 };
-  const poids = parseInt(v('gqc-poids')) || defP[crit];
-  const zoneId = el('gqc-zone-sel') ? el('gqc-zone-sel').value : v('gqc-zone');
-  const scopeVal = [...document.querySelectorAll('input[name="gqc-scope"]')].find(r => r.checked);
-  const scope = scopeVal ? scopeVal.value : 'global';
-  const mid = scope === 'mag' ? (el('gqc-mag-sel') ? el('gqc-mag-sel').value : v('gqc-mid')) : '';
-  const existId = v('gqc-id');
-  const newPoint = { id: existId || 'gq-' + uid(), q: qText, prec, cat: 'Général', p: poids, c: crit };
+/**
+ * Peuple le select de magasins de la modale d'édition de point
+ * (option "Tous les magasins" pour la portée globale).
+ * @param {string} selectedStoreId
+ * @returns {void}
+ */
+function _buildGqCtrlMagSelect(selectedStoreId) {
+  const select = el('gqc-mag-sel');
+  if (!select) return;
+  select.innerHTML =
+    '<option value="">— Tous les magasins —</option>' +
+    DB.magasins
+      .filter(m => visibleMids().includes(m.id))
+      .map(m => `<option value="${m.id}"${m.id === selectedStoreId ? ' selected' : ''}>${m.nom}</option>`)
+      .join('');
+}
 
-  if (mid) {
+/**
+ * Pré-remplit le formulaire avec les données d'un point existant
+ * (recherché dans qualimetreCustom[storeId][zoneId], sinon
+ * qualimetreGlobal[zoneId]).
+ * @param {string} storeId
+ * @param {string} zoneId
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @returns {void}
+ */
+function _populateGqCtrlForm(storeId, zoneId, pointId) {
+  /** @type {GrillePoint[]} */
+  let points = [];
+  if (storeId && DB.qualimetreCustom?.[storeId]?.[zoneId]) {
+    points = DB.qualimetreCustom[storeId][zoneId];
+  } else if (DB.qualimetreGlobal?.[zoneId]) {
+    points = DB.qualimetreGlobal[zoneId];
+  }
+
+  /** @type {GrillePoint | undefined} */
+  const point = points.find(p => p.id === pointId);
+  if (!point) return;
+
+  sv('gqc-q',    point.q);
+  sv('gqc-prec', point.prec || '');
+  sv('gqc-poids', point.p);
+  el('gqc-crit').value = point.c;
+}
+
+/**
+ * Réinitialise le formulaire de point Qualimètre pour une création.
+ * @returns {void}
+ */
+function _resetGqCtrlForm() {
+  sv('gqc-q', '');
+  sv('gqc-prec', '');
+  sv('gqc-poids', '');
+  el('gqc-crit').value = 'Majeure';
+}
+
+/**
+ * Affiche/masque le sélecteur de magasin selon la portée choisie.
+ * @param {GqScope} scope
+ * @returns {void}
+ */
+function _gqToggleScopeUI(scope) {
+  const magRow = el('gqc-mag-row');
+  if (magRow) magRow.style.display = scope === 'mag' ? '' : 'none';
+}
+
+// ─────────────────────────────────────────────
+// 6. SAUVEGARDE D'UN POINT
+// ─────────────────────────────────────────────
+
+/**
+ * Valide et sauvegarde le formulaire de point Qualimètre, dans la
+ * portée choisie (magasin spécifique ou grille globale).
+ * @returns {void}
+ */
+function saveGqCtrl() {
+  /** @type {string} */
+  const intitule  = v('gqc-q').trim();
+  /** @type {string} */
+  const precision = v('gqc-prec').trim();
+  /** @type {GrilleCriticite} */
+  const criticite = el('gqc-crit').value;
+  const errorEl   = el('gq-ctrl-err');
+
+  if (!intitule) {
+    errorEl.textContent = 'L\'intitulé est requis.';
+    errorEl.classList.add('show');
+    return;
+  }
+
+  /** @type {number} */
+  const poids      = parseInt(v('gqc-poids')) || GQ_DEFAULT_POIDS[criticite];
+  /** @type {string} */
+  const zoneId     = el('gqc-zone-sel') ? el('gqc-zone-sel').value : v('gqc-zone');
+  const scopeRadio = [...document.querySelectorAll('input[name="gqc-scope"]')].find(r => r.checked);
+  /** @type {GqScope} */
+  const scope      = scopeRadio ? scopeRadio.value : 'global';
+  /** @type {string} */
+  const storeId    = scope === 'mag' ? (el('gqc-mag-sel') ? el('gqc-mag-sel').value : v('gqc-mid')) : '';
+  /** @type {string} */
+  const existingId = v('gqc-id');
+
+  /** @type {GrillePoint} */
+  const newPoint = {
+    id:   existingId || 'gq-' + uid(),
+    q:    intitule,
+    prec: precision,
+    cat:  'Général',
+    p:    poids,
+    c:    criticite,
+  };
+
+  _upsertQualimetrePoint(storeId, zoneId, existingId, newPoint);
+  save(['qualimetreCustom', 'qualimetreGlobal']);
+  closeModal('m-gq-ctrl');
+
+  // Restaurer les sélecteurs sur la bonne valeur
+  if (el('gq-mag-sel')  && storeId) el('gq-mag-sel').value  = storeId;
+  if (el('gq-zone-sel') && zoneId)  el('gq-zone-sel').value = zoneId;
+
+  showGrilleQualimetre();
+}
+
+/**
+ * Insère ou met à jour un point dans le store approprié (magasin ou
+ * global), avec lazy-init des niveaux intermédiaires manquants.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * @param {string} zoneId - Référence vers QMZone.id.
+ * @param {string} existingId - Référence vers GrillePoint.id à mettre à jour ; chaîne vide pour une création.
+ * @param {GrillePoint} newPoint
+ * @returns {void}
+ */
+function _upsertQualimetrePoint(storeId, zoneId, existingId, newPoint) {
+  if (storeId) {
     if (!DB.qualimetreCustom) DB.qualimetreCustom = {};
-    if (!DB.qualimetreCustom[mid]) DB.qualimetreCustom[mid] = {};
-    if (!DB.qualimetreCustom[mid][zoneId]) DB.qualimetreCustom[mid][zoneId] = [];
-    const arr = DB.qualimetreCustom[mid][zoneId];
-    if (existId) { const idx = arr.findIndex(x => x.id === existId); if (idx >= 0) arr[idx] = newPoint; else arr.push(newPoint); }
-    else arr.push(newPoint);
+    if (!DB.qualimetreCustom[storeId]) DB.qualimetreCustom[storeId] = {};
+    if (!DB.qualimetreCustom[storeId][zoneId]) DB.qualimetreCustom[storeId][zoneId] = [];
+    _upsertInArray(DB.qualimetreCustom[storeId][zoneId], existingId, newPoint);
   } else {
     if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
     if (!DB.qualimetreGlobal[zoneId]) DB.qualimetreGlobal[zoneId] = [];
-    const arr = DB.qualimetreGlobal[zoneId];
-    if (existId) { const idx = arr.findIndex(x => x.id === existId); if (idx >= 0) arr[idx] = newPoint; else arr.push(newPoint); }
-    else arr.push(newPoint);
+    _upsertInArray(DB.qualimetreGlobal[zoneId], existingId, newPoint);
   }
-  save(['qualimetreCustom', 'qualimetreGlobal']);
-  closeModal('m-gq-ctrl');
-  if (el('gq-mag-sel') && mid) el('gq-mag-sel').value = mid;
-  if (el('gq-zone-sel') && zoneId) el('gq-zone-sel').value = zoneId;
-  showGrilleQualimetre();
 }
 
-function delGqCtrl(mid, zoneId, qid) {
+/**
+ * Insère ou met à jour un élément dans un tableau identifié par
+ * `.id`, par mutation en place.
+ * @param {GrillePoint[]} array
+ * @param {string} existingId - Id à rechercher pour une mise à jour ; chaîne vide pour forcer un push.
+ * @param {GrillePoint} newItem
+ * @returns {void}
+ */
+function _upsertInArray(array, existingId, newItem) {
+  if (existingId) {
+    /** @type {number} */
+    const index = array.findIndex(x => x.id === existingId);
+    if (index >= 0) array[index] = newItem;
+    else array.push(newItem);
+  } else {
+    array.push(newItem);
+  }
+}
+
+// ─────────────────────────────────────────────
+// 7. SUPPRESSION ET RÉINITIALISATION
+// ─────────────────────────────────────────────
+
+/**
+ * Supprime un point de contrôle Qualimètre (magasin ou global),
+ * après confirmation.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * @param {string} zoneId - Référence vers QMZone.id.
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @returns {void}
+ */
+function delGqCtrl(storeId, zoneId, pointId) {
   if (!confirm('Supprimer ce point de contrôle Qualimètre ?')) return;
-  if (mid) {
-    if (!DB.qualimetreCustom || !DB.qualimetreCustom[mid]) return;
-    DB.qualimetreCustom[mid][zoneId] = (DB.qualimetreCustom[mid][zoneId] || []).filter(x => x.id !== qid);
+
+  if (storeId) {
+    if (!DB.qualimetreCustom?.[storeId]) return;
+    DB.qualimetreCustom[storeId][zoneId] = (DB.qualimetreCustom[storeId][zoneId] || []).filter(p => p.id !== pointId);
   } else {
     if (!DB.qualimetreGlobal) return;
-    DB.qualimetreGlobal[zoneId] = (DB.qualimetreGlobal[zoneId] || []).filter(x => x.id !== qid);
+    DB.qualimetreGlobal[zoneId] = (DB.qualimetreGlobal[zoneId] || []).filter(p => p.id !== pointId);
   }
+
   save(['qualimetreCustom', 'qualimetreGlobal']);
   showGrilleQualimetre();
 }
 
-function _gqResetZone(mid, zoneId) {
-  const label = mid ? 'la personnalisation magasin' : 'la grille globale';
-  if (!confirm(`Réinitialiser ${label} pour cette zone ? Les points seront supprimés.`)) return;
-  if (mid) {
-    if (DB.qualimetreCustom && DB.qualimetreCustom[mid]) delete DB.qualimetreCustom[mid][zoneId];
+/**
+ * Réinitialise (supprime tous les points de) une zone, pour la
+ * personnalisation magasin ou la grille globale selon `storeId`,
+ * après confirmation.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * @param {string} zoneId - Référence vers QMZone.id.
+ * @returns {void}
+ */
+function _gqResetZone(storeId, zoneId) {
+  /** @type {string} */
+  const scopeLabel = storeId ? 'la personnalisation magasin' : 'la grille globale';
+  if (!confirm(`Réinitialiser ${scopeLabel} pour cette zone ? Les points seront supprimés.`)) return;
+
+  if (storeId) {
+    if (DB.qualimetreCustom?.[storeId]) delete DB.qualimetreCustom[storeId][zoneId];
   } else {
     if (DB.qualimetreGlobal) delete DB.qualimetreGlobal[zoneId];
   }
+
   save(['qualimetreCustom', 'qualimetreGlobal']);
   showGrilleQualimetre();
 }
 
 // ─────────────────────────────────────────────
-// IMPORT CSV / XLSX / PDF
+// 8. INITIALISATION
 // ─────────────────────────────────────────────
 
-let _gqImportData = [];
+/**
+ * Garantit que DB.qualimetreGlobal existe (lazy-init), appelée au
+ * démarrage de l'application (voir init.js).
+ * @returns {void}
+ */
+function initQualimetreGlobal() {
+  if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
+  // Les points viennent uniquement de l'import ou de la saisie manuelle
+}
 
+// ─────────────────────────────────────────────
+// 9. EXPORT CSV
+// ─────────────────────────────────────────────
+
+/**
+ * Exporte la grille Qualimètre complète d'un magasin (ou globale si
+ * aucun magasin sélectionné) en CSV téléchargeable.
+ * @returns {void}
+ */
+function exportGrilleCSV() {
+  /** @type {string} */
+  const storeId = v('gq-mag-sel') || '';
+  /** @type {QMZoneWithPoints[]} */
+  const grille  = getQualimetreGrille(storeId || null);
+
+  /** @type {(string|number)[][]} */
+  const rows = [['zone', 'question', 'precision', 'criticite', 'poids']];
+  grille.forEach(zone => {
+    zone.points.forEach(point => {
+      rows.push([zone.id, point.q, point.prec || '', point.c, point.p]);
+    });
+  });
+
+  /** @type {string} */
+  const csvContent = rows
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
+    .join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href     = url;
+  link.download = 'grille-qualimetre.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+
+  showToast('Grille exportée en CSV', 'success');
+}
+
+// ─────────────────────────────────────────────
+// 10. IMPORT CSV / XLSX / PDF
+// ─────────────────────────────────────────────
+
+/**
+ * Ouvre la modale d'import de grille Qualimètre, réinitialise
+ * l'état d'import et peuple le select de magasins cibles.
+ * @returns {void}
+ */
 function openGqImportModal() {
   _gqImportData = [];
   el('gq-import-preview').innerHTML = '';
   el('gq-import-err').classList.remove('show');
-  const msel = el('gqi-mag-sel');
-  if (msel) {
-    msel.innerHTML = '<option value="">— Tous les magasins (global) —</option>' +
-      DB.magasins.filter(m => visibleMids().includes(m.id)).map(m => `<option value="${m.id}">${m.nom}</option>`).join('');
+
+  const magSelect = el('gqi-mag-sel');
+  if (magSelect) {
+    magSelect.innerHTML =
+      '<option value="">— Tous les magasins (global) —</option>' +
+      DB.magasins
+        .filter(m => visibleMids().includes(m.id))
+        .map(m => `<option value="${m.id}">${m.nom}</option>`)
+        .join('');
   }
-  const fi = el('gq-import-file'); if (fi) fi.value = '';
+
+  const fileInput = el('gq-import-file');
+  if (fileInput) fileInput.value = '';
+
   openModal('m-gq-import');
 }
 
+/**
+ * Détecte le format du fichier sélectionné (CSV, XLSX/XLS, PDF) et
+ * délègue au parseur approprié, en chargeant dynamiquement les
+ * librairies SheetJS/PDF.js si nécessaire.
+ * @param {HTMLInputElement} input - Élément `<input type="file">`.
+ * @returns {void}
+ */
 function handleGqImportFile(input) {
-  const file = input.files[0]; if (!file) return;
+  /** @type {File | undefined} */
+  const file = input.files[0];
+  if (!file) return;
+
+  /** @type {string} */
   const ext = file.name.split('.').pop().toLowerCase();
   el('gq-import-err').classList.remove('show');
-  el('gq-import-preview').innerHTML = '<div style="padding:16px;color:var(--text2)"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i> Lecture du fichier…</div>';
+  el('gq-import-preview').innerHTML =
+    '<div style="padding:16px;color:var(--text2)"><i class="ti ti-loader" style="animation:spin .8s linear infinite"></i> Lecture du fichier…</div>';
 
   if (ext === 'csv') {
     const reader = new FileReader();
-    reader.onload = e => _gqParseCSV(e.target.result);
+    reader.onload = event => _gqParseCSV(event.target.result);
     reader.readAsText(file, 'UTF-8');
   } else if (ext === 'xlsx' || ext === 'xls') {
     _gqLoadSheetJS(() => {
       const reader = new FileReader();
-      reader.onload = e => {
-        const wb = XLSX.read(e.target.result, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const csv = XLSX.utils.sheet_to_csv(ws, { FS: ';' });
-        _gqParseCSV(csv);
+      reader.onload = event => {
+        /** @type {Object} Classeur XLSX (librairie SheetJS, non typée en détail). */
+        const workbook  = XLSX.read(event.target.result, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        _gqParseCSV(XLSX.utils.sheet_to_csv(worksheet, { FS: ';' }));
       };
       reader.readAsArrayBuffer(file);
     });
@@ -293,52 +781,100 @@ function handleGqImportFile(input) {
   }
 }
 
-function _gqLoadSheetJS(cb) {
-  if (window.XLSX) { cb(); return; }
-  const s = document.createElement('script'); s.src = SHEETJS_URL;
-  s.onload = cb; s.onerror = () => _gqImportErr('Impossible de charger SheetJS.');
-  document.head.appendChild(s);
+/**
+ * Charge dynamiquement la librairie SheetJS (xlsx) depuis le CDN si
+ * elle n'est pas déjà présente, puis exécute le callback.
+ * @param {() => void} callback
+ * @returns {void}
+ */
+function _gqLoadSheetJS(callback) {
+  if (window.XLSX) { callback(); return; }
+  const script    = document.createElement('script');
+  script.src      = CDN_SHEETJS;
+  script.onload   = callback;
+  script.onerror  = () => _gqImportErr('Impossible de charger SheetJS.');
+  document.head.appendChild(script);
 }
 
-function _gqLoadPDFJS(cb) {
-  if (window.pdfjsLib) { cb(); return; }
-  const s = document.createElement('script'); s.src = PDFJS_URL;
-  s.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_URL.replace('pdf.min.js', 'pdf.worker.min.js'); cb(); };
-  s.onerror = () => _gqImportErr('Impossible de charger PDF.js.');
-  document.head.appendChild(s);
+/**
+ * Charge dynamiquement la librairie PDF.js depuis le CDN si elle
+ * n'est pas déjà présente (avec son worker), puis exécute le callback.
+ * @param {() => void} callback
+ * @returns {void}
+ */
+function _gqLoadPDFJS(callback) {
+  if (window.pdfjsLib) { callback(); return; }
+  const script   = document.createElement('script');
+  script.src     = CDN_PDFJS;
+  script.onload  = () => {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = CDN_PDFJS_WORKER;
+    callback();
+  };
+  script.onerror = () => _gqImportErr('Impossible de charger PDF.js.');
+  document.head.appendChild(script);
 }
 
+/**
+ * Parse un contenu CSV/TSV en lignes GqImportRow, en détectant
+ * automatiquement le séparateur et les colonnes par en-tête. Ignore
+ * les lignes de titre de zone (sans criticité ni poids).
+ * @param {string} text - Contenu texte brut du fichier.
+ * @returns {void}
+ */
 function _gqParseCSV(text) {
+  /** @type {string[]} */
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) { _gqImportErr('Le fichier est vide ou ne contient pas de données.'); return; }
 
-  const sep = lines[0].includes(';') ? ';' : ',';
-  const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+  /** @type {string} */
+  const separator = lines[0].includes(';') ? ';' : ',';
+  /** @type {string[]} */
+  const headers   = lines[0].split(separator).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
 
+  /** @type {number} */
   const idxZone = headers.findIndex(h => h.includes('zone'));
-  const idxQ = headers.findIndex(h => ['question', 'q', 'intitulé', 'intitule', 'libelle', 'libellé'].includes(h));
-  const idxPrec = headers.findIndex(h => ['precision', 'précision', 'prec', 'detail', 'détail'].includes(h));
-  const idxCrit = headers.findIndex(h => ['criticite', 'criticité', 'crit', 'niveau'].includes(h));
-  const idxPoids = headers.findIndex(h => ['poids', 'points', 'weight'].includes(h));
+  /** @type {number} */
+  const idxQ    = headers.findIndex(h => ['question','q','intitulé','intitule','libelle','libellé'].includes(h));
+  /** @type {number} */
+  const idxPrec = headers.findIndex(h => ['precision','précision','prec','detail','détail'].includes(h));
+  /** @type {number} */
+  const idxCrit = headers.findIndex(h => ['criticite','criticité','crit','niveau'].includes(h));
+  /** @type {number} */
+  const idxPoids = headers.findIndex(h => ['poids','points','weight'].includes(h));
 
-  if (idxQ < 0) { _gqImportErr('Colonne "question" introuvable. Vérifiez les en-têtes (zone, question, precision, criticite, poids).'); return; }
+  if (idxQ < 0) {
+    _gqImportErr('Colonne "question" introuvable. Vérifiez les en-têtes (zone, question, precision, criticite, poids).');
+    return;
+  }
 
+  /** @type {GqImportRow[]} */
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
-    const q = cols[idxQ]; if (!q) continue;
-    // Ignorer les lignes de titre de zone (criticite et poids vides)
-    const critCheck = idxCrit >= 0 ? cols[idxCrit] : '';
-    const poidsCheck = idxPoids >= 0 ? cols[idxPoids] : '';
-    if (!critCheck && !poidsCheck) continue;
+    /** @type {string[]} */
+    const cols     = lines[i].split(separator).map(c => c.trim().replace(/^["']|["']$/g, ''));
+    /** @type {string} */
+    const question = cols[idxQ];
+    if (!question) continue;
+
+    // Ignorer les lignes de titre de zone (criticité et poids vides)
+    /** @type {string} */
+    const critValue  = idxCrit  >= 0 ? cols[idxCrit]  : '';
+    /** @type {string} */
+    const poidsValue = idxPoids >= 0 ? cols[idxPoids] : '';
+    if (!critValue && !poidsValue) continue;
+
+    /** @type {string} */
     const zoneRaw = idxZone >= 0 ? cols[idxZone] : '';
-    const zoneId = _gqResolveZoneId(zoneRaw);
-    const critRaw = idxCrit >= 0 ? cols[idxCrit] : 'Majeure';
-    const crit = _gqNormalizeCrit(critRaw);
-    const defP = { 'Critique': 10, 'Majeure': 5, 'Mineure': 2 };
-    const poids = idxPoids >= 0 ? (parseInt(cols[idxPoids]) || defP[crit]) : defP[crit];
-    const prec = idxPrec >= 0 ? (cols[idxPrec] || '') : '';
-    rows.push({ zoneId, zoneName: zoneRaw, q, prec, c: crit, p: poids });
+    /** @type {string} */
+    const zoneId  = _gqResolveZoneId(zoneRaw);
+    /** @type {GrilleCriticite} */
+    const crit    = _gqNormalizeCrit(idxCrit >= 0 ? cols[idxCrit] : 'Majeure');
+    /** @type {number} */
+    const poids   = idxPoids >= 0 ? (parseInt(cols[idxPoids]) || GQ_DEFAULT_POIDS[crit]) : GQ_DEFAULT_POIDS[crit];
+    /** @type {string} */
+    const prec    = idxPrec >= 0 ? (cols[idxPrec] || '') : '';
+
+    rows.push({ zoneId, zoneName: zoneRaw, q: question, prec, c: crit, p: poids });
   }
 
   if (!rows.length) { _gqImportErr('Aucune ligne valide trouvée.'); return; }
@@ -346,84 +882,145 @@ function _gqParseCSV(text) {
   _gqRenderImportPreview();
 }
 
+/**
+ * Extrait le texte d'un fichier PDF via PDF.js et parse les lignes
+ * contenant des colonnes séparées par '|' ou tabulation en
+ * GqImportRow.
+ * @param {File} file
+ * @returns {Promise<void>}
+ */
 async function _gqParsePDF(file) {
   try {
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    let text = '';
+    /** @type {Object} Document PDF.js — API non typée en détail ici. */
+    const pdf  = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    let text   = '';
+
     for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
+      const page    = await pdf.getPage(i);
       const content = await page.getTextContent();
-      text += content.items.map(it => it.str).join(' ') + '\n';
+      text += content.items.map(item => item.str).join(' ') + '\n';
     }
-    // Extraire les lignes séparées par | ou tabulation
+
+    /** @type {string[]} */
     const lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 8);
-    const rows = [];
-    lines.forEach(l => {
-      const parts = l.includes('|') ? l.split('|') : l.includes('\t') ? l.split('\t') : null;
+    /** @type {GqImportRow[]} */
+    const rows  = [];
+
+    lines.forEach(line => {
+      /** @type {string[] | null} */
+      const parts = line.includes('|') ? line.split('|') : line.includes('\t') ? line.split('\t') : null;
       if (!parts) return;
-      const [zoneRaw, q, prec, critRaw, poidsRaw] = parts.map(s => s.trim());
-      if (!q) return;
+      const [zoneRaw, question, prec, critRaw, poidsRaw] = parts.map(s => s.trim());
+      if (!question) return;
+
+      /** @type {string} */
       const zoneId = _gqResolveZoneId(zoneRaw || '');
-      const crit = _gqNormalizeCrit(critRaw || 'Majeure');
-      const defP = { 'Critique': 10, 'Majeure': 5, 'Mineure': 2 };
-      const poids = parseInt(poidsRaw) || defP[crit];
-      rows.push({ zoneId, zoneName: zoneRaw || '', q, prec: prec || '', c: crit, p: poids });
+      /** @type {GrilleCriticite} */
+      const crit   = _gqNormalizeCrit(critRaw || 'Majeure');
+      /** @type {number} */
+      const poids  = parseInt(poidsRaw) || GQ_DEFAULT_POIDS[crit];
+      rows.push({ zoneId, zoneName: zoneRaw || '', q: question, prec: prec || '', c: crit, p: poids });
     });
-    if (!rows.length) { _gqImportErr('Aucun point extrait du PDF. Le PDF doit contenir des colonnes séparées par | ou tabulation : zone | question | precision | criticite | poids'); return; }
+
+    if (!rows.length) {
+      _gqImportErr('Aucun point extrait du PDF. Le PDF doit contenir des colonnes séparées par | ou tabulation : zone | question | precision | criticite | poids');
+      return;
+    }
+
     _gqImportData = rows;
     _gqRenderImportPreview();
-  } catch (e) {
-    _gqImportErr('Erreur lecture PDF : ' + e.message);
+  } catch (error) {
+    _gqImportErr('Erreur lecture PDF : ' + error.message);
   }
 }
 
+/**
+ * Résout un identifiant de zone à partir d'une valeur textuelle
+ * brute, en essayant successivement : format direct 'zN', id exact,
+ * correspondance partielle de label, ou numéro extrait ('Zone 1' →
+ * 'z1'). Retombe sur la première zone connue si rien ne correspond.
+ * @param {string} raw - Valeur brute de zone telle que lue dans le fichier source.
+ * @returns {string} Id de zone résolu.
+ */
 function _gqResolveZoneId(raw) {
-  if (!raw) return QM_ZONES.length ? QM_ZONES[0].id : 'z0';
-  const r = raw.trim();
-  // Déjà un id valide : z0, z1... z10
-  if (/^z\d+$/i.test(r)) return r.toLowerCase();
-  // Chercher dans QM_ZONES par id ou label
-  if (QM_ZONES.length) {
-    const direct = QM_ZONES.find(z => z.id.toLowerCase() === r.toLowerCase());
-    if (direct) return direct.id;
-    const byLabel = QM_ZONES.find(z => z.label.toLowerCase().includes(r.toLowerCase()) || r.toLowerCase().includes(z.label.toLowerCase().split('–')[1]?.trim().toLowerCase() || '~~~'));
-    if (byLabel) return byLabel.id;
-  }
-  // Extraire le numéro : "Zone 1", "zone1", "Zone 1 – Abords", "1"
-  const num = r.replace(/[^\d]/g, '');
+  if (!raw) return QM_ZONES[0]?.id || 'z0';
+  /** @type {string} */
+  const cleaned = raw.trim();
+
+  // Déjà un id valide : z0, z1… z10
+  if (/^z\d+$/i.test(cleaned)) return cleaned.toLowerCase();
+
+  // Chercher par id ou label dans QM_ZONES
+  /** @type {QMZone | undefined} */
+  const byId    = QM_ZONES.find(z => z.id.toLowerCase()    === cleaned.toLowerCase());
+  if (byId) return byId.id;
+
+  /** @type {QMZone | undefined} */
+  const byLabel = QM_ZONES.find(z =>
+    z.label.toLowerCase().includes(cleaned.toLowerCase()) ||
+    cleaned.toLowerCase().includes(z.label.toLowerCase().split('–')[1]?.trim().toLowerCase() || '~~~')
+  );
+  if (byLabel) return byLabel.id;
+
+  // Extraire un numéro : "Zone 1", "zone1", "1"
+  /** @type {string} */
+  const num = cleaned.replace(/[^\d]/g, '');
   if (num) return 'z' + num;
-  return QM_ZONES.length ? QM_ZONES[0].id : 'z0';
+
+  return QM_ZONES[0]?.id || 'z0';
 }
 
+/**
+ * Normalise une valeur de criticité brute en une des 3 valeurs
+ * connues, par détection de sous-chaîne (insensible à la casse).
+ * Retombe sur 'Majeure' si aucune correspondance.
+ * @param {string} raw
+ * @returns {GrilleCriticite}
+ */
 function _gqNormalizeCrit(raw) {
-  const r = (raw || '').toLowerCase().trim();
-  if (r.includes('crit')) return 'Critique';
-  if (r.includes('min')) return 'Mineure';
+  /** @type {string} */
+  const normalized = (raw || '').toLowerCase().trim();
+  if (normalized.includes('crit')) return 'Critique';
+  if (normalized.includes('min'))  return 'Mineure';
   return 'Majeure';
 }
 
+/**
+ * Affiche l'aperçu des données d'import, groupées par zone, avant
+ * confirmation.
+ * @returns {void}
+ */
 function _gqRenderImportPreview() {
-  const rows = _gqImportData;
-  const scope = el('gqi-mag-sel') ? el('gqi-mag-sel').value : '';
-  const scopeLabel = scope
-    ? `magasin <strong>${DB.magasins.find(m => m.id === scope)?.nom || scope}</strong>`
+  /** @type {GqImportRow[]} */
+  const rows         = _gqImportData;
+  /** @type {string} */
+  const scope        = el('gqi-mag-sel')?.value || '';
+  /** @type {Magasin | null} */
+  const store        = scope ? DB.magasins.find(m => m.id === scope) : null;
+  /** @type {string} */
+  const scopeLabel   = scope
+    ? `magasin <strong>${store?.nom || scope}</strong>`
     : `grille <strong>globale</strong>`;
 
+  /** @type {Record<string, GqImportRow[]>} */
   const byZone = {};
-  rows.forEach(r => { if (!byZone[r.zoneId]) byZone[r.zoneId] = []; byZone[r.zoneId].push(r); });
+  rows.forEach(r => {
+    if (!byZone[r.zoneId]) byZone[r.zoneId] = [];
+    byZone[r.zoneId].push(r);
+  });
 
   el('gq-import-preview').innerHTML = `
     <div style="margin:12px 0 8px;font-size:13px;color:var(--text2)">
       <strong>${rows.length} point(s)</strong> détecté(s) → appliqués à la ${scopeLabel}
     </div>
-    ${Object.entries(byZone).map(([zid, pts]) => {
-      const zone = QM_ZONES.find(z => z.id === zid);
+    ${Object.entries(byZone).map(([zoneId, points]) => {
+      /** @type {QMZone | undefined} */
+      const zone = QM_ZONES.find(z => z.id === zoneId);
       return `<div style="margin-bottom:10px">
         <div style="font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;padding:6px 10px;background:#f5f3ff;border-radius:6px;margin-bottom:4px">
-          ${zone ? (zone.emoji ? zone.emoji + ' ' : '') + zone.label : zid} (${pts.length})
+          ${zone ? `${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}` : zoneId} (${points.length})
         </div>
-        ${pts.map(p => `<div style="display:flex;gap:8px;align-items:center;padding:5px 10px;font-size:12px;border-bottom:1px solid var(--border)">
+        ${points.map(p => `<div style="display:flex;gap:8px;align-items:center;padding:5px 10px;font-size:12px;border-bottom:1px solid var(--border)">
           <span style="flex:1">${p.q}</span>
           ${critBdg(p.c)}
           <span class="tsm tm">${p.p}pts</span>
@@ -432,65 +1029,67 @@ function _gqRenderImportPreview() {
     }).join('')}`;
 }
 
+/**
+ * Confirme et applique les données importées dans la portée choisie
+ * (magasin spécifique ou grille globale).
+ * @returns {void}
+ */
 function confirmGqImport() {
   if (!_gqImportData.length) { _gqImportErr('Aucune donnée à importer.'); return; }
-  const mid = el('gqi-mag-sel') ? el('gqi-mag-sel').value : '';
-  const replace = el('gqi-replace') ? el('gqi-replace').checked : true;
 
-  if (mid) {
+  /** @type {string} */
+  const storeId = el('gqi-mag-sel')?.value || '';
+  /** @type {boolean} */
+  const replace = el('gqi-replace')?.checked ?? true;
+
+  if (storeId) {
     if (!DB.qualimetreCustom) DB.qualimetreCustom = {};
-    if (!DB.qualimetreCustom[mid]) DB.qualimetreCustom[mid] = {};
-    if (replace) {
-      const zones = [...new Set(_gqImportData.map(r => r.zoneId))];
-      zones.forEach(z => { DB.qualimetreCustom[mid][z] = []; });
-    }
-    _gqImportData.forEach(r => {
-      if (!DB.qualimetreCustom[mid][r.zoneId]) DB.qualimetreCustom[mid][r.zoneId] = [];
-      DB.qualimetreCustom[mid][r.zoneId].push({ id: 'gq-' + uid(), q: r.q, prec: r.prec, cat: 'Général', p: r.p, c: r.c });
-    });
+    if (!DB.qualimetreCustom[storeId]) DB.qualimetreCustom[storeId] = {};
+    _applyImportToStore(DB.qualimetreCustom[storeId], replace);
   } else {
     if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
-    if (replace) {
-      const zones = [...new Set(_gqImportData.map(r => r.zoneId))];
-      zones.forEach(z => { DB.qualimetreGlobal[z] = []; });
-    }
-    _gqImportData.forEach(r => {
-      if (!DB.qualimetreGlobal[r.zoneId]) DB.qualimetreGlobal[r.zoneId] = [];
-      DB.qualimetreGlobal[r.zoneId].push({ id: 'gq-' + uid(), q: r.q, prec: r.prec, cat: 'Général', p: r.p, c: r.c });
-    });
+    _applyImportToStore(DB.qualimetreGlobal, replace);
   }
+
   save(['qualimetreCustom', 'qualimetreGlobal']);
   closeModal('m-gq-import');
-  alert('Grille Qualimètre importée (' + _gqImportData.length + ' point(s))');
+  showToast(`Grille Qualimètre importée (${_gqImportData.length} point(s))`, 'success');
   _gqImportData = [];
   showGrilleQualimetre();
 }
 
-function _gqImportErr(msg) {
-  const err = el('gq-import-err');
-  if (err) { err.textContent = msg; err.classList.add('show'); }
-  el('gq-import-preview').innerHTML = '';
-}
+/**
+ * Applique les données importées (_gqImportData) dans un store
+ * (dictionnaire indexé par zoneId — soit DB.qualimetreCustom[storeId],
+ * soit DB.qualimetreGlobal directement). Si `replace` est vrai, vide
+ * d'abord les zones concernées avant d'y insérer les nouveaux points.
+ * @param {Record<string, GrillePoint[]>} store
+ * @param {boolean} replace
+ * @returns {void}
+ */
+function _applyImportToStore(store, replace) {
+  if (replace) {
+    /** @type {string[]} */
+    const importedZoneIds = [...new Set(_gqImportData.map(r => r.zoneId))];
+    importedZoneIds.forEach(zoneId => { store[zoneId] = []; });
+  }
 
-function initQualimetreGlobal() {
-  if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
-  // Les points viennent uniquement de l'import ou de la saisie manuelle
-}
-
-function exportGrilleCSV() {
-  const mid = v('gq-mag-sel') || '';
-  const rows = [['zone', 'question', 'precision', 'criticite', 'poids']];
-  const grille = getQualimetreGrille(mid || null);
-  grille.forEach(z => {
-    z.points.forEach(p => {
-      rows.push([z.id, p.q, p.prec || '', p.c, p.p]);
+  _gqImportData.forEach(row => {
+    if (!store[row.zoneId]) store[row.zoneId] = [];
+    store[row.zoneId].push({
+      id: 'gq-' + uid(), q: row.q, prec: row.prec, cat: 'Général', p: row.p, c: row.c,
     });
   });
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'grille-qualimetre.csv';
-  a.click(); URL.revokeObjectURL(url);
-  alert('Grille exportée en CSV');
+}
+
+/**
+ * Affiche un message d'erreur dans la modale d'import et vide
+ * l'aperçu.
+ * @param {string} message
+ * @returns {void}
+ */
+function _gqImportErr(message) {
+  const errorEl = el('gq-import-err');
+  if (errorEl) { errorEl.textContent = message; errorEl.classList.add('show'); }
+  el('gq-import-preview').innerHTML = '';
 }

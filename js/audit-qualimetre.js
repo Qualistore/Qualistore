@@ -1,10 +1,120 @@
 // ══════════════ AUDIT-QUALIMETRE ══════════════
 // Dépend de : storage.js (DB, CU, save, uid), config.js, ui.js, grille-qualimetre.js
 
-let qaStep = 0, qaAnswers = {}, qaCurrentZone = 0, _currentQaDraftId = null;
-let _qaGrille = []; // zones résolues pour l'audit en cours
+// ─────────────────────────────────────────────
+// TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
+// ⚠️ Déduits de l'usage dans ce fichier. Ce fichier est la source
+// de CONSTRUCTION canonique de QualAudit (submitQualAudit) — plus
+// fiable que les fichiers qui ne le lisaient que partiellement
+// (dashboard.js, rapport-qualimetre.js).
+//
+// ⚠️ DIVERGENCE DE VOCABULAIRE : QualAudit.statut vaut 'Ouvert'
+// (masculin) ou 'Conforme', DIFFÉRENT du statut Audit FSQS
+// ('Conforme'/'Non conforme', voir audits.js). Ceci résout aussi
+// l'observation faite dans ui.js (statBdg gérait une forme
+// masculine 'Ouvert' dont la source était jusqu'ici introuvable).
+// ─────────────────────────────────────────────
 
-// ── Remplir toutes les réponses non renseignées avec N/A avant soumission ──
+/**
+ * Point de contrôle Qualimètre (voir config.js/grille-qualimetre.js
+ * pour la définition canonique).
+ * @typedef {Object} GrillePoint
+ * @property {string} id
+ * @property {string} q
+ * @property {string} [prec]
+ * @property {number} p
+ * @property {'Critique'|'Majeure'|'Mineure'} c
+ */
+
+/**
+ * Zone Qualimètre enrichie de ses points résolus pour un magasin
+ * donné (voir grille-qualimetre.js : getQualimetreGrille).
+ * @typedef {Object} QMZoneWithPoints
+ * @property {string} id
+ * @property {string} emoji
+ * @property {string} label
+ * @property {GrillePoint[]} points
+ */
+
+/**
+ * Code de réponse à un point de contrôle.
+ * @typedef {'C'|'NC'|'NA'} QaAnswerCode
+ */
+
+/**
+ * Réponse en cours de saisie pour un point de contrôle Qualimètre.
+ * @typedef {Object} QaAnswer
+ * @property {QaAnswerCode | null} rep
+ * @property {string} cmt - Chaîne vide par défaut ; obligatoire en pratique si rep === 'NC' (validation UI, pas applicative).
+ * @property {string[]} photos - Maximum 2 par point (limite appliquée dans handleQaPhoto).
+ * @property {string} q - Intitulé copié depuis GrillePoint.q.
+ */
+
+/**
+ * Statut d'un audit Qualimètre. DIFFÉRENT du statut Audit FSQS —
+ * voir avertissement en tête de fichier.
+ * @typedef {'Ouvert'|'Conforme'} QualAuditStatut
+ */
+
+/**
+ * Audit "Qualimètre", tel que construit par submitQualAudit().
+ * @typedef {Object} QualAudit
+ * @property {string} id - Préfixé 'QA-' + uid().
+ * @property {string} mid - Référence vers Magasin.id.
+ * @property {string} mag - Nom du magasin (copie figée).
+ * @property {string} date
+ * @property {string} aud - Nom de l'auditeur.
+ * @property {string} cmt - Commentaire général.
+ * @property {number} score - Score 0-100 (100 si aucun point pertinent répondu).
+ * @property {number} nc - Nombre de points non conformes.
+ * @property {QualAuditStatut} statut
+ * @property {Record<string, QaAnswer>} answers - Réponses indexées par GrillePoint.id.
+ */
+
+/**
+ * Brouillon d'audit Qualimètre (variante de Draft — voir audits.js
+ * pour la définition canonique générale). CONFIRME .type ===
+ * 'qualimetre' et révèle .rayon === 'Qualimètre' (valeur fixe, pas
+ * un vrai nom de rayon FSQS).
+ * @typedef {Object} Draft
+ * @property {string} id - Préfixé 'DRF-' + uid().
+ * @property {string} mid
+ * @property {string} mag
+ * @property {'Qualimètre'} rayon - Toujours cette valeur fixe pour les brouillons Qualimètre.
+ * @property {string} date
+ * @property {string} aud
+ * @property {string} cmt
+ * @property {Record<string, QaAnswer>} answers
+ * @property {string} createdAt
+ * @property {string} uid - Référence vers User.id du créateur.
+ * @property {'qualimetre'} type
+ */
+
+/**
+ * Magasin. Seules .id, .nom, .statut sont accédées dans ce fichier ;
+ * structure complète dans magasins.js.
+ * @typedef {Object} Magasin
+ * @property {string} id
+ * @property {string} nom
+ * @property {string} statut
+ */
+
+/** @type {number} Étape courante du wizard (0=intro, 1=sélection, 2=questions, 3=récap). */
+let qaStep = 0;
+/** @type {Record<string, QaAnswer>} Réponses en cours de saisie, indexées par GrillePoint.id. */
+let qaAnswers = {};
+/** @type {number} Index de la zone actuellement affichée dans _qaGrille. */
+let qaCurrentZone = 0;
+/** @type {string | null} Référence vers Draft.id en cours de reprise, ou null si nouvel audit. */
+let _currentQaDraftId = null;
+/** @type {QMZoneWithPoints[]} Zones résolues (avec leurs points) pour le magasin de l'audit en cours. */
+let _qaGrille = [];
+
+/**
+ * Complète toutes les réponses non renseignées de _qaGrille avec
+ * 'NA', avant soumission de l'audit.
+ * @returns {void}
+ */
 function autoFillNA() {
   _qaGrille.forEach(z => z.points.forEach(p => {
     if (!qaAnswers[p.id] || qaAnswers[p.id].rep === null || qaAnswers[p.id].rep === undefined) {
@@ -13,17 +123,26 @@ function autoFillNA() {
   }));
 }
 
+/**
+ * Affiche l'historique des audits Qualimètre, filtré par magasins
+ * visibles et par le sélecteur de magasin.
+ * @returns {void}
+ */
 function renderQualAudits() {
+  /** @type {string[]} */
   const mids = visibleMids();
   const sel = el('flt-qaud-mag');
   if (sel) {
+    /** @type {string} */
     const cv = sel.value; while (sel.options.length > 1) sel.remove(1);
     DB.magasins.filter(m => mids.includes(m.id)).forEach(m => {
       const o = document.createElement('option'); o.value = m.id; o.textContent = m.nom; sel.appendChild(o);
     });
     if (cv) sel.value = cv;
   }
+  /** @type {string} */
   const fMag = v('flt-qaud-mag');
+  /** @type {QualAudit[]} */
   let list = (DB.qualAudits || []).filter(a => mids.includes(a.mid));
   if (fMag) list = list.filter(a => a.mid === fMag);
   list = [...list].reverse();
@@ -47,8 +166,14 @@ function renderQualAudits() {
   </tr>`).join('');
 }
 
+/**
+ * Ouvre le wizard de création d'un nouvel audit Qualimètre (étape 0
+ * : écran d'introduction), en réinitialisant l'état du module.
+ * @returns {void}
+ */
 function openQualAuditModal() {
   qaStep = 0; qaAnswers = {}; qaCurrentZone = 0; _currentQaDraftId = null; _qaGrille = [];
+  /** @type {string[]} */
   const mids = visibleMids();
   const msel = el('qa-mag');
   msel.innerHTML = '<option value="">Sélectionner...</option>' +
@@ -66,6 +191,15 @@ function openQualAuditModal() {
   openModal('m-qual-audit');
 }
 
+/**
+ * Avance le wizard d'audit Qualimètre à l'étape suivante.
+ * Étape 0→1 : passe de l'intro à la sélection magasin/date/auditeur.
+ * Étape 1→2 : valide les champs, résout la grille du magasin
+ * sélectionné (getQualimetreGrille), initialise les réponses, puis
+ * construit les questions.
+ * Étape 2 : soumet l'audit.
+ * @returns {void}
+ */
 function qaNext() {
   if (qaStep === 0) {
     el('qa-s0').style.display = 'none'; el('qa-s1').style.display = '';
@@ -91,6 +225,10 @@ function qaNext() {
   }
 }
 
+/**
+ * Revient à l'étape précédente du wizard d'audit Qualimètre.
+ * @returns {void}
+ */
 function qaPrev() {
   if (qaStep === 2) {
     el('qa-s2').style.display = 'none'; el('qa-s1').style.display = '';
@@ -106,6 +244,11 @@ function qaPrev() {
   }
 }
 
+/**
+ * Construit les onglets de zone et affiche la première zone de
+ * l'audit Qualimètre en cours.
+ * @returns {void}
+ */
 function buildQaQuestions() {
   qaCurrentZone = 0;
   el('qa-zone-tabs').innerHTML = _qaGrille.map((z, i) => `
@@ -116,6 +259,12 @@ function buildQaQuestions() {
   updateQaScore();
 }
 
+/**
+ * Bascule l'affichage vers une autre zone (met à jour le style des
+ * onglets et rend la zone cible).
+ * @param {number} idx - Index dans _qaGrille.
+ * @returns {void}
+ */
 function switchQaZone(idx) {
   qaCurrentZone = idx;
   document.querySelectorAll('[id^=qa-tab-]').forEach((b, i) => {
@@ -125,7 +274,15 @@ function switchQaZone(idx) {
   renderQaZone(idx);
 }
 
+/**
+ * Affiche les questions d'une zone, restaure les réponses déjà
+ * saisies (réponse, commentaire, photos), puis met à jour la
+ * progression.
+ * @param {number} idx - Index dans _qaGrille.
+ * @returns {void}
+ */
 function renderQaZone(idx) {
+  /** @type {QMZoneWithPoints | undefined} */
   const zone = _qaGrille[idx]; if (!zone) return;
   el('qa-zone-title').textContent = zone.emoji + ' ' + zone.label;
   el('qa-questions').innerHTML = zone.points.map(p => `
@@ -154,8 +311,10 @@ function renderQaZone(idx) {
     </div>`).join('');
   // Restaurer les réponses existantes
   zone.points.forEach(p => {
+    /** @type {QaAnswer | undefined} */
     const a = qaAnswers[p.id]; if (!a || !a.rep) return;
     const btns = document.querySelectorAll(`#qaaq-${p.id} .rb`);
+    /** @type {Record<QaAnswerCode, number>} */
     const map = { 'C': 0, 'NC': 1, 'NA': 2 };
     if (btns[map[a.rep]]) _applyQaRep(p.id, a.rep, btns[map[a.rep]]);
     if (a.cmt) { const inp = document.querySelector(`#qand-${p.id} input`); if (inp) inp.value = a.cmt; }
@@ -164,6 +323,14 @@ function renderQaZone(idx) {
   updateQaProgress(idx);
 }
 
+/**
+ * Enregistre la réponse à un point de contrôle Qualimètre, met à
+ * jour l'UI et recalcule score/progression.
+ * @param {string} pid - Référence vers GrillePoint.id.
+ * @param {QaAnswerCode} r
+ * @param {HTMLElement} btn - Bouton de réponse cliqué.
+ * @returns {void}
+ */
 function setQaRep(pid, r, btn) {
   qaAnswers[pid].rep = r;
   _applyQaRep(pid, r, btn);
@@ -171,6 +338,14 @@ function setQaRep(pid, r, btn) {
   updateQaProgress(qaCurrentZone);
 }
 
+/**
+ * Applique le style visuel d'une réponse sélectionnée (bouton actif,
+ * classe 'is-nc' sur la question, affichage de la zone de détail NC).
+ * @param {string} pid - Référence vers GrillePoint.id.
+ * @param {QaAnswerCode} r
+ * @param {HTMLElement} btn - Bouton de réponse cliqué.
+ * @returns {void}
+ */
 function _applyQaRep(pid, r, btn) {
   const c = el('qaaq-' + pid); if (!c) return;
   c.querySelectorAll('.rb').forEach(b => b.classList.remove('selC', 'selNC', 'selNA'));
@@ -181,13 +356,24 @@ function _applyQaRep(pid, r, btn) {
 }
 
 // ── Photos NC Qualimètre (2 max, Supabase Storage audits/qualimetre/) ──
+/**
+ * Upload une photo pour un point de contrôle Qualimètre vers
+ * Supabase Storage (limite stricte de 2 photos par point).
+ * @param {string} pid - Référence vers GrillePoint.id.
+ * @param {HTMLInputElement} input - Élément `<input type="file">` (un seul fichier).
+ * @returns {Promise<void>}
+ */
 async function handleQaPhoto(pid, input) {
+  /** @type {File | undefined} */
   const file = input.files[0]; if (!file) return;
+  /** @type {QaAnswer | undefined} */
   const ans = qaAnswers[pid]; if (!ans) return;
   if (!ans.photos) ans.photos = [];
   if (ans.photos.length >= 2) { alert('2 photos maximum par point de contrôle.'); input.value = ''; return; }
 
+  /** @type {string} */
   const path = `audits/qualimetre/qa-${pid}-${uid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  /** @type {string | null} */
   const url = await sbUploadPhoto(file, path);
   if (!url) { alert('Erreur upload photo. Vérifiez votre connexion.'); input.value = ''; return; }
   ans.photos.push(url);
@@ -195,8 +381,15 @@ async function handleQaPhoto(pid, input) {
   _renderQaPhotos(pid);
 }
 
+/**
+ * Rafraîchit l'aperçu des miniatures de photos d'un point de
+ * contrôle, avec un bouton de suppression par photo.
+ * @param {string} pid - Référence vers GrillePoint.id.
+ * @returns {void}
+ */
 function _renderQaPhotos(pid) {
   const container = el('qa-photos-' + pid); if (!container) return;
+  /** @type {string[]} */
   const photos = qaAnswers[pid]?.photos || [];
   container.innerHTML = photos.map((url, i) => `
     <div style="display:inline-block;position:relative;margin-right:8px;margin-bottom:4px">
@@ -205,43 +398,89 @@ function _renderQaPhotos(pid) {
     </div>`).join('');
 }
 
+/**
+ * Supprime une photo d'un point de contrôle Qualimètre (Supabase
+ * Storage + état local), après confirmation.
+ * @param {string} pid - Référence vers GrillePoint.id.
+ * @param {number} idx - Index de la photo dans le tableau .photos.
+ * @returns {void}
+ */
 function removeQaPhoto(pid, idx) {
   if (!confirm('Supprimer cette photo ?')) return;
+  /** @type {QaAnswer | undefined} */
   const ans = qaAnswers[pid]; if (!ans || !ans.photos) return;
+  /** @type {string} */
   const url = ans.photos[idx];
   if (url) sbDeletePhoto(url.split('/storage/v1/object/public/photos/')[1]);
   ans.photos.splice(idx, 1);
   _renderQaPhotos(pid);
 }
 
+/**
+ * Recalcule et affiche le score pondéré provisoire de l'audit
+ * Qualimètre en cours (les points N/A sont exclus du calcul).
+ * Contrairement au score FSQS (audits.js), ce calcul n'utilise pas
+ * de pondération par poids (GrillePoint.p) — c'est une simple
+ * proportion de points conformes parmi les points valides.
+ * @returns {void}
+ */
 function updateQaScore() {
+  /** @type {QaAnswer[]} */
   const ans = Object.values(qaAnswers);
+  /** @type {QaAnswer[]} */
   const valid = ans.filter(a => a.rep && a.rep !== 'NA');
+  /** @type {number} */
   const c = valid.filter(a => a.rep === 'C').length;
+  /** @type {number} */
   const total = valid.length;
+  /** @type {number | null} */
   const pct = total > 0 ? Math.round((c / total) * 100) : null;
   const sl = el('qa-score-live'); if (sl) sl.textContent = pct !== null ? pct + '%' : '–';
 }
 
+/**
+ * Met à jour le texte de progression de la zone affichée et ajoute
+ * une coche '✓' sur son onglet si tous ses points ont une réponse.
+ * @param {number} idx - Index dans _qaGrille.
+ * @returns {void}
+ */
 function updateQaProgress(idx) {
+  /** @type {QMZoneWithPoints | undefined} */
   const zone = _qaGrille[idx]; if (!zone) return;
+  /** @type {number} */
   const done = zone.points.filter(p => qaAnswers[p.id] && qaAnswers[p.id].rep).length;
   el('qa-progress').textContent = `Zone ${idx + 1}/${_qaGrille.length} · ${done}/${zone.points.length} réponses`;
   const tab = el('qa-tab-' + idx);
   if (tab && done === zone.points.length) { tab.innerHTML = tab.innerHTML.replace(/\s*✓$/, '') + ' ✓'; }
 }
 
+/**
+ * Finalise et enregistre l'audit Qualimètre en cours : complète les
+ * réponses manquantes en N/A, calcule le score (non pondéré par
+ * poids, contrairement au score FSQS), crée le QualAudit, et
+ * supprime le brouillon lié si applicable.
+ * @returns {void}
+ */
 function submitQualAudit() {
+  /** @type {string} */
   const mid = v('qa-mag'), date = v('qa-date'), aud = v('qa-aud').trim(), cmt = v('qa-cmt');
+  /** @type {Magasin | {}} */
   const mag = DB.magasins.find(m => m.id === mid) || {};
   autoFillNA();
+  /** @type {QaAnswer[]} */
   const ans = Object.values(qaAnswers);
+  /** @type {QaAnswer[]} */
   const valid = ans.filter(a => a.rep && a.rep !== 'NA');
+  /** @type {number} */
   const c = valid.filter(a => a.rep === 'C').length;
+  /** @type {QaAnswer[]} */
   const ncList = valid.filter(a => a.rep === 'NC');
+  /** @type {number} */
   const score = valid.length > 0 ? Math.round((c / valid.length) * 100) : 100;
   if (!DB.qualAudits) DB.qualAudits = [];
+  /** @type {string} */
   const aid = 'QA-' + uid();
+  /** @type {QualAudit} */
   DB.qualAudits.push({
     id: aid, mid, mag: mag.nom || '', date, aud, cmt, score,
     nc: ncList.length, statut: ncList.length ? 'Ouvert' : 'Conforme',
@@ -264,8 +503,16 @@ function submitQualAudit() {
   qaStep = 3;
 }
 
+/**
+ * Affiche la modale de détail d'un audit Qualimètre (en-tête, score,
+ * commentaire, points non conformes avec photos).
+ * @param {string} id - Référence vers QualAudit.id.
+ * @returns {void}
+ */
 function showQualAudit(id) {
+  /** @type {QualAudit | undefined} */
   const a = (DB.qualAudits || []).find(x => x.id === id); if (!a) return;
+  /** @type {string} */
   const scolor = a.score >= 90 ? 'var(--success)' : a.score >= 75 ? '#f59e0b' : a.score >= 60 ? 'var(--orange)' : 'var(--danger)';
   let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
     <table style="font-size:13px">
@@ -280,6 +527,7 @@ function showQualAudit(id) {
     </div>
   </div>`;
   if (a.cmt) html += `<div style="background:var(--bg);border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;font-size:13px">${a.cmt}</div>`;
+  /** @type {[string, QaAnswer][]} */
   const ncItems = Object.entries(a.answers || {}).filter(([, v]) => v.rep === 'NC');
   if (ncItems.length) {
     html += `<div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--danger)">Points non conformes (${ncItems.length})</div>`;
@@ -298,18 +546,34 @@ function showQualAudit(id) {
   openModal('m-qual-audit-detail');
 }
 
+/**
+ * Supprime un audit Qualimètre, après confirmation.
+ * @param {string} id - Référence vers QualAudit.id.
+ * @returns {void}
+ */
 function deleteQualAudit(id) {
   if (!confirm(`Supprimer l'audit Qualimètre ${id} ?`)) return;
   DB.qualAudits = (DB.qualAudits || []).filter(x => x.id !== id);
   save(); renderQualAudits();
 }
 
+/**
+ * Met l'audit Qualimètre en cours en pause : sauvegarde l'état
+ * courant comme Draft (type 'qualimetre'), persiste localement +
+ * pousse vers Supabase, puis ferme la modale.
+ * @returns {void}
+ */
 function pauseQualAudit() {
+  /** @type {string} */
   const mid = v('qa-mag'), date = v('qa-date'), aud = v('qa-aud').trim(), cmt = v('qa-cmt');
+  /** @type {Magasin | {}} */
   const mag = DB.magasins.find(m => m.id === mid) || {};
+  /** @type {string} */
   const draftId = _currentQaDraftId || 'DRF-' + uid();
   _currentQaDraftId = draftId;
+  /** @type {number} */
   const existing = DB.drafts.findIndex(d => d.id === draftId);
+  /** @type {Draft} */
   const draft = {
     id: draftId, mid, mag: mag.nom || '', rayon: 'Qualimètre', date, aud, cmt,
     answers: { ...qaAnswers }, createdAt: today(), uid: CU ? CU.id : '', type: 'qualimetre'
@@ -323,9 +587,18 @@ function pauseQualAudit() {
   renderQualAudits();
 }
 
+/**
+ * Reprend un brouillon d'audit Qualimètre : restaure le formulaire,
+ * résout la grille du magasin concerné, restaure les réponses déjà
+ * saisies, et rouvre le wizard à l'étape questions.
+ * @param {string} id - Référence vers Draft.id.
+ * @returns {void}
+ */
 function resumeQualDraft(id) {
+  /** @type {Draft | undefined} */
   const d = DB.drafts.find(x => x.id === id); if (!d) return;
   _currentQaDraftId = id;
+  /** @type {string[]} */
   const mids = visibleMids();
   const msel = el('qa-mag');
   msel.innerHTML = '<option value="">Sélectionner...</option>' +
@@ -349,6 +622,7 @@ function resumeQualDraft(id) {
   Object.entries(d.answers).forEach(([pid, ans]) => {
     if (!ans.rep) return;
     const btns = document.querySelectorAll(`#qaaq-${pid} .rb`);
+    /** @type {Record<QaAnswerCode, number>} */
     const map = { 'C': 0, 'NC': 1, 'NA': 2 };
     if (btns[map[ans.rep]]) setQaRep(pid, ans.rep, btns[map[ans.rep]]);
   });

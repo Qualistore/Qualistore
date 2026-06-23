@@ -1,205 +1,690 @@
-// ══════════════ STORAGE — moteur Supabase + localStorage cache ══════════════
-// Dépend de : config.js (SK), services/supabase.js
+// ══════════════════════════════════════════════════════════════
+// STORAGE — Moteur de données Supabase + cache localStorage
+// Responsabilité : charger, persister et synchroniser DB.
+// Dépend de : config.js (STORAGE_KEY), services/supabase.js
+// ══════════════════════════════════════════════════════════════
 
-function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+// ─────────────────────────────────────────────
+// 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
+//    ⚠️ Ces définitions sont déduites de l'USAGE des objets dans
+//    ce fichier uniquement. Les propriétés non accédées ici ne
+//    sont pas garanties d'être exhaustives (voir niveaux de
+//    confiance dans le résumé fourni au développeur).
+// ─────────────────────────────────────────────
 
-let DB = _defaultDB();
+/**
+ * Droits d'accès d'un utilisateur, sous forme de table de permissions
+ * par module fonctionnel. Valeur observée : 1 (autorisé). La valeur 0
+ * ou l'absence de clé pour signifier "non autorisé" n'est pas
+ * confirmée dans ce fichier — TODO TYPE à vérifier ailleurs dans le projet.
+ * @typedef {Object} UserPerms
+ * @property {number} [aud-r]  - Lecture des audits.
+ * @property {number} [aud-w]  - Écriture des audits.
+ * @property {number} [nc]     - Gestion des non-conformités.
+ * @property {number} [ac]     - Gestion des actions correctives.
+ * @property {number} [mag]    - Gestion des magasins.
+ * @property {number} [rap]    - Accès aux rapports.
+ * @property {number} [grille] - Gestion des grilles d'audit.
+ * @property {number} [usr]   - Gestion des utilisateurs.
+ */
+
+/**
+ * Utilisateur applicatif (compte admin ou collaborateur).
+ * Structure déduite de l'objet admin par défaut dans _buildDefaultDB().
+ * @typedef {Object} User
+ * @property {string} id
+ * @property {string} nom
+ * @property {string} login
+ * @property {string} pwd - Mot de passe encodé en base64 (btoa). TODO TYPE : à confirmer que ce n'est pas un hash réel ailleurs dans le projet.
+ * @property {string} role - Valeur observée : 'admin'. Autres rôles possibles non confirmés ici.
+ * @property {string} statut - Valeur observée : 'actif'. Autres valeurs non confirmées ici.
+ * @property {string[]} magasins - Tableau d'IDs de magasins assignés (Magasin.id). CONFIRMÉ par users.js (saveUser, _buildUserStoresList) ; toujours vide pour le rôle 'admin'.
+ * @property {UserPerms} perms
+ */
+
+/**
+ * Magasin (point de vente). Aucune propriété de cet objet n'est lue
+ * ou écrite dans ce fichier (le tableau DB.magasins n'est manipulé
+ * que comme un tout, jamais déstructuré). Structure à confirmer par
+ * inspection runtime ou dans un autre fichier du projet (ex : ui/magasins.js).
+ * @typedef {Object} Magasin
+ * @property {string} id - TODO TYPE : déduit par convention (cohérence avec les autres entités), non observé directement ici.
+ */
+
+/**
+ * Audit FSQS. Seules les propriétés .id et .date sont accédées dans
+ * ce fichier (via _findStaleAudits et la sérialisation Supabase).
+ * D'autres propriétés métier existent probablement (magasinId, score,
+ * rayon, etc.) mais ne sont pas observables depuis storage.js.
+ * @typedef {Object} Audit
+ * @property {string} id
+ * @property {string} date - Date au format comparable lexicographiquement à une chaîne ISO (ex : 'YYYY-MM-DD'), vu l'usage avec des comparaisons >= / < sur cutoffString.
+ */
+
+/**
+ * Non-conformité (NC) liée à un audit.
+ * @typedef {Object} NC
+ * @property {string} id
+ * @property {string} aid - Référence vers Audit.id (clé étrangère).
+ * @property {string} statut - Valeur observée : 'Clôturée'. Autres statuts possibles non confirmés ici (ex : 'Ouverte', 'En cours').
+ */
+
+/**
+ * Action corrective liée à une NC.
+ * @typedef {Object} Action
+ * @property {string} ncId - Référence vers NC.id (clé étrangère).
+ */
+
+/**
+ * Alerte applicative. Jamais déstructurée individuellement dans ce
+ * fichier (uniquement manipulée comme tableau DB.alertes) — structure
+ * réelle inconnue depuis ce fichier seul.
+ * @typedef {unknown} Alerte
+ */
+
+/**
+ * Brouillon d'audit en cours de saisie. Jamais déstructuré
+ * individuellement dans ce fichier — structure réelle inconnue
+ * depuis ce fichier seul.
+ * @typedef {unknown} Draft
+ */
+
+/**
+ * Audit "Qualimètre" (variante d'audit distincte des Audit FSQS).
+ * Seule la propriété .id et .date sont accédées dans ce fichier.
+ * @typedef {Object} QualAudit
+ * @property {string} id
+ * @property {string} date - Comparée lexicographiquement (probable format 'YYYY-MM-DD').
+ */
+
+/**
+ * Ligne brute telle que retournée par sbSelect() / stockée via
+ * sbUpsert(). Les noms de colonnes varient selon la table interrogée
+ * (ex : { rayon, data } pour grille_custom, { mid, data } pour
+ * qualimetre_custom). Représentée ici comme un dictionnaire ouvert
+ * car la forme exacte dépend de la table — TODO TYPE : à affiner si
+ * services/supabase.js est disponible.
+ * @typedef {Object<string, *>} SupabaseRow
+ */
+
+/**
+ * Point de contrôle de grille (FSQS ou Qualimètre). Voir
+ * config.js/grille.js pour la définition canonique complète.
+ * @typedef {Object} GrillePoint
+ * @property {string} id
+ * @property {string} q
+ * @property {string} [prec]
+ * @property {number} p
+ * @property {'Critique'|'Majeure'|'Mineure'} c
+ */
+
+/**
+ * Dictionnaire de configuration de grille d'audit FSQS personnalisée,
+ * indexé par nom de rayon (ex : 'Boucherie'). CONFIRMÉ par grille.js
+ * (getGrille, saveCtrl) : chaque valeur est un tableau de GrillePoint.
+ * @typedef {Record<string, GrillePoint[]>} GrilleCustomMap
+ */
+
+/**
+ * Dictionnaire de configuration "qualimètre" personnalisée par
+ * magasin. CONFIRMÉ par grille-qualimetre.js (_upsertQualimetrePoint,
+ * getQualimetrePoints) : structure à 2 niveaux — indexé par
+ * Magasin.id, puis par QMZone.id, chaque valeur finale étant un
+ * tableau de GrillePoint. Distinct de qualimetreGlobal (1 niveau).
+ * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreCustomMap
+ */
+
+/**
+ * Dictionnaire de configuration "qualimètre" globale (appliquée à
+ * tous les magasins sans personnalisation propre). CONFIRMÉ par
+ * grille-qualimetre.js : indexé directement par QMZone.id, chaque
+ * valeur étant un tableau de GrillePoint.
+ * @typedef {Record<string, GrillePoint[]>} QualimetreGlobalMap
+ */
+
+/**
+ * Structure racine de la base de données applicative, maintenue en
+ * mémoire et synchronisée avec localStorage + Supabase.
+ * @typedef {Object} DB
+ * @property {User[]} users
+ * @property {Magasin[]} magasins
+ * @property {Audit[]} audits
+ * @property {NC[]} ncs
+ * @property {Action[]} actions
+ * @property {Alerte[]} alertes
+ * @property {Draft[]} drafts
+ * @property {GrilleCustomMap} grilleCustom
+ * @property {QualimetreCustomMap} qualimetreCustom
+ * @property {QualimetreGlobalMap} qualimetreGlobal - Données globales qualimètre (équivalent de la ligne '__global__' isolée côté Supabase).
+ * @property {QualAudit[]} qualAudits
+ */
+
+// ─────────────────────────────────────────────
+// 1. CONSTANTES
+// ─────────────────────────────────────────────
+
+/**
+ * Intervalle de polling Supabase en millisecondes.
+ * @type {number}
+ */
+const SYNC_POLL_INTERVAL_MS = 5_000;
+
+/**
+ * Durée de rétention des audits en jours avant nettoyage automatique.
+ * @type {number}
+ */
+const DATA_RETENTION_DAYS = 180;
+
+// ─────────────────────────────────────────────
+// 2. ÉTAT GLOBAL
+// ─────────────────────────────────────────────
+
+/**
+ * Base de données applicative en mémoire.
+ * @type {DB}
+ */
+let DB = _buildDefaultDB();
+
+/**
+ * Utilisateur connecté (null si non authentifié).
+ * @type {User | null}
+ */
 let CU = null;
-// Restaurer CU immédiatement depuis localStorage
-try { const s=localStorage.getItem('fsqs_cu'); if(s) CU=JSON.parse(s); } catch(e){}
-let _dirty = false;
 
-function _defaultDB(){
+/**
+ * Indique si des modifications locales n'ont pas encore été
+ * synchronisées avec Supabase (ex : perte réseau).
+ * @type {boolean}
+ */
+let _pendingSyncToSupabase = false;
+
+// Restaurer l'utilisateur connecté depuis le cache localStorage au chargement
+try {
+  /** @type {string | null} */
+  const cachedUser = localStorage.getItem('fsqs_cu');
+  if (cachedUser) CU = JSON.parse(cachedUser);
+} catch (_) {
+  // Cache corrompu — l'utilisateur devra se reconnecter
+}
+
+// ─────────────────────────────────────────────
+// 3. STRUCTURE PAR DÉFAUT DE LA BASE
+// ─────────────────────────────────────────────
+
+/**
+ * Construit une structure DB par défaut, avec un unique compte
+ * administrateur et toutes les collections vides.
+ * @returns {DB}
+ */
+function _buildDefaultDB() {
   return {
-    users:[{id:'admin1',nom:'Administrateur',login:'admin',pwd:btoa('admin'),role:'admin',statut:'actif',magasins:[],
-      perms:{'aud-r':1,'aud-w':1,'nc':1,'ac':1,'mag':1,'rap':1,'grille':1,'usr':1}}],
-    magasins:[], audits:[], ncs:[], actions:[], alertes:[],
-    grilleCustom:{}, qualimetreCustom:{}, qualAudits:[], drafts:[],
-    qualimetreGlobal:{},
+    users: [{
+      id: 'admin1', nom: 'Administrateur', login: 'admin',
+      pwd: btoa('admin'), role: 'admin', statut: 'actif',
+      magasins: [],
+      perms: { 'aud-r': 1, 'aud-w': 1, 'nc': 1, 'ac': 1, 'mag': 1, 'rap': 1, 'grille': 1, 'usr': 1 },
+    }],
+    magasins:          [],
+    audits:            [],
+    ncs:               [],
+    actions:           [],
+    alertes:           [],
+    drafts:            [],
+    grilleCustom:      {},
+    qualimetreCustom:  {},
+    qualimetreGlobal:  {},
+    qualAudits:        [],
   };
 }
 
-function _saveLocal(){
-  try{ localStorage.setItem(SK, JSON.stringify(DB)); }catch(e){}
-}
+// ─────────────────────────────────────────────
+// 4. PERSISTANCE LOCALE (localStorage)
+// ─────────────────────────────────────────────
 
-function _loadLocal(){
-  try{ const r=localStorage.getItem(SK); if(r) return JSON.parse(r); }catch(e){}
-  return null;
-}
-
-async function loadDB(){
-  const local=_loadLocal();
-  if(local) DB=local;
+/**
+ * Sérialise DB et la persiste dans localStorage sous la clé STORAGE_KEY.
+ * Échoue silencieusement (avec un warning console) si le quota est
+ * dépassé ou si localStorage est inaccessible.
+ * @returns {void}
+ */
+function _saveToLocalStorage() {
   try {
-    const [users,magasins,audits,ncs,actions,alertes,
-           grilleRows,qualAudits,qualRows,drafts] = await Promise.all([
-      sbSelect('users'), sbSelect('magasins'), sbSelect('audits'),
-      sbSelect('ncs'), sbSelect('actions'), sbSelect('alertes'),
-      sbSelect('grille_custom'), sbSelect('qual_audits'),
-      sbSelect('qualimetre_custom'), sbSelect('drafts')
-    ]);
-    const grilleCustom={};
-    (grilleRows||[]).forEach(r=>{ grilleCustom[r.rayon]=r.data; });
-    const qualimetreCustom={};
-    let qualimetreGlobal={};
-    (qualRows||[]).forEach(r=>{
-      if(r.mid==='__global__') qualimetreGlobal=r.data;
-      else qualimetreCustom[r.mid]=r.data;
-    });
-    DB={
-      users: users||[], magasins: magasins||[],
-      audits: audits||[], ncs: ncs||[],
-      actions: actions||[], alertes: alertes||[],
-      grilleCustom, qualimetreCustom, qualimetreGlobal,
-      qualAudits: qualAudits||[],
-      drafts: drafts||[],
-    };
-    if(!DB.users.length) DB.users=_defaultDB().users;
-    _saveLocal();
-    console.log('✅ Supabase chargé');
-    _cleanOldData();
-    // Rafraîchir CU depuis la DB Supabase
-    if(CU){ const fresh=DB.users.find(u=>u.id===CU.id); if(fresh) CU=fresh; else CU=null; }
-
-  } catch(e){
-    console.warn('⚠️ Supabase inaccessible, mode offline:', e.message);
-    _dirty=true;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+  } catch (error) {
+    console.warn('localStorage plein ou inaccessible :', error.message);
   }
 }
 
-// ── save(tables) — ne pousse que les tables modifiées ──
-function save(tables){
-  _saveLocal();
+/**
+ * Relit la DB depuis le cache localStorage.
+ * @returns {DB | null} La DB désérialisée, ou null si absente / corrompue.
+ */
+function _loadFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// 5. CHARGEMENT INITIAL DEPUIS SUPABASE
+// ─────────────────────────────────────────────
+
+/**
+ * Charge la base de données depuis Supabase.
+ * Utilise le cache localStorage en fallback si Supabase est inaccessible.
+ */
+/**
+ * Charge la base de données depuis Supabase.
+ * Utilise le cache localStorage en fallback si Supabase est inaccessible.
+ * @returns {Promise<void>}
+ */
+async function loadDB() {
+  /** @type {DB | null} */
+  const localCache = _loadFromLocalStorage();
+  if (localCache) DB = localCache;
+
+  try {
+    /** @type {[User[], Magasin[], Audit[], NC[], Action[], Alerte[], SupabaseRow[], QualAudit[], SupabaseRow[], Draft[]]} */
+    const [
+      users, magasins, audits, ncs, actions, alertes,
+      grilleRows, qualAudits, qualRows, drafts,
+    ] = await Promise.all([
+      sbSelect('users'),    sbSelect('magasins'),   sbSelect('audits'),
+      sbSelect('ncs'),      sbSelect('actions'),    sbSelect('alertes'),
+      sbSelect('grille_custom'), sbSelect('qual_audits'),
+      sbSelect('qualimetre_custom'), sbSelect('drafts'),
+    ]);
+
+    DB = {
+      users:    users    || [],
+      magasins: magasins || [],
+      audits:   audits   || [],
+      ncs:      ncs      || [],
+      actions:  actions  || [],
+      alertes:  alertes  || [],
+      drafts:   drafts   || [],
+      grilleCustom:     _parseGrilleCustom(grilleRows),
+      qualimetreCustom: _parseQualimetreCustom(qualRows),
+      qualimetreGlobal: _parseQualimetreGlobal(qualRows),
+      qualAudits: qualAudits || [],
+    };
+
+    // Garantir qu'il existe toujours au moins un admin
+    if (!DB.users.length) DB.users = _buildDefaultDB().users;
+
+    _saveToLocalStorage();
+    _pendingSyncToSupabase = false;
+    console.log('✅ Supabase chargé');
+
+    _cleanStaleData();
+
+    // Rafraîchir l'utilisateur connecté depuis la DB à jour
+    if (CU) {
+      /** @type {User | undefined} */
+      const freshUser = DB.users.find(u => u.id === CU.id);
+      CU = freshUser || null;
+    }
+  } catch (error) {
+    console.warn('⚠️ Supabase inaccessible — mode hors ligne :', error.message);
+    _pendingSyncToSupabase = true;
+  }
+}
+
+// ─────────────────────────────────────────────
+// 6. PARSEURS DE DONNÉES SUPABASE
+// ─────────────────────────────────────────────
+
+/**
+ * Transforme les lignes brutes de la table `grille_custom` en
+ * dictionnaire indexé par rayon.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {GrilleCustomMap}
+ */
+function _parseGrilleCustom(rows) {
+  const result = {};
+  (rows || []).forEach(row => { result[row.rayon] = row.data; });
+  return result;
+}
+
+/**
+ * Transforme les lignes brutes de la table `qualimetre_custom` en
+ * dictionnaire indexé par identifiant de magasin (mid), en excluant
+ * la ligne spéciale '__global__'.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {QualimetreCustomMap}
+ */
+function _parseQualimetreCustom(rows) {
+  const result = {};
+  (rows || []).filter(row => row.mid !== '__global__').forEach(row => {
+    result[row.mid] = row.data;
+  });
+  return result;
+}
+
+/**
+ * Extrait la donnée globale qualimètre (ligne '__global__') des
+ * lignes brutes de la table `qualimetre_custom`.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {Record<string, unknown>}
+ */
+function _parseQualimetreGlobal(rows) {
+  const globalRow = (rows || []).find(row => row.mid === '__global__');
+  return globalRow ? globalRow.data : {};
+}
+
+// ─────────────────────────────────────────────
+// 7. SAUVEGARDE (localStorage + Supabase)
+// ─────────────────────────────────────────────
+
+/**
+ * Sauvegarde les données.
+ * @param {string[]} [tables] - Tables spécifiques à pousser vers Supabase.
+ *   Si omis, toutes les tables sont synchronisées.
+ * @returns {void}
+ */
+function save(tables) {
+  _saveToLocalStorage();
   _pushToSupabase(tables);
 }
 
-async function _pushToSupabase(tables){
-  // Si pas de tables spécifiées, on pousse tout
-  const all=!tables;
+/**
+ * Génère un identifiant unique (base36 timestamp + aléatoire).
+ * @returns {string}
+ */
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+// ─────────────────────────────────────────────
+// 8. SYNCHRONISATION SUPABASE
+// ─────────────────────────────────────────────
+
+/**
+ * Pousse les tables modifiées de DB vers Supabase via sbUpsert.
+ * Si `tables` est omis, toutes les tables connues sont synchronisées.
+ * En cas d'échec (réseau, etc.), positionne _pendingSyncToSupabase
+ * à true pour permettre une resynchronisation ultérieure.
+ * @param {string[]} [tables] - Sous-ensemble de clés de DB à synchroniser
+ *   (ex : 'users', 'audits', 'grilleCustom', 'qualimetreCustom'...).
+ * @returns {Promise<void>}
+ */
+async function _pushToSupabase(tables) {
+  const pushAll = !tables;
+
   try {
-    const ops=[];
-    if(all||tables.includes('users'))    ops.push(sbUpsert('users', DB.users));
-    if(all||tables.includes('magasins')) ops.push(sbUpsert('magasins', DB.magasins));
-    if(all||tables.includes('audits'))   ops.push(sbUpsert('audits', DB.audits));
-    if(all||tables.includes('ncs'))      ops.push(sbUpsert('ncs', DB.ncs));
-    if(all||tables.includes('actions'))  ops.push(sbUpsert('actions', DB.actions));
-    if(all||tables.includes('alertes'))  ops.push(sbUpsert('alertes', DB.alertes));
-    if(all||tables.includes('qualAudits')) ops.push(sbUpsert('qual_audits', DB.qualAudits));
-    if(all||tables.includes('drafts')) ops.push(sbUpsert('drafts', DB.drafts));
-    if(all||tables.includes('grilleCustom')){
-      const rows=Object.entries(DB.grilleCustom).map(([rayon,data])=>({id:rayon,rayon,data}));
-      if(rows.length) ops.push(sbUpsert('grille_custom', rows));
+    /** @type {Promise<*>[]} */
+    const operations = [];
+
+    if (pushAll || tables.includes('users'))      operations.push(sbUpsert('users',      DB.users));
+    if (pushAll || tables.includes('magasins'))   operations.push(sbUpsert('magasins',   DB.magasins));
+    if (pushAll || tables.includes('audits'))     operations.push(sbUpsert('audits',     DB.audits));
+    if (pushAll || tables.includes('ncs'))        operations.push(sbUpsert('ncs',        DB.ncs));
+    if (pushAll || tables.includes('actions'))    operations.push(sbUpsert('actions',    DB.actions));
+    if (pushAll || tables.includes('alertes'))    operations.push(sbUpsert('alertes',    DB.alertes));
+    if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
+    if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
+
+    if (pushAll || tables.includes('grilleCustom')) {
+      /** @type {SupabaseRow[]} */
+      const rows = Object.entries(DB.grilleCustom).map(([rayon, data]) => ({ id: rayon, rayon, data }));
+      if (rows.length) operations.push(sbUpsert('grille_custom', rows));
     }
-    if(all||tables.includes('qualimetreCustom')||tables.includes('qualimetreGlobal')){
-      const rows=Object.entries(DB.qualimetreCustom).map(([mid,data])=>({id:mid,mid,data}));
-      if(DB.qualimetreGlobal&&Object.keys(DB.qualimetreGlobal).length){
-        rows.push({id:'__global__',mid:'__global__',data:DB.qualimetreGlobal});
+
+    if (pushAll || tables.includes('qualimetreCustom') || tables.includes('qualimetreGlobal')) {
+      /** @type {SupabaseRow[]} */
+      const rows = Object.entries(DB.qualimetreCustom).map(([mid, data]) => ({ id: mid, mid, data }));
+      if (DB.qualimetreGlobal && Object.keys(DB.qualimetreGlobal).length) {
+        rows.push({ id: '__global__', mid: '__global__', data: DB.qualimetreGlobal });
       }
-      if(rows.length) ops.push(sbUpsert('qualimetre_custom', rows));
+      if (rows.length) operations.push(sbUpsert('qualimetre_custom', rows));
     }
-    await Promise.all(ops);
-    _dirty=false;
-    console.log('✅ Supabase sync OK');
-  } catch(e){
-    console.warn('⚠️ Sync Supabase échouée:', e.message);
-    _dirty=true;
+
+    await Promise.all(operations);
+    _pendingSyncToSupabase = false;
+    console.log('✅ Sync Supabase OK');
+  } catch (error) {
+    console.warn('⚠️ Sync Supabase échouée :', error.message);
+    _pendingSyncToSupabase = true;
   }
 }
-async function _cleanOldData(){
-  const cutoff=new Date();
-  cutoff.setDate(cutoff.getDate()-180);
-  const cutoffStr=cutoff.toISOString().split('T')[0];
 
-  // Audits FSQS : supprimer si >180j ET toutes NC clôturées
-  const toDelete=DB.audits.filter(a=>{
-    if(a.date>=cutoffStr) return false;
-    const ncs=DB.ncs.filter(n=>n.aid===a.id);
-    return ncs.length===0||ncs.every(n=>n.statut==='Clôturée');
+// ─────────────────────────────────────────────
+// 9. NETTOYAGE AUTOMATIQUE DES DONNÉES ANCIENNES
+// ─────────────────────────────────────────────
+
+/**
+ * Identifie et supprime (DB + Supabase) les audits FSQS et audits
+ * Qualimètre dont la date dépasse DATA_RETENTION_DAYS, en respectant
+ * la règle métier de _findStaleAudits (NC liées toutes clôturées
+ * ou absentes).
+ * @returns {Promise<void>}
+ */
+async function _cleanStaleData() {
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - DATA_RETENTION_DAYS);
+  /** @type {string} Date de coupure au format 'YYYY-MM-DD'. */
+  const cutoffString = cutoffDate.toISOString().split('T')[0];
+
+  /** @type {Audit[]} */
+  const staleAudits = _findStaleAudits(cutoffString);
+  /** @type {QualAudit[]} */
+  const staleQualAudits = _findStaleQualAudits(cutoffString);
+
+  if (!staleAudits.length && !staleQualAudits.length) return;
+
+  await _deleteStaleAudits(staleAudits);
+  await _deleteStaleQualAudits(staleQualAudits);
+
+  _saveToLocalStorage();
+  console.log(`🗑️ Nettoyage : ${staleAudits.length} audit(s) FSQS + ${staleQualAudits.length} Qualimètre supprimé(s) (>${DATA_RETENTION_DAYS} jours)`);
+}
+
+/**
+ * Sélectionne les audits FSQS antérieurs à la date de coupure, dont
+ * toutes les NC liées (s'il en existe) sont au statut 'Clôturée'.
+ * @param {string} cutoffString - Date de coupure au format 'YYYY-MM-DD'.
+ * @returns {Audit[]}
+ */
+function _findStaleAudits(cutoffString) {
+  return DB.audits.filter(audit => {
+    if (audit.date >= cutoffString) return false;
+    /** @type {NC[]} */
+    const linkedNcs = DB.ncs.filter(nc => nc.aid === audit.id);
+    return linkedNcs.length === 0 || linkedNcs.every(nc => nc.statut === 'Clôturée');
   });
-  for(const a of toDelete){
-    const ncIds=DB.ncs.filter(n=>n.aid===a.id).map(n=>n.id);
-    ncIds.forEach(ncId=>{ sbDeleteWhere('actions','ncId',ncId); DB.actions=DB.actions.filter(x=>x.ncId!==ncId); });
-    sbDeleteWhere('ncs','aid',a.id);
-    sbDeleteWhere('audits','id',a.id);
-    DB.ncs=DB.ncs.filter(n=>n.aid!==a.id);
-  }
-  DB.audits=DB.audits.filter(a=>!toDelete.find(x=>x.id===a.id));
-
-  // Audits Qualimètre : supprimer si >180j
-  const qaToDelete=(DB.qualAudits||[]).filter(a=>a.date<cutoffStr);
-  for(const a of qaToDelete){
-    sbDeleteWhere('qual_audits','id',a.id);
-  }
-  DB.qualAudits=(DB.qualAudits||[]).filter(a=>!qaToDelete.find(x=>x.id===a.id));
-
-  if(toDelete.length||qaToDelete.length){
-    _saveLocal();
-    console.log(`🗑️ ${toDelete.length} audit(s) FSQS + ${qaToDelete.length} audit(s) Qualimètre supprimé(s) (>180 jours)`);
-  }
 }
 
-// ── Polling toutes les 30s pour voir les données des autres sessions ──
-setInterval(async ()=>{
-  if(!CU) return;
-  try {
-    const [audits,ncs,actions,alertes,qualAudits,drafts] = await Promise.all([
-      sbSelect('audits'), sbSelect('ncs'), sbSelect('actions'),
-      sbSelect('alertes'), sbSelect('qual_audits'), sbSelect('drafts')
-    ]);
-    const changed=
-      JSON.stringify(audits)!==JSON.stringify(DB.audits)||
-      JSON.stringify(ncs)!==JSON.stringify(DB.ncs)||
-      JSON.stringify(actions)!==JSON.stringify(DB.actions)||
-      JSON.stringify(alertes)!==JSON.stringify(DB.alertes)||
-      JSON.stringify(qualAudits)!==JSON.stringify(DB.qualAudits);
-    if(!changed) return;
-    DB.audits=audits||[];
-    DB.ncs=ncs||[];
-    DB.actions=actions||[];
-    DB.alertes=alertes||[];
-    DB.qualAudits=qualAudits||[];
-    DB.drafts=drafts||[];
-    _saveLocal();
-    const active=document.querySelector('.page.active');
-    if(active){
-      const page=active.id.replace('page-','');
-      if(page==='audits') renderAudits();
-      else if(page==='nc') renderNC();
-      else if(page==='actions') renderActions();
-      else if(page==='dashboard') renderDash();
-      else if(page==='audit-qualimetre') renderQualAudits();
-    }
-  } catch(e){}
-}, 5000);
+/**
+ * Sélectionne les audits Qualimètre antérieurs à la date de coupure.
+ * @param {string} cutoffString - Date de coupure au format 'YYYY-MM-DD'.
+ * @returns {QualAudit[]}
+ */
+function _findStaleQualAudits(cutoffString) {
+  return (DB.qualAudits || []).filter(audit => audit.date < cutoffString);
+}
 
-window.addEventListener('online', ()=>{
-  if(_dirty){ console.log('🔄 Reconnexion — sync Supabase...'); _pushToSupabase(); }
+/**
+ * Supprime les audits FSQS donnés ainsi que leurs NC et actions
+ * liées, à la fois dans Supabase et dans la DB en mémoire.
+ * @param {Audit[]} audits - Audits à supprimer.
+ * @returns {Promise<void>}
+ */
+async function _deleteStaleAudits(audits) {
+  for (const audit of audits) {
+    /** @type {string[]} */
+    const linkedNcIds = DB.ncs.filter(nc => nc.aid === audit.id).map(nc => nc.id);
+    for (const ncId of linkedNcIds) {
+      sbDeleteWhere('actions', 'ncId', ncId);
+      DB.actions = DB.actions.filter(action => action.ncId !== ncId);
+    }
+    sbDeleteWhere('ncs', 'aid', audit.id);
+    sbDeleteWhere('audits', 'id', audit.id);
+    DB.ncs = DB.ncs.filter(nc => nc.aid !== audit.id);
+  }
+  DB.audits = DB.audits.filter(audit => !audits.find(stale => stale.id === audit.id));
+}
+
+/**
+ * Supprime les audits Qualimètre donnés, à la fois dans Supabase et
+ * dans la DB en mémoire.
+ * @param {QualAudit[]} audits - Audits Qualimètre à supprimer.
+ * @returns {Promise<void>}
+ */
+async function _deleteStaleQualAudits(audits) {
+  for (const audit of audits) sbDeleteWhere('qual_audits', 'id', audit.id);
+  DB.qualAudits = (DB.qualAudits || []).filter(a => !audits.find(stale => stale.id === a.id));
+}
+
+// ─────────────────────────────────────────────
+// 10. POLLING — SYNCHRONISATION MULTI-SESSION
+// ─────────────────────────────────────────────
+
+/**
+ * Vérifie toutes les N secondes si des données ont changé dans Supabase
+ * (modifications par d'autres sessions / utilisateurs).
+ * @returns {Promise<void>} Callback exécuté à chaque tick de l'intervalle.
+ */
+setInterval(async () => {
+  if (!CU) return;
+
+  try {
+    /** @type {[Audit[], NC[], Action[], Alerte[], QualAudit[], Draft[]]} */
+    const [audits, ncs, actions, alertes, qualAudits, drafts] = await Promise.all([
+      sbSelect('audits'), sbSelect('ncs'), sbSelect('actions'),
+      sbSelect('alertes'), sbSelect('qual_audits'), sbSelect('drafts'),
+    ]);
+
+    /** @type {boolean} */
+    const hasChanges =
+      JSON.stringify(audits)     !== JSON.stringify(DB.audits)     ||
+      JSON.stringify(ncs)        !== JSON.stringify(DB.ncs)        ||
+      JSON.stringify(actions)    !== JSON.stringify(DB.actions)    ||
+      JSON.stringify(alertes)    !== JSON.stringify(DB.alertes)    ||
+      JSON.stringify(qualAudits) !== JSON.stringify(DB.qualAudits);
+
+    if (!hasChanges) return;
+
+    DB.audits     = audits     || [];
+    DB.ncs        = ncs        || [];
+    DB.actions    = actions    || [];
+    DB.alertes    = alertes    || [];
+    DB.qualAudits = qualAudits || [];
+    DB.drafts     = drafts     || [];
+    _saveToLocalStorage();
+
+    _refreshActivePage();
+  } catch (_) {
+    // Silencieux — la reconnexion gère la resync
+  }
+}, SYNC_POLL_INTERVAL_MS);
+
+/**
+ * Redessine la page active après une mise à jour des données distantes.
+ * Recherche l'élément `.page.active` dans le DOM et appelle la
+ * fonction de rendu correspondante (renderAudits, renderNC, etc.),
+ * si elle existe pour la page courante.
+ * @returns {void}
+ */
+function _refreshActivePage() {
+  const activePage = document.querySelector('.page.active');
+  if (!activePage) return;
+
+  const pageId = activePage.id.replace('page-', '');
+  /**
+   * Table de correspondance entre identifiant de page et fonction de
+   * rendu associée. Ces fonctions sont définies ailleurs dans le
+   * projet (non visibles depuis storage.js).
+   * @type {Record<string, (() => void) | undefined>}
+   */
+  const pageRefreshMap = {
+    audits:            renderAudits,
+    nc:                renderNC,
+    actions:           renderActions,
+    dashboard:         renderDash,
+    'audit-qualimetre': renderQualAudits,
+  };
+
+  pageRefreshMap[pageId]?.();
+}
+
+// ─────────────────────────────────────────────
+// 11. RECONNEXION EN LIGNE
+// ─────────────────────────────────────────────
+
+/**
+ * Relance une synchronisation Supabase dès que la connexion réseau
+ * est rétablie, si des modifications locales étaient en attente.
+ * @param {Event} _event - Événement DOM 'online' (non utilisé).
+ * @returns {void}
+ */
+window.addEventListener('online', () => {
+  if (_pendingSyncToSupabase) {
+    console.log('🔄 Reconnexion détectée — synchronisation Supabase…');
+    _pushToSupabase();
+  }
 });
 
-function exportBackup(){
-  const data=JSON.stringify(DB, null, 2);
-  const blob=new Blob([data],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url; a.download='qualistore-backup-'+today()+'.json';
-  a.click(); URL.revokeObjectURL(url);
+// ─────────────────────────────────────────────
+// 12. SAUVEGARDE / RESTAURATION MANUELLE
+// ─────────────────────────────────────────────
+
+/**
+ * Exporte toute la DB en fichier JSON téléchargeable.
+ * Déclenche un téléchargement navigateur nommé
+ * `qualistore-backup-{date}.json`.
+ * @returns {void}
+ */
+function exportBackup() {
+  /** @type {string} */
+  const jsonData = JSON.stringify(DB, null, 2);
+  /** @type {Blob} */
+  const blob = new Blob([jsonData], { type: 'application/json' });
+  /** @type {string} */
+  const url  = URL.createObjectURL(blob);
+  /** @type {HTMLAnchorElement} */
+  const link = document.createElement('a');
+  link.href     = url;
+  link.download = `qualistore-backup-${today()}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
-function importBackup(input){
-  const file=input.files[0]; if(!file) return;
-  if(!confirm('Importer cette sauvegarde ? Toutes les données actuelles seront écrasées.')) return;
-  const r=new FileReader();
-  r.onload=async e=>{
-    try{
-      const data=JSON.parse(e.target.result);
-      DB=data;
-      _saveLocal();
+/**
+ * Importe une sauvegarde JSON et écrase toutes les données actuelles.
+ * Demande confirmation à l'utilisateur, lit le fichier sélectionné,
+ * remplace DB, persiste localement, pousse vers Supabase puis
+ * recharge la page.
+ * @param {HTMLInputElement} input - Élément `<input type="file">` dont
+ *   `.files[0]` contient la sauvegarde JSON à importer.
+ * @returns {void}
+ */
+function importBackup(input) {
+  /** @type {File | undefined} */
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm('Importer cette sauvegarde ? Toutes les données actuelles seront écrasées.')) return;
+
+  const reader = new FileReader();
+  /**
+   * @param {ProgressEvent<FileReader>} event
+   * @returns {Promise<void>}
+   */
+  reader.onload = async (event) => {
+    try {
+      // readAsText garantit que event.target.result est une string (pas un ArrayBuffer).
+      /** @type {DB} */
+      DB = JSON.parse(event.target.result);
+      _saveToLocalStorage();
       await _pushToSupabase();
       alert('Restauration réussie !');
       location.reload();
-    } catch(err){ alert('Erreur lors de l\'import : '+err.message); }
+    } catch (error) {
+      alert(`Erreur lors de l'import : ${error.message}`);
+    }
   };
-  r.readAsText(file);
-  input.value='';
+  reader.readAsText(file);
+  input.value = '';
 }
