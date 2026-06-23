@@ -1,26 +1,26 @@
 // ══════════════════════════════════════════════════════════════
 // IMPORT-GRILLE — Import de grille d'audit (CSV / XLSX / PDF)
-// Dépend de : storage.js (DB, CU), config.js (CDN_SHEETJS, CDN_PDFJS, CDN_PDFJS_WORKER, IMPORT_FORMAT_INFO), ui.js
+// Dépend de : storage.js (DB, CU), config.js (CDN_SHEETJS, CDN_PDFJS, CDN_PDFJS_WORKER, IMPORT_FORMAT_INFO, QM_ZONES), ui.js
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
 // 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
 //    ⚠️ Déduits de l'usage dans ce fichier.
 //
-//    ⚠️ INCOHÉRENCE FONCTIONNELLE DÉTECTÉE (documentation, pas une
-//    correction) : _importIntoQualimetre() utilise row.rayon comme
-//    clé de zone dans DB.qualimetreCustom[storeId][row.rayon]. Or
-//    row.rayon est validé contre IMPORT_VALID_RAYONS (rayons FSQS :
-//    'Boucherie', 'Boulangerie'...), alors que partout ailleurs
-//    (grille-qualimetre.js, qualimetre.js, config.js QM_ZONES), les
-//    clés de zone Qualimètre attendues sont des QMZone.id ('z0',
-//    'z1'...). Importer vers Qualimètre via ce fichier créerait donc
-//    des clés de zone non standard, invisibles dans l'UI Qualimètre
-//    habituelle. Non corrigé ici (changerait le comportement).
+//    ✅ CORRIGÉ : _importIntoQualimetre() résout désormais la zone
+//    cible à partir de la valeur de zone telle qu'elle apparaît
+//    dans le document importé (row.rayonRaw), au lieu d'utiliser le
+//    rayon FSQS normalisé. La résolution ne dépend d'aucune liste
+//    figée (QM_ZONES n'est consultée que pour ÉVITER une duplication
+//    par libellé exact déjà connu, jamais pour deviner ou valider
+//    une zone). Voir _resolveOrCreateZoneFromDocument.
 //
-//    ⚠️ DUPLICATION (3e occurrence) : IMPORT_VALID_RAYONS ci-dessous
-//    est une 3e copie de la même liste de rayons que RAYONS_LIST
-//    (rayons.js) et RAYONS_FSQS (dashboard.js).
+//    ⚠️ DUPLICATION (3e occurrence, non corrigée à ce stade) :
+//    IMPORT_VALID_RAYONS ci-dessous est une 3e copie de la même
+//    liste de rayons que RAYONS_LIST (rayons.js) et RAYONS_FSQS
+//    (dashboard.js). Cette liste reste utilisée UNIQUEMENT pour la
+//    validation de l'import vers la grille FSQS (_importIntoGrille),
+//    pas pour le Qualimètre.
 // ─────────────────────────────────────────────
 
 /**
@@ -39,11 +39,30 @@
  */
 
 /**
+ * Zone de contrôle du parcours Qualimètre (voir config.js pour la
+ * définition canonique). Rappelée ici car consultée par
+ * _resolveOrCreateZoneFromDocument UNIQUEMENT pour détecter une
+ * correspondance de libellé exact (déduplication), jamais pour
+ * valider ou deviner une zone absente du document.
+ * @typedef {Object} QMZone
+ * @property {string} id
+ * @property {string} emoji
+ * @property {string} label
+ */
+
+/**
+ * Dictionnaire des points Qualimètre personnalisés par magasin,
+ * indexé par Magasin.id puis par QMZone.id (voir storage.js pour la
+ * définition canonique, confirmée par grille-qualimetre.js).
+ * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreCustomMap
+ */
+
+/**
  * Ligne brute telle que produite par un parseur (CSV ou XLSX), avant
  * normalisation. Tous les champs sont des chaînes brutes, non
  * encore validées.
  * @typedef {Object} ImportRawRow
- * @property {string} rayon - Valeur brute, non normalisée.
+ * @property {string} rayon - Valeur brute de la colonne zone/rayon, telle qu'écrite dans le document. Non normalisée, non validée — c'est la source de vérité pour la résolution de zone Qualimètre.
  * @property {string} cat - Catégorie, 'Général' par défaut.
  * @property {string} q
  * @property {string} crit - Valeur brute, non normalisée.
@@ -51,14 +70,29 @@
  */
 
 /**
- * Ligne normalisée et validée, prête pour aperçu et import.
+ * Ligne normalisée et validée, prête pour aperçu et import. La
+ * notion de validité (`valid`) dépend de la cible d'import — voir
+ * _showImportPreview : pour 'grille' (FSQS), un rayon reconnu est
+ * requis ; pour 'qualimetre', seul un intitulé non vide est requis
+ * (la zone est résolue depuis le document, jamais rejetée pour
+ * absence de correspondance avec une liste connue).
  * @typedef {Object} ImportParsedRow
- * @property {string} rayon - Rayon normalisé si reconnu, sinon valeur brute d'origine (voir `valid`).
+ * @property {string} rayon - Rayon normalisé si reconnu (cible FSQS), sinon valeur brute d'origine (voir `valid`).
+ * @property {string} rayonRaw - Valeur de zone telle qu'écrite dans le document, jamais altérée. Utilisée par _importIntoQualimetre comme source de vérité pour la résolution de zone.
  * @property {string} cat
  * @property {string} q - Intitulé, trim() appliqué.
  * @property {GrilleCriticite} crit - Toujours normalisé (fallback 'Majeure' si non reconnu).
  * @property {number} p - Poids, calculé depuis IMPORT_DEFAULT_POIDS si absent/invalide.
- * @property {boolean} valid - Vrai si rayon ET intitulé sont valides ; les lignes invalides sont affichées mais exclues de l'import.
+ * @property {boolean} valid - Dépend de la cible d'import active au moment du parsing (voir _showImportPreview) ; les lignes invalides sont affichées dans l'aperçu mais exclues de l'import.
+ */
+
+/**
+ * Résultat de la résolution d'une zone Qualimètre à partir d'une
+ * valeur brute lue dans le document importé.
+ * @typedef {Object} ResolvedZone
+ * @property {string} id - Identifiant de zone à utiliser comme clé dans qualimetreCustom/qualimetreGlobal.
+ * @property {boolean} reused - Vrai si une zone existante (QM_ZONES, qualimetreGlobal ou qualimetreCustom[storeId]) a été réutilisée par correspondance exacte de libellé normalisé ; faux si une nouvelle zone a été créée.
+ * @property {boolean} isUnclassified - Vrai si la ligne d'origine n'avait aucune valeur de zone identifiable (case vide) et a été placée dans la zone "Non classé".
  */
 
 /**
@@ -119,6 +153,16 @@ const IMPORT_VALID_CRITS = ['Critique', 'Majeure', 'Mineure'];
  * @type {Record<GrilleCriticite, number>}
  */
 const IMPORT_DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
+
+/**
+ * Libellé de la zone Qualimètre regroupant les lignes importées
+ * sans valeur de zone identifiable dans le document. Le document
+ * reste la source de vérité : cette zone ne devine jamais une zone
+ * absente, elle conserve simplement les lignes plutôt que de les
+ * perdre.
+ * @type {string}
+ */
+const IMPORT_UNCLASSIFIED_ZONE_LABEL = 'Non classé';
 
 // ─────────────────────────────────────────────
 // 2. ÉTAT
@@ -503,12 +547,30 @@ function _normalizeCrit(crit) {
  * @param {string} readMessage - Message affiché dans le titre de l'aperçu (ex : nombre de lignes lues).
  * @returns {void}
  */
+/**
+ * Normalise et valide les lignes brutes parsées, construit
+ * l'aperçu HTML, et active/désactive le bouton de confirmation
+ * selon le nombre de lignes valides.
+ *
+ * La règle de validité dépend de `_importTarget` :
+ * - cible 'grille' (FSQS) : le rayon doit être reconnu dans
+ *   IMPORT_VALID_RAYONS (liste fermée, légitime pour ce référentiel).
+ * - cible 'qualimetre' : aucune liste fermée n'est appliquée ; seul
+ *   un intitulé non vide est requis. La zone (même absente ou
+ *   inconnue) est résolue plus tard, depuis le document, par
+ *   _importIntoQualimetre — jamais rejetée ici pour ce motif.
+ * @param {ImportRawRow[]} rawRows
+ * @param {string} readMessage - Message affiché dans le titre de l'aperçu (ex : nombre de lignes lues).
+ * @returns {void}
+ */
 function _showImportPreview(rawRows, readMessage) {
   _importRows = [];
   /** @type {ImportParsedRow[]} */
   const previewRows = [];
   /** @type {string[]} */
   const warnings    = [];
+  /** @type {boolean} */
+  const isQualimetreTarget = _importTarget === 'qualimetre';
 
   rawRows.forEach((row, index) => {
     if (!row.rayon && !row.q) return;
@@ -519,21 +581,25 @@ function _showImportPreview(rawRows, readMessage) {
     const normalizedCrit  = _normalizeCrit(row.crit) || 'Majeure';
     /** @type {number} */
     const poids           = parseInt(row.poids) || IMPORT_DEFAULT_POIDS[normalizedCrit];
-    /** @type {boolean} */
-    const isValid         = !!normalizedRayon && !!row.q.trim();
 
-    if (!normalizedRayon) {
+    /** @type {boolean} */
+    const isValid = isQualimetreTarget
+      ? !!row.q.trim()
+      : !!normalizedRayon && !!row.q.trim();
+
+    if (!isQualimetreTarget && !normalizedRayon) {
       warnings.push(`Ligne ${index + 2} : rayon « ${row.rayon} » non reconnu — sera ignorée`);
     }
 
     /** @type {ImportParsedRow} */
     const parsedRow = {
-      rayon: normalizedRayon || row.rayon,
-      cat:   row.cat || 'Général',
-      q:     row.q.trim(),
-      crit:  normalizedCrit,
-      p:     poids,
-      valid: isValid,
+      rayon:    normalizedRayon || row.rayon,
+      rayonRaw: row.rayon,
+      cat:      row.cat || 'Général',
+      q:        row.q.trim(),
+      crit:     normalizedCrit,
+      p:        poids,
+      valid:    isValid,
     };
 
     _importRows.push(parsedRow);
@@ -607,18 +673,146 @@ function confirmImport() {
   } else {
     _importIntoGrille(validRows);
   }
+}
 
-  showToast(`${validRows.length} point(s) importé(s)`, 'success');
+/**
+ * Normalise un libellé de zone pour comparaison de déduplication.
+ * Normalisation strictement typographique (trim, espaces multiples
+ * réduits à un seul, casse uniforme) — jamais de correspondance
+ * approximative ou sémantique.
+ * @param {string} label
+ * @returns {string}
+ */
+function _normalizeZoneLabel(label) {
+  return label.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Construit un identifiant déterministe à partir d'un libellé de
+ * zone (slug : minuscules, accents conservés tels quels retirés,
+ * caractères non alphanumériques remplacés par '-'). Utilisé
+ * uniquement pour générer un nouvel id de zone à partir des données
+ * du document — jamais pour deviner ou faire correspondre une zone
+ * à un référentiel existant.
+ * @param {string} label
+ * @returns {string} Slug non vide (retombe sur 'zone' si le libellé ne contient aucun caractère alphanumérique).
+ */
+function _slugifyZoneLabel(label) {
+  /** @type {string} */
+  const slug = label
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // retire les accents
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'zone';
+}
+
+/**
+ * Recherche une zone existante (QM_ZONES, qualimetreGlobal,
+ * qualimetreCustom[storeId]) dont le libellé normalisé correspond
+ * EXACTEMENT au libellé recherché. Cette recherche sert uniquement
+ * à éviter de dupliquer une zone déjà connue sous un autre id —
+ * elle n'applique aucun mapping métier et ne devine jamais une
+ * correspondance approximative.
+ * @param {string} normalizedLabel - Libellé déjà normalisé via _normalizeZoneLabel.
+ * @param {string} storeId - Référence vers Magasin.id (peut être vide si portée globale).
+ * @returns {string | null} L'id de la zone existante, ou null si aucune correspondance exacte.
+ */
+function _findExistingZoneIdByLabel(normalizedLabel, storeId) {
+  /** @type {QMZone | undefined} */
+  const fromStaticZones = QM_ZONES.find(z => _normalizeZoneLabel(z.label) === normalizedLabel);
+  if (fromStaticZones) return fromStaticZones.id;
+
+  if (DB.qualimetreGlobal) {
+    /** @type {string | undefined} */
+    const fromGlobalIds = Object.keys(DB.qualimetreGlobal).find(zoneId => _normalizeZoneLabel(zoneId) === normalizedLabel);
+    if (fromGlobalIds) return fromGlobalIds;
+  }
+
+  if (storeId && DB.qualimetreCustom?.[storeId]) {
+    /** @type {string | undefined} */
+    const fromCustomIds = Object.keys(DB.qualimetreCustom[storeId]).find(zoneId => _normalizeZoneLabel(zoneId) === normalizedLabel);
+    if (fromCustomIds) return fromCustomIds;
+  }
+
+  return null;
+}
+
+/**
+ * Vérifie si un id de zone est déjà utilisé (QM_ZONES,
+ * qualimetreGlobal, ou qualimetreCustom[storeId]).
+ * @param {string} zoneId
+ * @param {string} storeId
+ * @returns {boolean}
+ */
+function _isZoneIdTaken(zoneId, storeId) {
+  if (QM_ZONES.some(z => z.id === zoneId)) return true;
+  if (DB.qualimetreGlobal && Object.prototype.hasOwnProperty.call(DB.qualimetreGlobal, zoneId)) return true;
+  if (storeId && DB.qualimetreCustom?.[storeId] && Object.prototype.hasOwnProperty.call(DB.qualimetreCustom[storeId], zoneId)) return true;
+  return false;
+}
+
+/**
+ * Résout la zone Qualimètre cible pour une valeur de zone brute
+ * lue dans le document importé, sans dépendre d'aucune liste fixe
+ * ni d'aucun mapping codé en dur :
+ * 1. Si la valeur brute est vide, la ligne est rattachée à la zone
+ *    "Non classé" (jamais devinée, jamais rattachée à une autre
+ *    zone du fichier).
+ * 2. Si une zone existante (QM_ZONES, qualimetreGlobal,
+ *    qualimetreCustom[storeId]) porte exactement ce libellé
+ *    (normalisé), elle est réutilisée — ceci évite uniquement les
+ *    doublons, ce n'est pas un mapping métier.
+ * 3. Sinon, un nouvel id est généré depuis le libellé du document
+ *    (slug déterministe). En cas de collision d'id déjà utilisé,
+ *    un suffixe numérique déterministe est ajouté.
+ * @param {string} rawZoneLabel - Valeur brute de la colonne zone, telle qu'écrite dans le document (ImportParsedRow.rayonRaw).
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * @returns {ResolvedZone}
+ */
+function _resolveOrCreateZoneFromDocument(rawZoneLabel, storeId) {
+  /** @type {string} */
+  const trimmed = (rawZoneLabel || '').trim().replace(/\s+/g, ' ');
+
+  if (!trimmed) {
+    /** @type {string} */
+    const normalizedUnclassified = _normalizeZoneLabel(IMPORT_UNCLASSIFIED_ZONE_LABEL);
+    /** @type {string | null} */
+    const existingUnclassified = _findExistingZoneIdByLabel(normalizedUnclassified, storeId);
+    if (existingUnclassified) return { id: existingUnclassified, reused: true, isUnclassified: true };
+
+    /** @type {string} */
+    const unclassifiedId = _slugifyZoneLabel(IMPORT_UNCLASSIFIED_ZONE_LABEL);
+    return { id: unclassifiedId, reused: false, isUnclassified: true };
+  }
+
+  /** @type {string} */
+  const normalizedLabel = _normalizeZoneLabel(trimmed);
+  /** @type {string | null} */
+  const existingId = _findExistingZoneIdByLabel(normalizedLabel, storeId);
+  if (existingId) return { id: existingId, reused: true, isUnclassified: false };
+
+  /** @type {string} */
+  const baseSlug = _slugifyZoneLabel(trimmed);
+  /** @type {string} */
+  let candidateId = baseSlug;
+  /** @type {number} */
+  let suffix = 2;
+  while (_isZoneIdTaken(candidateId, storeId)) {
+    candidateId = `${baseSlug}-${suffix}`;
+    suffix++;
+  }
+
+  return { id: candidateId, reused: false, isUnclassified: false };
 }
 
 /**
  * Importe les lignes validées dans DB.qualimetreCustom, pour le
- * magasin actuellement sélectionné dans la page Qualimètre.
- *
- * ⚠️ Voir l'avertissement en tête de fichier : `row.rayon` (un nom
- * de rayon FSQS) est utilisé ici comme clé de zone, alors que le
- * reste du système Qualimètre utilise des QMZone.id ('z0', 'z1'...).
- * Comportement conservé tel quel.
+ * magasin actuellement sélectionné dans la page Qualimètre. La zone
+ * cible de chaque ligne est résolue depuis la valeur brute de zone
+ * du document (voir _resolveOrCreateZoneFromDocument) — jamais
+ * depuis une liste de rayons FSQS ni un mapping métier figé.
  * @param {ImportParsedRow[]} rows
  * @returns {void}
  */
@@ -629,11 +823,30 @@ function _importIntoQualimetre(rows) {
   const storeId = v('qual-mag-sel');
   if (!storeId) { alert('Sélectionnez d\'abord un magasin dans le Qualimètre.'); return; }
 
+  if (!DB.qualimetreCustom[storeId]) DB.qualimetreCustom[storeId] = {};
+
+  /** @type {number} */
+  let unclassifiedCount = 0;
+  /** @type {Set<string>} Zones qui existaient déjà avant cet import (réutilisées par correspondance de libellé). */
+  const zonesReused = new Set();
+  /** @type {Set<string>} Zones nouvellement créées par cet import (peuvent regrouper plusieurs lignes du document). */
+  const zonesCreated = new Set();
+
   rows.forEach(row => {
-    if (!DB.qualimetreCustom[storeId]) DB.qualimetreCustom[storeId] = {};
-    if (!DB.qualimetreCustom[storeId][row.rayon]) DB.qualimetreCustom[storeId][row.rayon] = [];
+    /** @type {ResolvedZone} */
+    const zone = _resolveOrCreateZoneFromDocument(row.rayonRaw, storeId);
+
+    if (zone.isUnclassified) unclassifiedCount++;
+
+    /** @type {boolean} */
+    const alreadyKnownFromThisImport = zonesCreated.has(zone.id) || zonesReused.has(zone.id);
+    if (!alreadyKnownFromThisImport) {
+      if (zone.reused) zonesReused.add(zone.id); else zonesCreated.add(zone.id);
+    }
+
+    if (!DB.qualimetreCustom[storeId][zone.id]) DB.qualimetreCustom[storeId][zone.id] = [];
     /** @type {GrillePoint} */
-    DB.qualimetreCustom[storeId][row.rayon].push({
+    DB.qualimetreCustom[storeId][zone.id].push({
       id: 'qcimp-' + uid(), cat: row.cat, q: row.q, p: row.p, c: row.crit,
     });
   });
@@ -641,6 +854,14 @@ function _importIntoQualimetre(rows) {
   save();
   closeModal('m-import');
   showQualimetre();
+
+  /** @type {string} */
+  const summary = `${rows.length} point(s) importé(s) — ${zonesCreated.size} zone(s) créée(s), ${zonesReused.size} réutilisée(s)`;
+  showToast(summary, 'success');
+
+  if (unclassifiedCount > 0) {
+    showToast(`${unclassifiedCount} ligne(s) sans zone identifiable placée(s) dans « ${IMPORT_UNCLASSIFIED_ZONE_LABEL} »`, 'warning');
+  }
 }
 
 /**
