@@ -7,24 +7,25 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
+</head>
 <body>
 
 <!-- LOGIN -->
-<div class="login-wrap" id="login-screen" role="main">
+<div class="login-wrap" id="login-screen">
   <div class="login-box">
     <div class="login-logo">
-<img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="Logo QualiStore">      <p style="color:var(--text2);font-size:13px;margin-top:4px">Gestion de la qualité alimentaire</p>
+<img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">      <p style="color:var(--text2);font-size:13px;margin-top:4px">Gestion de la qualité alimentaire</p>
     </div>
-    <div class="login-err" id="login-err" role="alert"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
+    <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
     <div class="form-group">
-      <label class="form-label" for="f-login">Identifiant</label>
+      <label class="form-label">Identifiant</label>
       <input class="form-control" type="text" id="f-login" placeholder="Votre identifiant" autocomplete="username">
     </div>
     <div class="form-group">
-      <label class="form-label" for="f-pass">Mot de passe</label>
+      <label class="form-label">Mot de passe</label>
       <div class="pw-wrap">
         <input class="form-control" type="password" id="f-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-        <button class="pw-eye" type="button" onclick="togglePass('f-pass',this)" aria-label="Afficher / masquer le mot de passe"><i class="ti ti-eye"></i></button>
+        <button class="pw-eye" type="button" onclick="togglePass('f-pass',this)"><i class="ti ti-eye"></i></button>
       </div>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
@@ -36,12 +37,12 @@
 
 <!-- APP -->
 <div class="app" id="app">
-  <div class="sb-overlay" id="sb-overlay" aria-hidden="true" onclick="document.getElementById('sidebar').classList.remove('open');this.style.display='none'"></div>
-  <aside class="sidebar" id="sidebar" aria-label="Navigation principale">
+  <div class="sb-overlay" id="sb-overlay" onclick="document.getElementById('sidebar').classList.remove('open');this.style.display='none'"></div>
+  <aside class="sidebar" id="sidebar">
     <div class="sb-logo" style="padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.1)">
 <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">   
  </div>
-    <nav class="sb-nav" id="sb-nav" aria-label="Menu principal"></nav>
+    <nav class="sb-nav" id="sb-nav"></nav>
     <div class="sb-user">
       <div class="avatar" id="sb-av">–</div>
       <div>
@@ -54,7 +55,7 @@
 
   <div class="main">
     <header class="hdr">
-      <button class="menu-toggle" aria-label="Menu" aria-expanded="false" onclick="document.getElementById('sidebar').classList.toggle('open')"><i class="ti ti-menu-2"></i></button>
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')"><i class="ti ti-menu-2"></i></button>
       <div>
         <div class="hdr-title" id="pg-title">Tableau de bord</div>
         <div class="hdr-sub" id="pg-sub"></div>
@@ -97,7 +98,7 @@
           <div class="card mt-4">
             <div class="card-hdr">
               <div class="card-title"><i class="ti ti-bell-ringing" style="color:#b91c1c"></i> Alertes terrain récentes</div>
-              <span class="tsm tm" id="d-alert-cnt" aria-live="polite"></span>
+              <span class="tsm tm" id="d-alert-cnt"></span>
             </div>
             <div class="card-body" id="d-alerts-list">
               <div class="empty-state" style="padding:24px"><i class="ti ti-bell" style="font-size:28px"></i><p>Aucune alerte</p></div>
@@ -133,7 +134,7 @@
       <!-- BROUILLONS -->
       <div class="page" id="page-brouillons">
         <div class="flex-btw mb-4">
-          <span class="tsm tm" id="drafts-cnt" aria-live="polite"></span>
+          <span class="tsm tm" id="drafts-cnt"></span>
         </div>
         <div class="card">
           <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Date</th><th>Auditeur</th><th></th></tr></thead><tbody id="drafts-tb"></tbody></table></div>
@@ -145,9 +146,9 @@
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <select class="form-control" style="width:auto" id="flt-aud-mag" onchange="renderAudits()"><option value="">Tous les magasins</option></select>
-            <select class="form-control" style="width:auto" id="flt-aud-ray" onchange="renderAudits()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits &amp; Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
+            <select class="form-control" style="width:auto" id="flt-aud-ray" onchange="renderAudits()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
           </div>
-          <span class="tsm tm" id="aud-cnt" aria-live="polite"></span>
+          <span class="tsm tm" id="aud-cnt"></span>
         </div>
         <div class="card">
           <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th>Statut</th><th></th></tr></thead><tbody id="aud-tb"></tbody></table></div>
@@ -159,12 +160,12 @@
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <select class="form-control" style="width:auto" id="flt-nc-mag" onchange="renderNC()"><option value="">Tous les magasins</option></select>
-            <select class="form-control" style="width:auto" id="flt-nc-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits &amp; Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
+            <select class="form-control" style="width:auto" id="flt-nc-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
             <select class="form-control" style="width:auto" id="flt-nc-crit" onchange="renderNC()"><option value="">Toutes criticités</option><option>Critique</option><option>Majeure</option><option>Mineure</option></select>
             <select class="form-control" style="width:auto" id="flt-nc-stat" onchange="renderNC()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span class="tsm tm" id="nc-cnt" aria-live="polite"></span>
+            <span class="tsm tm" id="nc-cnt"></span>
             <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(true)"><i class="ti ti-check-all"></i> Tout</button>
             <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(false)"><i class="ti ti-x"></i> Aucun</button>
             <button class="btn btn-primary btn-sm" onclick="exportSelectedNC()"><i class="ti ti-file-download"></i> Exporter sélection</button>
@@ -198,7 +199,7 @@
           <div id="nc-archive-body" style="display:none">
             <div style="padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <select class="form-control" style="width:auto" id="flt-arch-mag" onchange="renderNC()"><option value="">Tous les magasins</option></select>
-              <select class="form-control" style="width:auto" id="flt-arch-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits &amp; Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
+              <select class="form-control" style="width:auto" id="flt-arch-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
               <select class="form-control" style="width:auto" id="flt-arch-period" onchange="renderNC()">
                 <option value="">Toutes périodes</option>
                 <option value="week">Cette semaine</option>
@@ -219,7 +220,7 @@
             <select class="form-control" style="width:auto" id="flt-act-mag" onchange="renderActions()"><option value="">Tous les magasins</option></select>
             <select class="form-control" style="width:auto" id="flt-act-stat" onchange="renderActions()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
           </div>
-          <span class="tsm tm" id="act-cnt" aria-live="polite"></span>
+          <span class="tsm tm" id="act-cnt"></span>
         </div>
         <div class="card">
           <div class="tbl-wrap"><table><thead><tr><th>NC</th><th>Description</th><th>Magasin</th><th>Responsable</th><th>Échéance</th><th>Priorité</th><th>Statut</th><th></th></tr></thead><tbody id="act-tb"></tbody></table></div>
@@ -229,7 +230,7 @@
       <!-- MAGASINS -->
       <div class="page" id="page-magasins">
         <div class="flex-btw mb-4">
-          <span class="tsm tm" id="mag-cnt" aria-live="polite"></span>
+          <span class="tsm tm" id="mag-cnt"></span>
           <button class="btn btn-primary" id="btn-add-mag" onclick="openMagModal()"><i class="ti ti-plus"></i> Ajouter un magasin</button>
         </div>
         <div class="grid-3" id="mag-grid"></div>
@@ -251,12 +252,12 @@
           <div class="card-body">
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
               <select class="form-control" style="width:auto" id="r-mag" onchange="renderRap()"><option value="all">Tous les magasins</option></select>
-              <select class="form-control" style="width:auto" id="r-ray" onchange="renderRap()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits &amp; Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
+              <select class="form-control" style="width:auto" id="r-ray" onchange="renderRap()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
               <button class="btn btn-secondary btn-sm" onclick="toggleAllRap(true)"><i class="ti ti-check-all"></i> Tout sélectionner</button>
               <button class="btn btn-secondary btn-sm" onclick="toggleAllRap(false)"><i class="ti ti-x"></i> Tout désélectionner</button>
-              <span class="tsm tm" id="r-cnt" aria-live="polite" style="align-self:center"></span>
+              <span class="tsm tm" id="r-cnt" style="align-self:center"></span>
             </div>
             <div id="r-audit-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);padding:8px 12px"></div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
@@ -282,7 +283,7 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
               <button class="btn btn-secondary btn-sm" onclick="toggleAllQRap(true)"><i class="ti ti-check-all"></i> Tout sélectionner</button>
               <button class="btn btn-secondary btn-sm" onclick="toggleAllQRap(false)"><i class="ti ti-x"></i> Tout désélectionner</button>
-              <span class="tsm tm" id="rq-cnt" aria-live="polite" style="align-self:center"></span>
+              <span class="tsm tm" id="rq-cnt" style="align-self:center"></span>
             </div>
             <div id="rq-audit-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);padding:8px 12px"></div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
@@ -303,7 +304,7 @@
       <!-- UTILISATEURS -->
       <div class="page" id="page-utilisateurs">
         <div class="flex-btw mb-4">
-          <span class="tsm tm" id="usr-cnt" aria-live="polite"></span>
+          <span class="tsm tm" id="usr-cnt"></span>
           <button class="btn btn-primary" id="btn-add-usr" onclick="openUserModal()"><i class="ti ti-user-plus"></i> Ajouter un utilisateur</button>
         </div>
         <div class="card">
@@ -318,7 +319,7 @@
       <div class="page" id="page-grille">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
           <select class="form-control" style="width:200px" id="grille-ray-sel" onchange="showGrille(this.value)">
-            <option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits &amp; Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option>
+            <option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option>
           </select>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary btn-sm" onclick="openImportModal()"><i class="ti ti-upload"></i> Importer</button>
@@ -363,7 +364,7 @@
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <select class="form-control" style="width:auto" id="flt-qaud-mag" onchange="renderQualAudits()"><option value="">Tous les magasins</option></select>
-            <span class="tsm tm" id="qaud-hist-cnt" aria-live="polite" style="align-self:center"></span>
+            <span class="tsm tm" id="qaud-hist-cnt" style="align-self:center"></span>
           </div>
           <button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()">
             <i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre
@@ -408,7 +409,7 @@
 </div>
 
 <!-- MODAL: UTILISATEUR -->
-<div class="modal-ov" id="m-user" role="dialog" aria-modal="true" aria-labelledby="m-user-ttl">
+<div class="modal-ov" id="m-user">
   <div class="modal">
     <div class="modal-hdr">
       <div class="modal-title" id="m-user-ttl"><i class="ti ti-user-plus" style="color:var(--primary)"></i> Nouvel utilisateur</div>
@@ -488,7 +489,7 @@
 </div>
 
 <!-- MODAL: MAGASIN -->
-<div class="modal-ov" id="m-mag" role="dialog" aria-modal="true" aria-labelledby="m-mag-ttl">
+<div class="modal-ov" id="m-mag">
   <div class="modal">
     <div class="modal-hdr">
       <div class="modal-title" id="m-mag-ttl"><i class="ti ti-building-store" style="color:var(--primary)"></i> Nouveau magasin</div>
@@ -516,7 +517,7 @@
 </div>
 
 <!-- MODAL: MODIFIER NC -->
-<div class="modal-ov" id="m-nc-edit" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-nc-edit">
   <div class="modal" style="max-width:480px">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-pencil" style="color:var(--primary)"></i> Modifier la NC</div>
@@ -551,7 +552,7 @@
 </div>
 
 <!-- MODAL: CONFIRMER SUPPRESSION -->
-<div class="modal-ov" id="m-confirm" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-confirm">
   <div class="modal" style="max-width:420px">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-trash" style="color:var(--danger)"></i> Confirmer la suppression</div>
@@ -569,7 +570,7 @@
 </div>
 
 <!-- MODAL: AUDIT -->
-<div class="modal-ov" id="m-audit" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-audit">
   <div class="modal modal-lg">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-clipboard-plus" style="color:var(--primary)"></i> Nouvel audit FSQS</div>
@@ -579,7 +580,7 @@
       <div id="as1">
         <div class="form-row">
           <div class="form-group"><label class="form-label">Magasin *</label><select class="form-control" id="a-mag"><option value="">Sélectionner...</option></select></div>
-          <div class="form-group"><label class="form-label">Rayon *</label><select class="form-control" id="a-ray"><option value="">Sélectionner...</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits &amp; Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select></div>
+          <div class="form-group"><label class="form-label">Rayon *</label><select class="form-control" id="a-ray"><option value="">Sélectionner...</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select></div>
         </div>
         <div class="form-row">
           <div class="form-group"><label class="form-label">Date *</label><input type="date" class="form-control" id="a-date"></div>
@@ -623,7 +624,7 @@
 </div>
 
 <!-- MODAL: ALERTE TERRAIN -->
-<div class="modal-ov" id="m-alert" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-alert">
   <div class="modal">
     <div class="modal-hdr">
       <div class="modal-title" style="color:#b91c1c"><i class="ti ti-bell-ringing"></i> Nouvelle alerte terrain</div>
@@ -688,7 +689,7 @@
 </div>
 
 <!-- MODAL: POINT DE CONTRÔLE (admin only) -->
-<div class="modal-ov" id="m-ctrl" role="dialog" aria-modal="true" aria-labelledby="m-ctrl-ttl">
+<div class="modal-ov" id="m-ctrl">
   <div class="modal">
     <div class="modal-hdr">
       <div class="modal-title" id="m-ctrl-ttl"><i class="ti ti-list-check" style="color:var(--primary)"></i> Nouveau point de contrôle</div>
@@ -756,7 +757,7 @@
 </div>
 
 <!-- MODAL: DÉTAIL AUDIT (avec photo + commentaire) -->
-<div class="modal-ov" id="m-aud-detail" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-aud-detail">
   <div class="modal modal-lg">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-clipboard-check" style="color:var(--primary)"></i> Détail de l'audit</div>
@@ -771,7 +772,7 @@
 
 
 <!-- MODAL: IMPORT GRILLE -->
-<div class="modal-ov" id="m-import" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-import">
   <div class="modal modal-lg">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-upload" style="color:var(--primary)"></i> Importer des points de contrôle</div>
@@ -844,8 +845,20 @@
   </div>
 </div>
 
+
+
+
+
+
+
+
+
+
+
+
+
 <!-- MODAL: AUDIT QUALIMÈTRE -->
-<div class="modal-ov" id="m-qual-audit" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-qual-audit">
   <div class="modal modal-lg">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Nouvel audit Qualimètre</div>
@@ -910,7 +923,7 @@
 </div>
 
 <!-- Modal ajout/édition point Qualimètre -->
-<div class="modal-ov" id="m-gq-ctrl" role="dialog" aria-modal="true" aria-labelledby="m-gq-ctrl-ttl">
+<div class="modal-ov" id="m-gq-ctrl">
   <div class="modal">
     <div class="modal-hdr">
       <div class="modal-title" id="m-gq-ctrl-ttl"><i class="ti ti-gauge" style="color:#7c3aed"></i> Point Qualimètre</div>
@@ -974,7 +987,7 @@
 </div>
 
 <!-- Modal import grille Qualimètre -->
-<div class="modal-ov" id="m-gq-import" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-gq-import">
   <div class="modal modal-lg">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-upload" style="color:#7c3aed"></i> Importer une grille Qualimètre</div>
@@ -1015,7 +1028,7 @@
 </div>
 
 <!-- MODAL: DÉTAIL AUDIT QUALIMÈTRE -->
-<div class="modal-ov" id="m-qual-audit-detail" role="dialog" aria-modal="true">
+<div class="modal-ov" id="m-qual-audit-detail">
   <div class="modal modal-lg">
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Détail audit Qualimètre</div>
@@ -1027,6 +1040,8 @@
     </div>
   </div>
 </div>
+</body>
+</html>
 
 <!-- Librairies externes -->
 <script src="js/jspdf.umd.min.js"></script>
@@ -1059,9 +1074,6 @@
 
 <!-- Point d'entrée -->
 <script src="js/init.js"></script>
-
-</body>
-</html>
 
 </body>
 </html>
