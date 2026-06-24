@@ -521,30 +521,53 @@ function updateSBUser() {
 // ─────────────────────────────────────────────
 
 /**
- * Map des fonctions de rendu par page. Les fonctions référencées
- * (renderDash, renderAudits, etc.) sont définies dans leurs fichiers
- * respectifs ; openQualAuditModal/renderQualAudits/showQualAudit
- * (référencées indirectement via 'audit-qualimetre') proviennent
- * d'un fichier audit-qualimetre.js non fourni dans ce projet.
- * @type {Record<PageId, () => void>}
+ * Résout la fonction de rendu associée à une page, au moment de
+ * l'appel (et non au chargement de ui.js).
+ *
+ * ⚠️ CORRIGÉ : auparavant, ce mapping était un objet littéral
+ * `const PAGE_RENDERERS = { dashboard: renderDash, ... }` construit
+ * au chargement de ui.js. Comme ui.js est chargé AVANT les fichiers
+ * métier (dashboard.js, audits.js, etc. — voir l'ordre des <script>
+ * dans Qualistore.html/index.html), les fonctions comme renderDash
+ * n'existaient pas encore au moment où cet objet était évalué, ce
+ * qui provoquait un `ReferenceError: renderDash is not defined`
+ * interrompant tout le script ui.js, et par cascade rendant
+ * navigate() inutilisable pour toute la session (TDZ sur les
+ * constantes déclarées après ce point, dont PAGE_METADATA n'était
+ * pas affecté car déclaré avant, mais PAGE_RENDERERS si).
+ *
+ * En transformant ce mapping en fonction appelée à l'usage, les
+ * noms (renderDash, renderAudits, etc.) ne sont lus que lorsque
+ * navigate() est réellement invoquée — à ce moment-là, tous les
+ * scripts ont fini de se charger, donc plus de problème d'ordre.
+ *
+ * Les fonctions référencées (renderDash, renderAudits, etc.) restent
+ * définies dans leurs fichiers respectifs ; aucune n'a été déplacée
+ * ni renommée par cette correction.
+ * @param {PageId | string} pageId
+ * @returns {(() => void) | undefined}
  */
-const PAGE_RENDERERS = {
-  dashboard:           renderDash,
-  audits:              renderAudits,
-  nc:                  renderNC,
-  actions:             renderActions,
-  magasins:            renderMag,
-  rayons:              renderRay,
-  rapports:            renderRap,
-  'rapport-qualimetre': renderRapportQualimetre,
-  utilisateurs:        renderUsers,
-  grille:              () => { const sel = el('grille-ray-sel'); showGrille(sel ? sel.value : 'Boucherie'); },
-  qualimetre:          showQualimetre,
-  'audit-qualimetre':  renderQualAudits,
-  'grille-qualimetre': showGrilleQualimetre,
-  brouillons:          renderDrafts,
-  backup:              () => {},
-};
+function _getPageRenderer(pageId) {
+  /** @type {Record<PageId, () => void>} */
+  const renderers = {
+    dashboard:           renderDash,
+    audits:              renderAudits,
+    nc:                  renderNC,
+    actions:             renderActions,
+    magasins:            renderMag,
+    rayons:              renderRay,
+    rapports:            renderRap,
+    'rapport-qualimetre': renderRapportQualimetre,
+    utilisateurs:        renderUsers,
+    grille:              () => { const sel = el('grille-ray-sel'); showGrille(sel ? sel.value : 'Boucherie'); },
+    qualimetre:          showQualimetre,
+    'audit-qualimetre':  renderQualAudits,
+    'grille-qualimetre': showGrilleQualimetre,
+    brouillons:          renderDrafts,
+    backup:              () => {},
+  };
+  return renderers[pageId];
+}
 
 /**
  * Navigue vers une page : bascule les classes 'active' (pages et
@@ -575,5 +598,5 @@ function navigate(pageId) {
     if (overlay) overlay.style.display = 'none';
   }
 
-  PAGE_RENDERERS[pageId]?.();
+  _getPageRenderer(pageId)?.();
 }
