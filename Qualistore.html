@@ -1053,7 +1053,6 @@
 <script src="js/supabase.js"></script>
 <script src="js/db/supabase/storage.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/ui.js"></script>
 
 <!-- Modules métier -->
 <script src="js/dashboard.js"></script>
@@ -1071,6 +1070,9 @@
 <script src="js/audit-qualimetre.js"></script>
 <script src="js/rapport-qualimetre.js"></script>
 <script src="js/import-grille.js"></script>
+
+<!-- Visuel: Ce script doit être chargé vers la fin afin d'éviter les erreurs de référencement, dû à son extrême dépendance -->
+<script src="js/ui.js"></script>
 
 <!-- Point d'entrée -->
 <script src="js/init.js"></script>
