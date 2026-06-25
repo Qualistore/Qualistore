@@ -237,20 +237,19 @@ const PDFJS_URL   = CDN_PDFJS;
  */
 const IMPORT_FORMAT_INFO = {
   csv: `<strong style="color:var(--text);font-size:13px">Format CSV / TSV</strong><br>
-    Colonnes attendues : <strong>Rayon · Catégorie · Intitulé · Criticité · Poids</strong><br>
+    Les colonnes sont détectées automatiquement quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
     Séparateur auto-détecté : <code style="background:#fff;padding:1px 5px;border-radius:4px">;</code> ou <code style="background:#fff;padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
-    La première ligne peut être un en-tête (ignorée si elle contient « Rayon »).<br>
+    Le mapping détecté est affiché et modifiable avant import.<br>
     <span style="color:#15803d">Exemple : <code style="background:#fff;padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>`,
 
   xlsx: `<strong style="color:var(--text);font-size:13px">Format Excel (.xlsx / .xls)</strong><br>
-    La 1ère feuille du classeur est utilisée. La 1ère ligne doit être un en-tête ou être ignorée.<br>
-    Colonnes (dans l'ordre) : <strong>Rayon · Catégorie · Intitulé · Criticité · Poids</strong><br>
-    <span style="color:#15803d">Les colonnes peuvent aussi être nommées en en-tête — la détection est automatique.</span>`,
+    La 1ère feuille du classeur est utilisée.<br>
+    Les colonnes sont détectées automatiquement par leur en-tête (zone, point de contrôle, méthode, criticité, commentaire…), quel que soit leur ordre.<br>
+    <span style="color:#15803d">Le mapping détecté est affiché et modifiable avant import.</span>`,
 
   pdf: `<strong style="color:var(--text);font-size:13px">Format PDF</strong><br>
-    Le texte du PDF est extrait et analysé ligne par ligne.<br>
-    Chaque ligne doit contenir les informations séparées par des espaces ou tabulations.<br>
-    Les PDFs contenant des tableaux avec les colonnes <strong>Rayon, Catégorie, Intitulé, Criticité</strong> sont mieux reconnus.<br>
+    Le texte du PDF est extrait et analysé ligne par ligne, puis les colonnes sont détectées automatiquement comme pour un fichier CSV.<br>
+    Les PDFs contenant des tableaux avec des colonnes identifiables (zone, point de contrôle, criticité…) sont mieux reconnus.<br>
     <span style="color:var(--orange)">⚠ Les PDFs scannés (images) ne fonctionnent pas.</span>`,
 };
 

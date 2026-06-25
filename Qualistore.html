@@ -789,9 +789,9 @@
       <!-- Format info -->
       <div style="background:var(--bg);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.9" id="imp-format-info">
         <strong style="color:var(--text);font-size:13px">Format CSV / TSV</strong><br>
-        Colonnes attendues : <strong>Rayon · Catégorie · Intitulé · Criticité · Poids</strong><br>
+        Les colonnes sont détectées automatiquement quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
         Séparateur auto-détecté : <code style="background:#fff;padding:1px 5px;border-radius:4px">;</code> ou <code style="background:#fff;padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
-        La première ligne peut être un en-tête (elle sera ignorée si elle contient le mot « Rayon »).<br>
+        Le mapping détecté est affiché et modifiable avant import.<br>
         <span style="color:#15803d">Exemple : <code style="background:#fff;padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
       </div>
 
@@ -817,6 +817,7 @@
             <button class="btn btn-secondary btn-sm" onclick="clearImportPreview()"><i class="ti ti-x"></i> Effacer</button>
           </div>
         </div>
+        <div id="imp-mapping-block"></div>
         <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius)">
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead><tr style="background:var(--bg)">
@@ -835,7 +836,7 @@
 
       <!-- PDF special note -->
       <div id="pdf-note" style="display:none;margin-top:12px;background:var(--warning-light);border-radius:var(--radius);padding:12px 14px;font-size:12px;color:#92400e">
-        <i class="ti ti-info-circle"></i> <strong>Import PDF :</strong> le texte est extrait automatiquement. Pour de meilleurs résultats, le PDF doit être un tableau avec des colonnes identifiables (Rayon, Catégorie, Intitulé, Criticité). Les PDF scannés (images) ne sont pas pris en charge.
+        <i class="ti ti-info-circle"></i> <strong>Import PDF :</strong> le texte est extrait automatiquement, puis les colonnes sont détectées comme pour un fichier CSV. Pour de meilleurs résultats, le PDF doit être un tableau avec des colonnes identifiables (zone, point de contrôle, criticité…). Les PDF scannés (images) ne sont pas pris en charge.
       </div>
     </div>
     <div class="modal-foot">
@@ -1007,15 +1008,8 @@
         <label class="form-label">Fichier <span style="color:var(--text2);font-size:11px">(CSV, XLSX ou PDF)</span></label>
         <input type="file" class="form-control" id="gq-import-file" accept=".csv,.xlsx,.xls,.pdf" onchange="handleGqImportFile(this)">
         <div style="font-size:11px;color:var(--text2);margin-top:6px">
-          Colonnes attendues : <code>zone | question | precision | criticite | poids</code>
+          Les colonnes sont détectées automatiquement (zone, point de contrôle, criticité, poids…), quel que soit leur ordre ou intitulé exact.
         </div>
-      </div>
-
-      <div class="form-group">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
-          <input type="checkbox" id="gqi-replace" checked>
-          Remplacer les points existants des zones importées
-        </label>
       </div>
 
       <div id="gq-import-preview"></div>
@@ -1053,6 +1047,12 @@
 <script src="js/supabase.js"></script>
 <script src="js/db/supabase/storage.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/ui.js"></script>
+
+<!-- Import de référentiels (chargé avant grille-qualimetre.js, qui réutilise detectConceptMapping/normalizeRows/_resolveOrCreateZoneFromDocument) -->
+<script src="js/import/import-detect.js"></script>
+<script src="js/import/import-normalize.js"></script>
+<script src="js/import/import-grille.js"></script>
 
 <!-- Modules métier -->
 <script src="js/dashboard.js"></script>
@@ -1069,10 +1069,6 @@
 <script src="js/qualimetre.js"></script>
 <script src="js/audit-qualimetre.js"></script>
 <script src="js/rapport-qualimetre.js"></script>
-<script src="js/import-grille.js"></script>
-
-<!-- Visuel: Ce script doit être chargé vers la fin afin d'éviter les erreurs de référencement, dû à son extrême dépendance -->
-<script src="js/ui.js"></script>
 
 <!-- Point d'entrée -->
 <script src="js/init.js"></script>

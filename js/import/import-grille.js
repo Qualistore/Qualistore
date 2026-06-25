@@ -1,6 +1,8 @@
 // ══════════════════════════════════════════════════════════════
 // IMPORT-GRILLE — Import de grille d'audit (CSV / XLSX / PDF)
-// Dépend de : storage.js (DB, CU), config.js (CDN_SHEETJS, CDN_PDFJS, CDN_PDFJS_WORKER, IMPORT_FORMAT_INFO, QM_ZONES), ui.js
+// Dépend de : storage.js (DB, CU), config.js (CDN_SHEETJS, CDN_PDFJS, CDN_PDFJS_WORKER, IMPORT_FORMAT_INFO, QM_ZONES), ui.js,
+//             import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
+//             import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap)
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -57,17 +59,6 @@
  * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreCustomMap
  */
 
-/**
- * Ligne brute telle que produite par un parseur (CSV ou XLSX), avant
- * normalisation. Tous les champs sont des chaînes brutes, non
- * encore validées.
- * @typedef {Object} ImportRawRow
- * @property {string} rayon - Valeur brute de la colonne zone/rayon, telle qu'écrite dans le document. Non normalisée, non validée — c'est la source de vérité pour la résolution de zone Qualimètre.
- * @property {string} cat - Catégorie, 'Général' par défaut.
- * @property {string} q
- * @property {string} crit - Valeur brute, non normalisée.
- * @property {string} poids - Valeur brute (chaîne), à parser en nombre.
- */
 
 /**
  * Ligne normalisée et validée, prête pour aperçu et import. La
@@ -84,6 +75,18 @@
  * @property {GrilleCriticite} crit - Toujours normalisé (fallback 'Majeure' si non reconnu).
  * @property {number} p - Poids, calculé depuis IMPORT_DEFAULT_POIDS si absent/invalide.
  * @property {boolean} valid - Dépend de la cible d'import active au moment du parsing (voir _showImportPreview) ; les lignes invalides sont affichées dans l'aperçu mais exclues de l'import.
+ * @property {string} extra - Contenu des colonnes du document non reconnues comme un concept métier connu (méthode, commentaire, ou toute colonne non mappée), concaténé pour ne perdre aucune information. Chaîne vide si rien à signaler. Voir import-normalize.js.
+ */
+
+/**
+ * Rappel des typedefs définis dans import-detect.js et
+ * import-normalize.js, consommés par ce fichier. Non redéfinis ici
+ * (source de vérité = leurs fichiers respectifs) :
+ * - RawImportRow, ImportConcept, ConceptMapping, ConceptScore,
+ *   DetectionResult, detectConceptMapping, buildSyntheticHeaders
+ *   (import-detect.js)
+ * - NormalizedImportRow, DuplicateMap, normalizeRows,
+ *   findDuplicateRows (import-normalize.js)
  */
 
 /**
@@ -177,6 +180,12 @@ let _pdfjsLoaded = false;
 /** @type {ImportParsedRow[]} Lignes parsées en attente de confirmation. */
 let _importRows = [];
 
+/** @type {RawImportRow[]} Lignes brutes du fichier actuellement chargé (clés = en-têtes d'origine), conservées pour rejouer normalizeRows si le mapping est corrigé manuellement sans re-lire le fichier. */
+let _importRawRows = [];
+
+/** @type {DetectionResult | null} Résultat de détection courant (mapping + scores + en-têtes non mappés), affiché et corrigible dans la modale. */
+let _importDetection = null;
+
 /** @type {ImportTab} Onglet actif. */
 let _currentImportTab = 'csv';
 
@@ -246,8 +255,11 @@ function switchImportTab(tab) {
  * @returns {void}
  */
 function _clearImportPreview() {
-  _importRows = [];
+  _importRows      = [];
+  _importRawRows   = [];
+  _importDetection = null;
   el('imp-preview').style.display    = 'none';
+  el('imp-mapping-block').innerHTML  = '';
   el('imp-confirm-btn').disabled     = true;
   el('imp-confirm-btn').style.opacity = '.5';
   el('imp-count-btn').textContent    = '';
@@ -319,35 +331,91 @@ function _importCSV(file) {
 }
 
 /**
- * Parse un texte CSV/TSV en lignes brutes, en détectant
- * automatiquement le séparateur et en ignorant une éventuelle
- * ligne d'en-tête.
+ * Parse un texte CSV/TSV en lignes RawImportRow (clés = en-têtes
+ * bruts du document), en détectant automatiquement le séparateur.
+ * Si la première ligne ne peut pas servir d'en-tête fiable (trop
+ * peu de colonnes nommées détectées), des en-têtes synthétiques
+ * sont générés (voir buildSyntheticHeaders, import-detect.js) afin
+ * que TOUTES les lignes soient traitées comme des données — aucune
+ * heuristique de mot-clé sur la 1ère colonne n'est plus nécessaire
+ * ici, cette responsabilité est désormais celle de
+ * detectConceptMapping (import-detect.js).
  * @param {string} text
  * @returns {void}
  */
 function _parseCSVText(text) {
   /** @type {string[]} */
-  const lines     = text.split(/\r?\n/).filter(l => l.trim());
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) { _showImportPreview([], null, [], '0 ligne lue'); return; }
+
   /** @type {string} */
   const separator = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
-  /** @type {ImportRawRow[]} */
-  const rows      = [];
 
-  lines.forEach((line, index) => {
-    /** @type {string[]} */
-    const cols = line.split(separator).map(c => c.trim().replace(/^["']|["']$/g, ''));
-    if (index === 0 && /rayon|categorie|intitul/i.test(cols[0])) return; // ignorer l'en-tête
-    if (cols.length < 3) return;
-    rows.push({
-      rayon: cols[0] || '',
-      cat:   cols[1] || 'Général',
-      q:     cols[2] || '',
-      crit:  cols[3] || 'Majeure',
-      poids: cols[4] || '',
-    });
-  });
+  /** @type {string[][]} */
+  const cellRows = lines.map(line => line.split(separator).map(c => c.trim().replace(/^["']|["']$/g, '')));
 
-  _showImportPreview(rows, `${lines.length} lignes lues`);
+  /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean}} */
+  const { rawRows, usedHeaderRow } = _buildRawRowsWithHeaderDetection(cellRows);
+
+  /** @type {DetectionResult} */
+  const detection = detectConceptMapping(rawRows);
+  /** @type {NormalizedImportRow[]} */
+  const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
+
+  /** @type {string} */
+  const readMessage = `${lines.length} ligne(s) lue(s)${usedHeaderRow ? '' : ' (sans en-tête détecté)'}`;
+  _showImportPreview(normalized, detection, rawRows, readMessage);
+}
+
+/**
+ * Détermine si la première ligne de cellules peut servir d'en-tête
+ * fiable, et produit les RawImportRow correspondants. Une ligne
+ * d'en-tête est jugée fiable si, une fois utilisée comme noms de
+ * colonnes, la détection de concepts y trouve à la fois 'point' ET
+ * 'zone' (les deux concepts structurants minimaux d'un référentiel
+ * de contrôle) — exiger les deux plutôt qu'un seul évite qu'une
+ * ligne de DONNÉES dont une valeur ressemble accidentellement à un
+ * nom de colonne (ex : une valeur de criticité 'Critique' matchant
+ * le motif d'en-tête /criti.../ ) soit acceptée à tort comme ligne
+ * d'en-tête sur la seule foi de ce concept isolé. Si le test
+ * échoue, la ligne est traitée comme une ligne de données et des
+ * en-têtes synthétiques sont générés à la place.
+ * @param {string[][]} cellRows
+ * @returns {{rawRows: RawImportRow[], usedHeaderRow: boolean}}
+ */
+function _buildRawRowsWithHeaderDetection(cellRows) {
+  /** @type {string[]} */
+  const candidateHeaders = cellRows[0];
+  /** @type {RawImportRow[]} */
+  const rowsAssumingHeader = cellRows.slice(1).map(cells => _zipHeadersAndCells(candidateHeaders, cells));
+
+  /** @type {ConceptMapping | null} */
+  const tentativeMapping = rowsAssumingHeader.length ? detectConceptMapping(rowsAssumingHeader).mapping : null;
+  if (tentativeMapping && tentativeMapping.point && tentativeMapping.zone) {
+    return { rawRows: rowsAssumingHeader, usedHeaderRow: true };
+  }
+
+  /** @type {string[]} */
+  const syntheticHeaders = buildSyntheticHeaders(candidateHeaders.length);
+  /** @type {RawImportRow[]} */
+  const rowsWithSyntheticHeaders = cellRows.map(cells => _zipHeadersAndCells(syntheticHeaders, cells));
+  return { rawRows: rowsWithSyntheticHeaders, usedHeaderRow: false };
+}
+
+/**
+ * Associe une ligne d'en-têtes à une ligne de cellules pour produire
+ * un RawImportRow. Les cellules excédentaires (plus de cellules que
+ * d'en-têtes) sont ignorées ; les en-têtes sans cellule correspondante
+ * reçoivent une chaîne vide.
+ * @param {string[]} headers
+ * @param {string[]} cells
+ * @returns {RawImportRow}
+ */
+function _zipHeadersAndCells(headers, cells) {
+  /** @type {RawImportRow} */
+  const row = {};
+  headers.forEach((header, i) => { row[header] = cells[i] !== undefined ? cells[i] : ''; });
+  return row;
 }
 
 // ── XLSX ──
@@ -376,65 +444,25 @@ async function _importXLSX(file) {
       const workbook  = XLSX.read(new Uint8Array(event.target.result), { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       /** @type {string[][]} */
-      const rawRows   = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-      /** @type {ImportRawRow[]} */
-      const rows      = _parseXLSXRows(rawRows, workbook.SheetNames[0]);
-      _showImportPreview(rows, `${rawRows.length} lignes lues depuis "${workbook.SheetNames[0]}"`);
+      const cellRows  = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
+        .filter(row => row.join('').trim())
+        .map(row => row.map(c => String(c)));
+
+      /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean}} */
+      const { rawRows, usedHeaderRow } = _buildRawRowsWithHeaderDetection(cellRows);
+      /** @type {DetectionResult} */
+      const detection = detectConceptMapping(rawRows);
+      /** @type {NormalizedImportRow[]} */
+      const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
+
+      /** @type {string} */
+      const readMessage = `${cellRows.length} ligne(s) lue(s) depuis "${workbook.SheetNames[0]}"${usedHeaderRow ? '' : ' (sans en-tête détecté)'}`;
+      _showImportPreview(normalized, detection, rawRows, readMessage);
     } catch (error) {
       alert('Erreur lors de la lecture du fichier Excel : ' + error.message);
     }
   };
   reader.readAsArrayBuffer(file);
-}
-
-/**
- * Parse les lignes brutes d'une feuille XLSX en ImportRawRow, en
- * détectant automatiquement les colonnes par nom d'en-tête si
- * possible, sinon par position fixe (rayon, cat, q, crit, poids).
- * @param {Array<Array<*>>} rawRows - Lignes brutes (tableaux de cellules).
- * @param {string} sheetName - Nom de la feuille (non utilisé dans le calcul, conservé pour cohérence d'appel).
- * @returns {ImportRawRow[]}
- */
-function _parseXLSXRows(rawRows, sheetName) {
-  /** @type {string[]} */
-  const headerRow = (rawRows[0] || []).map(c => String(c).toLowerCase());
-
-  // Détection automatique des colonnes par nom
-  /** @type {{rayon: number, cat: number, q: number, crit: number, poids: number}} */
-  const colMap = { rayon: -1, cat: -1, q: -1, crit: -1, poids: -1 };
-  headerRow.forEach((header, i) => {
-    if (/rayon/.test(header))                        colMap.rayon = i;
-    else if (/cat/.test(header))                     colMap.cat   = i;
-    else if (/intitul|question|point|contr/.test(header)) colMap.q = i;
-    else if (/crit|gravit|niveau/.test(header))      colMap.crit  = i;
-    else if (/poids|weight|score/.test(header))      colMap.poids = i;
-  });
-
-  /** @type {boolean} */
-  const hasNamedColumns = colMap.rayon >= 0 && colMap.q >= 0;
-  /** @type {Array<Array<*>>} */
-  const dataRows        = hasNamedColumns ? rawRows.slice(1) : rawRows;
-
-  return dataRows
-    .filter(row => row.join('').trim())
-    .map(row => {
-      if (hasNamedColumns) {
-        return {
-          rayon: String(row[colMap.rayon] || ''),
-          cat:   String(row[colMap.cat   >= 0 ? colMap.cat   : 1] || 'Général'),
-          q:     String(row[colMap.q]    || ''),
-          crit:  String(row[colMap.crit  >= 0 ? colMap.crit  : 3] || 'Majeure'),
-          poids: String(row[colMap.poids >= 0 ? colMap.poids : 4] || ''),
-        };
-      }
-      return {
-        rayon: String(row[0] || ''),
-        cat:   String(row[1] || 'Général'),
-        q:     String(row[2] || ''),
-        crit:  String(row[3] || 'Majeure'),
-        poids: String(row[4] || ''),
-      };
-    });
 }
 
 // ── PDF ──
@@ -540,31 +568,30 @@ function _normalizeCrit(crit) {
 // ─────────────────────────────────────────────
 
 /**
- * Normalise et valide les lignes brutes parsées, construit
- * l'aperçu HTML, et active/désactive le bouton de confirmation
- * selon le nombre de lignes valides.
- * @param {ImportRawRow[]} rawRows
- * @param {string} readMessage - Message affiché dans le titre de l'aperçu (ex : nombre de lignes lues).
- * @returns {void}
- */
-/**
- * Normalise et valide les lignes brutes parsées, construit
- * l'aperçu HTML, et active/désactive le bouton de confirmation
- * selon le nombre de lignes valides.
+ * Normalise et valide les lignes déjà routées par le détecteur de
+ * concepts (import-detect.js/import-normalize.js), construit
+ * l'aperçu HTML (mapping + tableau de lignes), et active/désactive
+ * le bouton de confirmation selon le nombre de lignes valides.
  *
- * La règle de validité dépend de `_importTarget` :
+ * La règle de validité dépend de `_importTarget` (INCHANGÉE par
+ * rapport à la version précédente de ce fichier) :
  * - cible 'grille' (FSQS) : le rayon doit être reconnu dans
  *   IMPORT_VALID_RAYONS (liste fermée, légitime pour ce référentiel).
  * - cible 'qualimetre' : aucune liste fermée n'est appliquée ; seul
  *   un intitulé non vide est requis. La zone (même absente ou
  *   inconnue) est résolue plus tard, depuis le document, par
  *   _importIntoQualimetre — jamais rejetée ici pour ce motif.
- * @param {ImportRawRow[]} rawRows
+ * @param {NormalizedImportRow[]} normalizedRows - Lignes déjà routées par normalizeRows (import-normalize.js) selon le mapping détecté.
+ * @param {DetectionResult | null} detection - Résultat de detectConceptMapping (import-detect.js) ; null si rawRows est vide (aucun fichier exploitable).
+ * @param {RawImportRow[]} rawRows - Lignes brutes d'origine, conservées pour permettre un nouveau passage de normalizeRows si l'utilisateur corrige le mapping.
  * @param {string} readMessage - Message affiché dans le titre de l'aperçu (ex : nombre de lignes lues).
  * @returns {void}
  */
-function _showImportPreview(rawRows, readMessage) {
-  _importRows = [];
+function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
+  _importRows  = [];
+  _importRawRows = rawRows;
+  _importDetection = detection;
+
   /** @type {ImportParsedRow[]} */
   const previewRows = [];
   /** @type {string[]} */
@@ -572,7 +599,7 @@ function _showImportPreview(rawRows, readMessage) {
   /** @type {boolean} */
   const isQualimetreTarget = _importTarget === 'qualimetre';
 
-  rawRows.forEach((row, index) => {
+  normalizedRows.forEach((row, index) => {
     if (!row.rayon && !row.q) return;
 
     /** @type {string | null} */
@@ -588,7 +615,7 @@ function _showImportPreview(rawRows, readMessage) {
       : !!normalizedRayon && !!row.q.trim();
 
     if (!isQualimetreTarget && !normalizedRayon) {
-      warnings.push(`Ligne ${index + 2} : rayon « ${row.rayon} » non reconnu — sera ignorée`);
+      warnings.push(`Ligne ${index + 2} : rayon « ${_escapeHtml(row.rayon)} » non reconnu — sera ignorée`);
     }
 
     /** @type {ImportParsedRow} */
@@ -600,6 +627,7 @@ function _showImportPreview(rawRows, readMessage) {
       crit:     normalizedCrit,
       p:        poids,
       valid:    isValid,
+      extra:    row.extra || '',
     };
 
     _importRows.push(parsedRow);
@@ -615,7 +643,11 @@ function _showImportPreview(rawRows, readMessage) {
   el('imp-preview-title').textContent = `Aperçu — ${readMessage}`;
   el('imp-stats').textContent         = `${validCount} à importer${skipCount ? ' · ' + skipCount + ' ignorées' : ''}`;
 
-  el('imp-preview-tb').innerHTML = previewRows.map(row => _buildPreviewRow(row)).join('');
+  /** @type {DuplicateMap} */
+  const duplicates = findDuplicateRows(normalizedRows);
+
+  el('imp-mapping-block').innerHTML = detection ? _buildMappingBlock(detection) : '';
+  el('imp-preview-tb').innerHTML    = previewRows.map((row, i) => _buildPreviewRow(row, duplicates.has(i))).join('');
 
   el('imp-warnings').innerHTML = warnings.length
     ? `<div style="padding:8px;background:var(--warning-light);border-radius:var(--radius)">${warnings.slice(0, 8).join('<br>')}</div>`
@@ -627,26 +659,144 @@ function _showImportPreview(rawRows, readMessage) {
 }
 
 /**
- * Construit la ligne `<tr>` HTML d'aperçu d'une ligne importée.
- * @param {ImportParsedRow} row
+ * Libellés humains des concepts métier, affichés dans le bloc de
+ * mapping de la modale d'aperçu.
+ * @type {Record<ImportConcept, string>}
+ */
+const IMPORT_CONCEPT_LABELS = {
+  zone:        'Zone / Rayon',
+  point:       'Point de contrôle',
+  methode:     'Méthode de vérification',
+  criticite:   'Criticité',
+  commentaire: 'Commentaire',
+  categorie:   'Catégorie',
+  poids:       'Poids',
+};
+
+/**
+ * Construit le bloc HTML affichant, pour chaque concept métier, la
+ * colonne détectée (ou aucune), avec un menu déroulant permettant
+ * de corriger manuellement l'association — voir
+ * _onMappingConceptChanged pour le rejeu de la normalisation. Les
+ * en-têtes non assignés à un concept sont listés en rappel
+ * informatif (ils restent dans le champ `extra` de chaque ligne).
+ * @param {DetectionResult} detection
  * @returns {string}
  */
-function _buildPreviewRow(row) {
+function _buildMappingBlock(detection) {
+  /** @type {string[]} */
+  const allHeaders = _importRawRows.length ? Object.keys(_importRawRows[0]) : [];
+
+  /** @type {string} */
+  const rows = Object.keys(IMPORT_CONCEPT_LABELS).map(concept => {
+    /** @type {string | null} */
+    const assignedHeader = detection.mapping[concept];
+    /** @type {string} */
+    const options = ['<option value="">— aucune —</option>']
+      .concat(allHeaders.map(h => `<option value="${_escapeHtmlAttr(h)}" ${h === assignedHeader ? 'selected' : ''}>${_escapeHtml(h)}</option>`))
+      .join('');
+
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+      <span style="flex:0 0 160px;font-size:12px;color:var(--text2)">${IMPORT_CONCEPT_LABELS[concept]}</span>
+      <select class="form-control" style="flex:1;font-size:12px;padding:4px 8px" onchange="_onMappingConceptChanged('${concept}', this.value)">${options}</select>
+    </div>`;
+  }).join('');
+
+  /** @type {string} */
+  const unmappedNotice = detection.unmappedHeaders.length
+    ? `<div style="margin-top:8px;font-size:11px;color:var(--text3)">Colonnes non utilisées (conservées dans le détail de chaque ligne) : ${detection.unmappedHeaders.map(_escapeHtml).join(', ')}</div>`
+    : '';
+
+  return `<div style="background:var(--bg);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text)">
+      <i class="ti ti-adjustments-horizontal"></i> Colonnes détectées <span style="color:var(--text3);font-weight:400">— corrigez si besoin</span>
+    </div>
+    ${rows}
+    ${unmappedNotice}
+  </div>`;
+}
+
+/**
+ * Appelée depuis le menu déroulant du bloc de mapping lorsque
+ * l'utilisateur corrige manuellement l'association d'un concept à
+ * une colonne. Met à jour `_importDetection.mapping`, recalcule les
+ * en-têtes non mappés, puis rejoue normalizeRows SANS re-lire ni
+ * re-scanner le fichier (voir import-normalize.js : la
+ * normalisation est volontairement rejouable à partir d'un mapping
+ * quelconque).
+ * @param {ImportConcept} concept
+ * @param {string} newHeader - En-tête sélectionné, ou chaîne vide pour 'aucune'.
+ * @returns {void}
+ */
+function _onMappingConceptChanged(concept, newHeader) {
+  if (!_importDetection) return;
+
+  _importDetection.mapping[concept] = newHeader || null;
+
+  /** @type {string[]} */
+  const allHeaders = _importRawRows.length ? Object.keys(_importRawRows[0]) : [];
+  /** @type {Set<string>} */
+  const assignedHeaders = new Set(Object.values(_importDetection.mapping).filter(Boolean));
+  _importDetection.unmappedHeaders = allHeaders.filter(h => !assignedHeaders.has(h));
+
+  /** @type {NormalizedImportRow[]} */
+  const normalized = normalizeRows(_importRawRows, _importDetection.mapping, _importDetection.unmappedHeaders);
+  _showImportPreview(normalized, _importDetection, _importRawRows, el('imp-preview-title').textContent.replace('Aperçu — ', ''));
+}
+
+/**
+ * Échappe une chaîne pour insertion sûre dans du texte HTML.
+ * @param {string} text
+ * @returns {string}
+ */
+function _escapeHtml(text) {
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Échappe une chaîne pour insertion sûre dans un attribut HTML
+ * (en plus de _escapeHtml, échappe les guillemets doubles).
+ * @param {string} text
+ * @returns {string}
+ */
+function _escapeHtmlAttr(text) {
+  return _escapeHtml(text).replace(/"/g, '&quot;');
+}
+
+/**
+ * Construit la ligne `<tr>` HTML d'aperçu d'une ligne importée.
+ * @param {ImportParsedRow} row
+ * @param {boolean} isDuplicate - Vrai si cette ligne est un quasi-doublon d'une ligne précédente (voir findDuplicateRows, import-normalize.js) — signalement uniquement, n'affecte jamais `valid`.
+ * @returns {string}
+ */
+function _buildPreviewRow(row, isDuplicate) {
+  /** @type {string} */
+  const safeRayon = _escapeHtml(row.rayon);
   /** @type {string} */
   const rayonCell = row.valid
-    ? `${rIcon(row.rayon)} ${row.rayon}`
-    : `<span style="color:var(--danger)">⚠ ${row.rayon}</span>`;
+    ? `${rIcon(row.rayon)} ${safeRayon}`
+    : `<span style="color:var(--danger)">⚠ ${safeRayon}</span>`;
 
   /** @type {string} */
   const validCell = row.valid
     ? '<span style="color:var(--success)"><i class="ti ti-check"></i></span>'
     : '<span style="color:var(--danger)"><i class="ti ti-x"></i></span>';
 
+  /** @type {string} */
+  const duplicateBadge = isDuplicate
+    ? ' <span title="Doublon possible avec une autre ligne du fichier" style="color:var(--orange);font-size:10px;border:1px solid var(--orange);border-radius:8px;padding:1px 6px">doublon ?</span>'
+    : '';
+
+  /** @type {string} */
+  const extraTitle = row.extra ? ` title="${_escapeHtmlAttr(row.extra)}"` : '';
+  /** @type {string} */
+  const extraIcon = row.extra ? ` <i class="ti ti-info-circle"${extraTitle} style="color:var(--text3);font-size:12px"></i>` : '';
+
   return `<tr style="background:${row.valid ? '' : '#fff8f8'}">
     <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${rayonCell}</td>
-    <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${row.cat}</td>
+    <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${_escapeHtml(row.cat)}</td>
     <td style="padding:7px 12px;border-bottom:1px solid var(--border);max-width:220px">
-      ${row.q || '<span style="color:var(--text3);font-style:italic">vide</span>'}
+      ${row.q ? _escapeHtml(row.q) : '<span style="color:var(--text3);font-style:italic">vide</span>'}${duplicateBadge}${extraIcon}
     </td>
     <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${critBdg(row.crit)}</td>
     <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${row.p}</td>

@@ -1,6 +1,9 @@
 // ══════════════════════════════════════════════════════════════
 // GRILLE-QUALIMETRE — Gestion de la grille Qualimètre par zone
-// Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, CDN_SHEETJS, CDN_PDFJS), ui.js
+// Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, CDN_SHEETJS, CDN_PDFJS), ui.js,
+//             import/import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
+//             import/import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap),
+//             import/import-grille.js (_resolveOrCreateZoneFromDocument, ResolvedZone, IMPORT_UNCLASSIFIED_ZONE_LABEL — résolution de zone partagée avec l'import de grille FSQS)
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -73,15 +76,22 @@
  */
 
 /**
- * Ligne de données importée (CSV/XLSX/PDF), avant confirmation et
- * application à DB.qualimetreCustom/qualimetreGlobal.
- * @typedef {Object} GqImportRow
- * @property {string} zoneId - Id de zone résolu (voir _gqResolveZoneId).
- * @property {string} zoneName - Valeur brute de zone telle que lue dans le fichier source, non résolue.
+ * Ligne de données importée (CSV/XLSX/PDF), après détection des
+ * concepts métier et résolution de zone, avant confirmation et
+ * application à DB.qualimetreCustom/qualimetreGlobal. La résolution
+ * de zone utilise _resolveOrCreateZoneFromDocument (import-grille.js),
+ * partagée avec l'import de grille FSQS — une zone non identifiable
+ * dans le document est placée dans IMPORT_UNCLASSIFIED_ZONE_LABEL
+ * plutôt que de deviner une zone par défaut.
+ * @typedef {Object} GqParsedRow
+ * @property {string} zoneId - Id de zone résolu (voir ResolvedZone, import-grille.js).
+ * @property {string} zoneName - Valeur brute de zone telle que lue dans le fichier source, non résolue. Jamais perdue même si zoneId pointe vers "Non classé".
  * @property {string} q
  * @property {string} prec
  * @property {GrilleCriticite} c
  * @property {number} p
+ * @property {string} extra - Contenu des colonnes du document non reconnues comme un concept métier connu, concaténé pour ne perdre aucune information. Voir import-normalize.js.
+ * @property {boolean} isDuplicate - Vrai si cette ligne est un quasi-doublon d'une autre ligne du même fichier (voir findDuplicateRows, import-normalize.js) — signalement uniquement, n'exclut jamais la ligne automatiquement.
  */
 
 /**
@@ -108,9 +118,26 @@ const GQ_DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
 
 /**
  * Données parsées en attente de confirmation d'import.
- * @type {GqImportRow[]}
+ * @type {GqParsedRow[]}
  */
 let _gqImportData = [];
+
+/** @type {RawImportRow[]} Lignes brutes du fichier actuellement chargé (clés = en-têtes d'origine), conservées pour rejouer normalizeRows si le mapping est corrigé manuellement sans re-lire le fichier. */
+let _gqRawRows = [];
+
+/** @type {DetectionResult | null} Résultat de détection courant (mapping + scores + en-têtes non mappés), affiché et corrigible dans la modale. */
+let _gqDetection = null;
+
+/**
+ * Choix de remplacement par zone pour l'import en cours, indexé par
+ * zoneId. true = vider la zone avant d'y insérer les nouveaux
+ * points ; false = ajouter aux points existants sans rien
+ * supprimer. Initialisé à true pour chaque zone détectée (même
+ * comportement par défaut que l'ancienne case globale "gqi-replace"),
+ * ajustable zone par zone dans l'aperçu avant confirmation.
+ * @type {Record<string, boolean>}
+ */
+let _gqZoneReplaceFlags = {};
 
 // ─────────────────────────────────────────────
 // 3. ACCÈS AUX POINTS — source de vérité unique
@@ -722,6 +749,9 @@ function exportGrilleCSV() {
  */
 function openGqImportModal() {
   _gqImportData = [];
+  _gqRawRows    = [];
+  _gqDetection  = null;
+  _gqZoneReplaceFlags = {};
   el('gq-import-preview').innerHTML = '';
   el('gq-import-err').classList.remove('show');
 
@@ -815,9 +845,83 @@ function _gqLoadPDFJS(callback) {
 }
 
 /**
- * Parse un contenu CSV/TSV en lignes GqImportRow, en détectant
- * automatiquement le séparateur et les colonnes par en-tête. Ignore
- * les lignes de titre de zone (sans criticité ni poids).
+ * Construit les GqParsedRow à partir de lignes normalisées : filtre
+ * les lignes sans intitulé et les lignes de "titre de zone" (sans
+ * criticité ni poids), normalise criticité/poids, résout la zone
+ * via _resolveOrCreateZoneFromDocument (jamais de zone par défaut
+ * devinée), puis signale les quasi-doublons (findDuplicateRows,
+ * import-normalize.js — jamais d'exclusion automatique). Factorise
+ * la logique partagée entre _gqParseCSV (1er parsing) et
+ * _onGqMappingConceptChanged (rejeu après correction manuelle du
+ * mapping).
+ * @param {NormalizedImportRow[]} normalized
+ * @returns {GqParsedRow[]}
+ */
+function _buildGqParsedRows(normalized) {
+  /** @type {GqParsedRow[]} */
+  const rows = [];
+  normalized.forEach(row => {
+    if (!row.q.trim()) return;
+
+    // Ignorer les lignes de titre de zone (criticité et poids vides)
+    if (!row.crit && !row.poids) return;
+
+    /** @type {GrilleCriticite} */
+    const crit  = _gqNormalizeCrit(row.crit || 'Majeure');
+    /** @type {number} */
+    const poids = parseInt(row.poids) || GQ_DEFAULT_POIDS[crit];
+    /** @type {ResolvedZone} */
+    const zone  = _resolveOrCreateZoneFromDocument(row.rayon, '');
+
+    rows.push({ zoneId: zone.id, zoneName: row.rayon, q: row.q.trim(), prec: '', c: crit, p: poids, extra: row.extra || '', isDuplicate: false });
+  });
+
+  /** @type {DuplicateMap} */
+  const duplicates = findDuplicateRows(rows.map(r => ({ rayon: r.zoneName, q: r.q })));
+  duplicates.forEach((_, index) => { rows[index].isDuplicate = true; });
+
+  _gqInitZoneReplaceFlags(rows);
+
+  return rows;
+}
+
+/**
+ * Synchronise _gqZoneReplaceFlags avec les zones actuellement
+ * présentes dans les lignes données : initialise à `true`
+ * (remplacer) les zones nouvellement apparues (sans choix déjà
+ * enregistré, pour ne jamais écraser un choix existant), et
+ * supprime les flags des zones qui ne sont plus présentes (par
+ * exemple après une correction manuelle du mapping qui change la
+ * colonne de zone). Appelé après chaque (re)construction des lignes.
+ * @param {GqParsedRow[]} rows
+ * @returns {void}
+ */
+function _gqInitZoneReplaceFlags(rows) {
+  /** @type {Set<string>} */
+  const zoneIds = new Set(rows.map(r => r.zoneId));
+  zoneIds.forEach(zoneId => {
+    if (!(zoneId in _gqZoneReplaceFlags)) _gqZoneReplaceFlags[zoneId] = true;
+  });
+  Object.keys(_gqZoneReplaceFlags).forEach(zoneId => {
+    if (!zoneIds.has(zoneId)) delete _gqZoneReplaceFlags[zoneId];
+  });
+}
+
+/**
+ * Parse un contenu CSV/TSV en lignes RawImportRow (clés = en-têtes
+ * bruts du document), détecte les concepts métier (zone, point,
+ * criticité, méthode, commentaire) via detectConceptMapping
+ * (import-detect.js), normalise via normalizeRows
+ * (import-normalize.js), puis résout chaque zone via
+ * _resolveOrCreateZoneFromDocument (import-grille.js — partagée
+ * avec l'import de grille FSQS, jamais de zone par défaut devinée).
+ * Les quasi-doublons sont signalés (voir findDuplicateRows,
+ * import-normalize.js) sans jamais être exclus automatiquement.
+ *
+ * Les lignes de "titre de zone" (sans criticité ni poids — motif
+ * fréquent dans les exports où une ligne ne fait que regrouper
+ * visuellement une section) sont toujours ignorées, comme dans la
+ * version précédente de ce fichier.
  * @param {string} text - Contenu texte brut du fichier.
  * @returns {void}
  */
@@ -827,65 +931,34 @@ function _gqParseCSV(text) {
   if (lines.length < 2) { _gqImportErr('Le fichier est vide ou ne contient pas de données.'); return; }
 
   /** @type {string} */
-  const separator = lines[0].includes(';') ? ';' : ',';
-  /** @type {string[]} */
-  const headers   = lines[0].split(separator).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+  const separator = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
+  /** @type {string[][]} */
+  const cellRows = lines.map(line => line.split(separator).map(c => c.trim().replace(/^["']|["']$/g, '')));
 
-  /** @type {number} */
-  const idxZone = headers.findIndex(h => h.includes('zone'));
-  /** @type {number} */
-  const idxQ    = headers.findIndex(h => ['question','q','intitulé','intitule','libelle','libellé'].includes(h));
-  /** @type {number} */
-  const idxPrec = headers.findIndex(h => ['precision','précision','prec','detail','détail'].includes(h));
-  /** @type {number} */
-  const idxCrit = headers.findIndex(h => ['criticite','criticité','crit','niveau'].includes(h));
-  /** @type {number} */
-  const idxPoids = headers.findIndex(h => ['poids','points','weight'].includes(h));
+  /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean}} */
+  const { rawRows } = _buildRawRowsWithHeaderDetection(cellRows);
 
-  if (idxQ < 0) {
-    _gqImportErr('Colonne "question" introuvable. Vérifiez les en-têtes (zone, question, precision, criticite, poids).');
-    return;
-  }
+  /** @type {DetectionResult} */
+  const detection = detectConceptMapping(rawRows);
+  /** @type {NormalizedImportRow[]} */
+  const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
 
-  /** @type {GqImportRow[]} */
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    /** @type {string[]} */
-    const cols     = lines[i].split(separator).map(c => c.trim().replace(/^["']|["']$/g, ''));
-    /** @type {string} */
-    const question = cols[idxQ];
-    if (!question) continue;
-
-    // Ignorer les lignes de titre de zone (criticité et poids vides)
-    /** @type {string} */
-    const critValue  = idxCrit  >= 0 ? cols[idxCrit]  : '';
-    /** @type {string} */
-    const poidsValue = idxPoids >= 0 ? cols[idxPoids] : '';
-    if (!critValue && !poidsValue) continue;
-
-    /** @type {string} */
-    const zoneRaw = idxZone >= 0 ? cols[idxZone] : '';
-    /** @type {string} */
-    const zoneId  = _gqResolveZoneId(zoneRaw);
-    /** @type {GrilleCriticite} */
-    const crit    = _gqNormalizeCrit(idxCrit >= 0 ? cols[idxCrit] : 'Majeure');
-    /** @type {number} */
-    const poids   = idxPoids >= 0 ? (parseInt(cols[idxPoids]) || GQ_DEFAULT_POIDS[crit]) : GQ_DEFAULT_POIDS[crit];
-    /** @type {string} */
-    const prec    = idxPrec >= 0 ? (cols[idxPrec] || '') : '';
-
-    rows.push({ zoneId, zoneName: zoneRaw, q: question, prec, c: crit, p: poids });
-  }
+  /** @type {GqParsedRow[]} */
+  const rows = _buildGqParsedRows(normalized);
 
   if (!rows.length) { _gqImportErr('Aucune ligne valide trouvée.'); return; }
+  _gqRawRows   = rawRows;
+  _gqDetection = detection;
   _gqImportData = rows;
   _gqRenderImportPreview();
 }
 
 /**
- * Extrait le texte d'un fichier PDF via PDF.js et parse les lignes
- * contenant des colonnes séparées par '|' ou tabulation en
- * GqImportRow.
+ * Extrait le texte d'un fichier PDF via PDF.js (réutilise
+ * _extractPdfText, import-grille.js — reconstruction des lignes et
+ * colonnes par position X/Y, plus robuste que la simple recherche de
+ * séparateurs '|' ou tabulation dans le texte brut), puis parse le
+ * résultat avec le même pipeline générique que le CSV (_gqParseCSV).
  * @param {File} file
  * @returns {Promise<void>}
  */
@@ -893,81 +966,12 @@ async function _gqParsePDF(file) {
   try {
     /** @type {Object} Document PDF.js — API non typée en détail ici. */
     const pdf  = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-    let text   = '';
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page    = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += content.items.map(item => item.str).join(' ') + '\n';
-    }
-
-    /** @type {string[]} */
-    const lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 8);
-    /** @type {GqImportRow[]} */
-    const rows  = [];
-
-    lines.forEach(line => {
-      /** @type {string[] | null} */
-      const parts = line.includes('|') ? line.split('|') : line.includes('\t') ? line.split('\t') : null;
-      if (!parts) return;
-      const [zoneRaw, question, prec, critRaw, poidsRaw] = parts.map(s => s.trim());
-      if (!question) return;
-
-      /** @type {string} */
-      const zoneId = _gqResolveZoneId(zoneRaw || '');
-      /** @type {GrilleCriticite} */
-      const crit   = _gqNormalizeCrit(critRaw || 'Majeure');
-      /** @type {number} */
-      const poids  = parseInt(poidsRaw) || GQ_DEFAULT_POIDS[crit];
-      rows.push({ zoneId, zoneName: zoneRaw || '', q: question, prec: prec || '', c: crit, p: poids });
-    });
-
-    if (!rows.length) {
-      _gqImportErr('Aucun point extrait du PDF. Le PDF doit contenir des colonnes séparées par | ou tabulation : zone | question | precision | criticite | poids');
-      return;
-    }
-
-    _gqImportData = rows;
-    _gqRenderImportPreview();
+    /** @type {string} */
+    const text = await _extractPdfText(pdf);
+    _gqParseCSV(text);
   } catch (error) {
     _gqImportErr('Erreur lecture PDF : ' + error.message);
   }
-}
-
-/**
- * Résout un identifiant de zone à partir d'une valeur textuelle
- * brute, en essayant successivement : format direct 'zN', id exact,
- * correspondance partielle de label, ou numéro extrait ('Zone 1' →
- * 'z1'). Retombe sur la première zone connue si rien ne correspond.
- * @param {string} raw - Valeur brute de zone telle que lue dans le fichier source.
- * @returns {string} Id de zone résolu.
- */
-function _gqResolveZoneId(raw) {
-  if (!raw) return QM_ZONES[0]?.id || 'z0';
-  /** @type {string} */
-  const cleaned = raw.trim();
-
-  // Déjà un id valide : z0, z1… z10
-  if (/^z\d+$/i.test(cleaned)) return cleaned.toLowerCase();
-
-  // Chercher par id ou label dans QM_ZONES
-  /** @type {QMZone | undefined} */
-  const byId    = QM_ZONES.find(z => z.id.toLowerCase()    === cleaned.toLowerCase());
-  if (byId) return byId.id;
-
-  /** @type {QMZone | undefined} */
-  const byLabel = QM_ZONES.find(z =>
-    z.label.toLowerCase().includes(cleaned.toLowerCase()) ||
-    cleaned.toLowerCase().includes(z.label.toLowerCase().split('–')[1]?.trim().toLowerCase() || '~~~')
-  );
-  if (byLabel) return byLabel.id;
-
-  // Extraire un numéro : "Zone 1", "zone1", "1"
-  /** @type {string} */
-  const num = cleaned.replace(/[^\d]/g, '');
-  if (num) return 'z' + num;
-
-  return QM_ZONES[0]?.id || 'z0';
 }
 
 /**
@@ -987,11 +991,12 @@ function _gqNormalizeCrit(raw) {
 
 /**
  * Affiche l'aperçu des données d'import, groupées par zone, avant
- * confirmation.
+ * confirmation. Inclut le bloc de mapping corrigible (voir
+ * _buildGqMappingBlock) au-dessus du récapitulatif par zone.
  * @returns {void}
  */
 function _gqRenderImportPreview() {
-  /** @type {GqImportRow[]} */
+  /** @type {GqParsedRow[]} */
   const rows         = _gqImportData;
   /** @type {string} */
   const scope        = el('gqi-mag-sel')?.value || '';
@@ -1002,36 +1007,160 @@ function _gqRenderImportPreview() {
     ? `magasin <strong>${store?.nom || scope}</strong>`
     : `grille <strong>globale</strong>`;
 
-  /** @type {Record<string, GqImportRow[]>} */
+  /** @type {Record<string, GqParsedRow[]>} */
   const byZone = {};
   rows.forEach(r => {
     if (!byZone[r.zoneId]) byZone[r.zoneId] = [];
     byZone[r.zoneId].push(r);
   });
 
+  /** @type {string} */
+  const mappingHtml = _gqDetection ? _buildGqMappingBlock(_gqDetection) : '';
+
   el('gq-import-preview').innerHTML = `
+    ${mappingHtml}
     <div style="margin:12px 0 8px;font-size:13px;color:var(--text2)">
       <strong>${rows.length} point(s)</strong> détecté(s) → appliqués à la ${scopeLabel}
     </div>
     ${Object.entries(byZone).map(([zoneId, points]) => {
       /** @type {QMZone | undefined} */
       const zone = QM_ZONES.find(z => z.id === zoneId);
+      /** @type {boolean} */
+      const willReplace = _gqZoneReplaceFlags[zoneId] ?? true;
       return `<div style="margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;padding:6px 10px;background:#f5f3ff;border-radius:6px;margin-bottom:4px">
-          ${zone ? `${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}` : zoneId} (${points.length})
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;padding:6px 10px;background:#f5f3ff;border-radius:6px;margin-bottom:4px">
+          <span>${zone ? `${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}` : zoneId} (${points.length})</span>
+          <label style="display:flex;align-items:center;gap:5px;font-size:10px;font-weight:500;text-transform:none;color:#5b21b6;cursor:pointer;white-space:nowrap">
+            <input type="checkbox" ${willReplace ? 'checked' : ''} onchange="_onGqZoneReplaceToggle('${zoneId}', this.checked)" style="margin:0">
+            Remplacer les points existants
+          </label>
         </div>
-        ${points.map(p => `<div style="display:flex;gap:8px;align-items:center;padding:5px 10px;font-size:12px;border-bottom:1px solid var(--border)">
-          <span style="flex:1">${p.q}</span>
+        ${points.map(p => {
+          /** @type {string} */
+          const extraIcon = p.extra ? ` <i class="ti ti-info-circle" title="${_escapeHtmlAttr(p.extra)}" style="color:var(--text3);font-size:12px"></i>` : '';
+          /** @type {string} */
+          const duplicateBadge = p.isDuplicate
+            ? ' <span title="Doublon possible avec une autre ligne du fichier" style="color:var(--orange);font-size:10px;border:1px solid var(--orange);border-radius:8px;padding:1px 6px">doublon ?</span>'
+            : '';
+          return `<div style="display:flex;gap:8px;align-items:center;padding:5px 10px;font-size:12px;border-bottom:1px solid var(--border)">
+          <span style="flex:1">${_escapeHtml(p.q)}${duplicateBadge}${extraIcon}</span>
           ${critBdg(p.c)}
           <span class="tsm tm">${p.p}pts</span>
-        </div>`).join('')}
+        </div>`;
+        }).join('')}
       </div>`;
     }).join('')}`;
 }
 
 /**
+ * Appelée depuis la checkbox "Remplacer les points existants" d'une
+ * zone, dans l'aperçu d'import. Ne touche à aucune donnée tant que
+ * confirmGqImport n'est pas déclenché — seule la préférence pour
+ * cette zone est mise à jour, lue ensuite par _applyImportToStore.
+ * @param {string} zoneId
+ * @param {boolean} willReplace
+ * @returns {void}
+ */
+function _onGqZoneReplaceToggle(zoneId, willReplace) {
+  _gqZoneReplaceFlags[zoneId] = willReplace;
+}
+
+/**
+ * Libellés humains des concepts métier, affichés dans le bloc de
+ * mapping de la modale d'aperçu Qualimètre. Identique en contenu à
+ * IMPORT_CONCEPT_LABELS (import-grille.js), dupliqué ici
+ * volontairement pour garder ce fichier sans dépendance fonctionnelle
+ * vers les détails d'affichage d'import-grille.js (seule la logique
+ * de détection/normalisation/résolution de zone est partagée).
+ * @type {Record<ImportConcept, string>}
+ */
+const GQ_CONCEPT_LABELS = {
+  zone:        'Zone',
+  point:       'Point de contrôle',
+  methode:     'Méthode de vérification',
+  criticite:   'Criticité',
+  commentaire: 'Commentaire',
+  categorie:   'Catégorie',
+  poids:       'Poids',
+};
+
+/**
+ * Construit le bloc HTML affichant, pour chaque concept métier, la
+ * colonne détectée (ou aucune), avec un menu déroulant permettant de
+ * corriger manuellement l'association — voir
+ * _onGqMappingConceptChanged. Équivalent Qualimètre de
+ * _buildMappingBlock (import-grille.js).
+ * @param {DetectionResult} detection
+ * @returns {string}
+ */
+function _buildGqMappingBlock(detection) {
+  /** @type {string[]} */
+  const allHeaders = _gqRawRows.length ? Object.keys(_gqRawRows[0]) : [];
+
+  /** @type {string} */
+  const rows = Object.keys(GQ_CONCEPT_LABELS).map(concept => {
+    /** @type {string | null} */
+    const assignedHeader = detection.mapping[concept];
+    /** @type {string} */
+    const options = ['<option value="">— aucune —</option>']
+      .concat(allHeaders.map(h => `<option value="${_escapeHtmlAttr(h)}" ${h === assignedHeader ? 'selected' : ''}>${_escapeHtml(h)}</option>`))
+      .join('');
+
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+      <span style="flex:0 0 160px;font-size:12px;color:var(--text2)">${GQ_CONCEPT_LABELS[concept]}</span>
+      <select class="form-control" style="flex:1;font-size:12px;padding:4px 8px" onchange="_onGqMappingConceptChanged('${concept}', this.value)">${options}</select>
+    </div>`;
+  }).join('');
+
+  /** @type {string} */
+  const unmappedNotice = detection.unmappedHeaders.length
+    ? `<div style="margin-top:8px;font-size:11px;color:var(--text3)">Colonnes non utilisées (conservées dans le détail de chaque point) : ${detection.unmappedHeaders.map(_escapeHtml).join(', ')}</div>`
+    : '';
+
+  return `<div style="background:var(--bg);border-radius:var(--radius);padding:12px 14px;margin-bottom:4px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text)">
+      <i class="ti ti-adjustments-horizontal"></i> Colonnes détectées <span style="color:var(--text3);font-weight:400">— corrigez si besoin</span>
+    </div>
+    ${rows}
+    ${unmappedNotice}
+  </div>`;
+}
+
+/**
+ * Appelée depuis le menu déroulant du bloc de mapping Qualimètre
+ * lorsque l'utilisateur corrige manuellement l'association d'un
+ * concept à une colonne. Rejoue normalizeRows et la résolution de
+ * zone SANS re-lire ni re-scanner le fichier. Équivalent Qualimètre
+ * de _onMappingConceptChanged (import-grille.js).
+ * @param {ImportConcept} concept
+ * @param {string} newHeader - En-tête sélectionné, ou chaîne vide pour 'aucune'.
+ * @returns {void}
+ */
+function _onGqMappingConceptChanged(concept, newHeader) {
+  if (!_gqDetection) return;
+
+  _gqDetection.mapping[concept] = newHeader || null;
+
+  /** @type {string[]} */
+  const allHeaders = _gqRawRows.length ? Object.keys(_gqRawRows[0]) : [];
+  /** @type {Set<string>} */
+  const assignedHeaders = new Set(Object.values(_gqDetection.mapping).filter(Boolean));
+  _gqDetection.unmappedHeaders = allHeaders.filter(h => !assignedHeaders.has(h));
+
+  /** @type {NormalizedImportRow[]} */
+  const normalized = normalizeRows(_gqRawRows, _gqDetection.mapping, _gqDetection.unmappedHeaders);
+
+  _gqImportData = _buildGqParsedRows(normalized);
+  _gqRenderImportPreview();
+}
+
+/**
  * Confirme et applique les données importées dans la portée choisie
- * (magasin spécifique ou grille globale).
+ * (magasin spécifique ou grille globale). Le remplacement
+ * (vider la zone avant insertion, ou ajouter aux points existants)
+ * est décidé zone par zone via _gqZoneReplaceFlags, ajustable dans
+ * l'aperçu avant confirmation (voir _onGqZoneReplaceToggle) — il
+ * n'y a plus de case globale unique pour tout l'import.
  * @returns {void}
  */
 function confirmGqImport() {
@@ -1039,40 +1168,43 @@ function confirmGqImport() {
 
   /** @type {string} */
   const storeId = el('gqi-mag-sel')?.value || '';
-  /** @type {boolean} */
-  const replace = el('gqi-replace')?.checked ?? true;
 
   if (storeId) {
     if (!DB.qualimetreCustom) DB.qualimetreCustom = {};
     if (!DB.qualimetreCustom[storeId]) DB.qualimetreCustom[storeId] = {};
-    _applyImportToStore(DB.qualimetreCustom[storeId], replace);
+    _applyImportToStore(DB.qualimetreCustom[storeId]);
   } else {
     if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
-    _applyImportToStore(DB.qualimetreGlobal, replace);
+    _applyImportToStore(DB.qualimetreGlobal);
   }
 
   save(['qualimetreCustom', 'qualimetreGlobal']);
   closeModal('m-gq-import');
   showToast(`Grille Qualimètre importée (${_gqImportData.length} point(s))`, 'success');
   _gqImportData = [];
+  _gqZoneReplaceFlags = {};
   showGrilleQualimetre();
 }
 
 /**
  * Applique les données importées (_gqImportData) dans un store
  * (dictionnaire indexé par zoneId — soit DB.qualimetreCustom[storeId],
- * soit DB.qualimetreGlobal directement). Si `replace` est vrai, vide
- * d'abord les zones concernées avant d'y insérer les nouveaux points.
+ * soit DB.qualimetreGlobal directement). Pour chaque zone dont le
+ * flag _gqZoneReplaceFlags est vrai, la zone est vidée avant d'y
+ * insérer les nouveaux points ; sinon les nouveaux points sont
+ * ajoutés aux points existants sans rien supprimer. Une zone absente
+ * de _gqZoneReplaceFlags (cas normalement impossible, _gqInitZoneReplaceFlags
+ * synchronise toujours l'état) est traitée comme "remplacer", pour
+ * rester cohérent avec le comportement par défaut historique.
  * @param {Record<string, GrillePoint[]>} store
- * @param {boolean} replace
  * @returns {void}
  */
-function _applyImportToStore(store, replace) {
-  if (replace) {
-    /** @type {string[]} */
-    const importedZoneIds = [...new Set(_gqImportData.map(r => r.zoneId))];
-    importedZoneIds.forEach(zoneId => { store[zoneId] = []; });
-  }
+function _applyImportToStore(store) {
+  /** @type {string[]} */
+  const importedZoneIds = [...new Set(_gqImportData.map(r => r.zoneId))];
+  importedZoneIds.forEach(zoneId => {
+    if (_gqZoneReplaceFlags[zoneId] ?? true) store[zoneId] = [];
+  });
 
   _gqImportData.forEach(row => {
     if (!store[row.zoneId]) store[row.zoneId] = [];
@@ -1092,4 +1224,7 @@ function _gqImportErr(message) {
   const errorEl = el('gq-import-err');
   if (errorEl) { errorEl.textContent = message; errorEl.classList.add('show'); }
   el('gq-import-preview').innerHTML = '';
+  _gqRawRows   = [];
+  _gqDetection = null;
+  _gqZoneReplaceFlags = {};
 }
