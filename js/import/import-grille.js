@@ -167,6 +167,30 @@ const IMPORT_DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
  */
 const IMPORT_UNCLASSIFIED_ZONE_LABEL = 'Non classé';
 
+/**
+ * Motif reconnaissant un libellé de section "commun" (point applicable
+ * à tous les rayons/zones du document, pas à un rayon spécifique de ce
+ * nom). Comparaison insensible à la casse et aux accents — couvre
+ * "Commun", "COMMUNE", "Commune", etc. Volontairement restrictif (le
+ * mot entier, pas une sous-chaîne) pour ne jamais traiter à tort une
+ * zone réelle nommée différemment comme "commune" à toutes les autres.
+ * @type {RegExp}
+ */
+const IMPORT_COMMON_ZONE_PATTERN = /^commun(e)?$/i;
+
+/**
+ * Indique si un libellé de zone/section désigne le rayon "commun"
+ * (IMPORT_COMMON_ZONE_PATTERN), par comparaison sur le texte
+ * normalisé (trim, accents retirés).
+ * @param {string} zoneLabel
+ * @returns {boolean}
+ */
+function _isCommonZoneLabel(zoneLabel) {
+  /** @type {string} */
+  const stripped = String(zoneLabel || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return IMPORT_COMMON_ZONE_PATTERN.test(stripped);
+}
+
 // ─────────────────────────────────────────────
 // 2. ÉTAT
 // ─────────────────────────────────────────────
@@ -256,7 +280,8 @@ function switchImportTab(tab) {
 
 /**
  * Réinitialise l'aperçu d'import (lignes, affichage, bouton de
- * confirmation désactivé).
+ * confirmation désactivé) et remet la zone de dépose à son état
+ * initial (voir _resetDropZone).
  * @returns {void}
  */
 function _clearImportPreview() {
@@ -268,6 +293,25 @@ function _clearImportPreview() {
   el('imp-confirm-btn').disabled     = true;
   el('imp-confirm-btn').style.opacity = '.5';
   el('imp-count-btn').textContent    = '';
+  _resetDropZone();
+}
+
+/**
+ * Point d'entrée public du bouton "Effacer" de l'aperçu d'import.
+ * ⚠️ CORRIGÉ : ce nom était référencé par le bouton "Effacer" de
+ * Qualistore.html (onclick="clearImportPreview()") sans qu'aucune
+ * fonction de ce nom exact n'existe — seule la variante interne
+ * _clearImportPreview() était définie. Le bouton était donc inopérant
+ * depuis l'origine. On délègue simplement à la version interne,
+ * également en remettant l'input file à vide pour permettre de
+ * redéposer le même fichier (un <input type="file"> ne déclenche pas
+ * 'change' si on y sélectionne deux fois le même fichier sans le
+ * vider entre-temps).
+ * @returns {void}
+ */
+function clearImportPreview() {
+  el('imp-file-input').value = '';
+  _clearImportPreview();
 }
 
 // ─────────────────────────────────────────────
@@ -303,10 +347,16 @@ function handleImportFile(input) {
 
 /**
  * Détecte le format du fichier et délègue au parseur approprié.
+ * Réduit visuellement la zone de dépose au profit de l'aperçu (voir
+ * _showDropZoneFilled) — le bandeau d'accueil n'a plus d'utilité une
+ * fois un fichier chargé, et libère la place pour le tableau de
+ * lignes détectées.
  * @param {File} file
  * @returns {void}
  */
 function processImportFile(file) {
+  _showDropZoneFilled(file.name);
+
   /** @type {string} */
   const name = file.name.toLowerCase();
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
@@ -316,6 +366,34 @@ function processImportFile(file) {
   } else {
     _importCSV(file);
   }
+}
+
+/**
+ * Bascule la zone de dépose dans son état compact (fichier chargé) :
+ * réduit le padding et remplace le bandeau d'accueil (icône + texte
+ * d'instructions) par le nom du fichier déposé.
+ * @param {string} fileName
+ * @returns {void}
+ */
+function _showDropZoneFilled(fileName) {
+  el('imp-drop').style.padding   = '10px 16px';
+  el('imp-drop-empty').style.display  = 'none';
+  el('imp-drop-filled').style.display = 'flex';
+  el('imp-drop-filename').textContent = fileName;
+}
+
+/**
+ * Revient à l'état initial (vide) de la zone de dépose — appelé à
+ * l'ouverture de la modale, au changement d'onglet de format, et à
+ * l'effacement de l'aperçu, pour ne jamais laisser affiché le nom
+ * d'un fichier qui ne correspond plus à l'aperçu courant.
+ * @returns {void}
+ */
+function _resetDropZone() {
+  el('imp-drop').style.padding        = '32px 20px';
+  el('imp-drop-empty').style.display  = '';
+  el('imp-drop-filled').style.display = 'none';
+  el('imp-drop-filename').textContent = '';
 }
 
 // ─────────────────────────────────────────────
@@ -480,6 +558,15 @@ const IMPORT_DETECTED_ZONE_COLUMN = 'Zone (détectée)';
  * le document source, vides après aplatissement) — jamais sur
  * 'zone', 'point', ou toute autre colonne, pour ne jamais propager
  * une valeur au-delà de ce qui est explicitement constaté.
+ *
+ * Une section dont le libellé désigne le rayon "commun" (voir
+ * _isCommonZoneLabel : "Commun", "Commune"...) n'est jamais importée
+ * comme zone autonome : ses lignes sont dupliquées dans chacune des
+ * autres zones détectées dans le même fichier (un point commun à
+ * tous les rayons doit apparaître dans chacun, pas isolé sous un
+ * rayon fictif "Commun"). Sans aucune autre zone détectée dans le
+ * fichier, les lignes "commun" sont conservées telles quelles (rien
+ * à dupliquer).
  * @param {string[][]} cellRows
  * @returns {{rawRows: RawImportRow[], usedHeaderRow: boolean, sectionCount: number}}
  */
@@ -534,7 +621,42 @@ function buildRawRowsFromCellRows(cellRows) {
     allRawRows.push(...sectionRows);
   });
 
-  return { rawRows: allRawRows, usedHeaderRow: anySectionUsedHeaderRow, sectionCount: sections.length };
+  // Les sections "commun" (voir _isCommonZoneLabel) représentent des
+  // points applicables à TOUS les rayons/zones du document, pas à un
+  // rayon nommé "Commun" — elles sont donc dupliquées dans chacune
+  // des autres zones détectées dans ce même fichier, puis retirées en
+  // tant que zone autonome (sinon elles apparaîtraient en double : une
+  // fois sous "Commun", une fois dupliquées).
+  /** @type {string[]} */
+  const otherZoneLabels = [...new Set(
+    sections.filter(s => !_isCommonZoneLabel(s.zoneLabel)).map(s => s.zoneLabel)
+  )];
+
+  /** @type {RawImportRow[]} */
+  const commonRows = allRawRows.filter(row => _isCommonZoneLabel(row[IMPORT_DETECTED_ZONE_COLUMN]));
+  /** @type {RawImportRow[]} */
+  const nonCommonRows = allRawRows.filter(row => !_isCommonZoneLabel(row[IMPORT_DETECTED_ZONE_COLUMN]));
+
+  /** @type {RawImportRow[]} */
+  const duplicatedCommonRows = [];
+  if (commonRows.length && otherZoneLabels.length) {
+    otherZoneLabels.forEach(zoneLabel => {
+      commonRows.forEach(row => {
+        duplicatedCommonRows.push(Object.assign({}, row, { [IMPORT_DETECTED_ZONE_COLUMN]: zoneLabel }));
+      });
+    });
+  } else if (commonRows.length) {
+    // Aucune autre zone détectée dans le fichier : rien à dupliquer,
+    // les lignes "commun" sont conservées telles quelles plutôt que
+    // perdues.
+    duplicatedCommonRows.push(...commonRows);
+  }
+
+  return {
+    rawRows: nonCommonRows.concat(duplicatedCommonRows),
+    usedHeaderRow: anySectionUsedHeaderRow,
+    sectionCount: sections.length,
+  };
 }
 
 /**

@@ -806,15 +806,22 @@
       </div>
 
       <!-- Drop zone -->
-      <div id="imp-drop" style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:32px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--bg)"
+      <div id="imp-drop" style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:32px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s,padding .2s;background:var(--bg)"
         ondragover="event.preventDefault();this.style.borderColor='var(--primary-mid)';this.style.background='var(--primary-light)'"
         ondragleave="this.style.borderColor='var(--border)';this.style.background='var(--bg)'"
         ondrop="handleImportDrop(event)"
         onclick="el('imp-file-input').click()">
-        <i class="ti ti-cloud-upload" style="font-size:40px;color:var(--text3);display:block;margin-bottom:10px"></i>
-        <div style="font-size:14px;font-weight:500;margin-bottom:4px">Glissez-déposez votre fichier ici</div>
-        <div class="tsm tm">ou cliquez pour choisir un fichier</div>
-        <div class="tsm" id="imp-accept-hint" style="color:var(--primary);margin-top:6px">.csv · .tsv · .txt acceptés</div>
+        <div id="imp-drop-empty">
+          <i class="ti ti-cloud-upload" style="font-size:40px;color:var(--text3);display:block;margin-bottom:10px"></i>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Glissez-déposez votre fichier ici</div>
+          <div class="tsm tm">ou cliquez pour choisir un fichier</div>
+          <div class="tsm" id="imp-accept-hint" style="color:var(--primary);margin-top:6px">.csv · .tsv · .txt acceptés</div>
+        </div>
+        <div id="imp-drop-filled" style="display:none;align-items:center;justify-content:center;gap:10px">
+          <i class="ti ti-file-check" style="font-size:20px;color:var(--primary)"></i>
+          <span style="font-size:13px;font-weight:500" id="imp-drop-filename"></span>
+          <span class="tsm tm">— cliquez pour changer de fichier</span>
+        </div>
       </div>
       <input type="file" id="imp-file-input" accept=".csv,.tsv,.txt,.xlsx,.xls,.pdf" style="display:none" onchange="handleImportFile(this)">
 
