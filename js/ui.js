@@ -251,10 +251,15 @@ function critBdg(criticite) {
 }
 
 /**
- * Génère le HTML d'une icône de rayon colorée. Seuls 5 des 7 rayons
- * FSQS (voir RAYONS_LIST/RAYONS_FSQS) ont une icône/couleur dédiée ;
- * 'Boulangerie' et 'Drive' retombent sur l'icône générique 'ti-category'
- * sans classe de couleur spécifique.
+ * Génère le HTML d'une icône de rayon colorée. Seuls 5 rayons
+ * historiques (voir RAYONS_BASE_SEED, rayons.js) ont une icône/
+ * couleur dédiée ; tout autre rayon — qu'il s'agisse de
+ * 'Boulangerie'/'Drive' (historiques mais sans icône dédiée) ou d'un
+ * rayon créé/importé dynamiquement (voir getKnownRayons, rayons.js)
+ * — retombe sur l'icône générique 'ti-category' sans classe de
+ * couleur spécifique. Ce fallback générique est volontaire et ne
+ * doit jamais être remplacé par un rejet ou une exception : un rayon
+ * dynamique sans icône dédiée reste un rayon parfaitement valide.
  * @param {string} rayon
  * @returns {string}
  */
@@ -381,6 +386,36 @@ function populateMagSelect(selectElement) {
     });
 
   if (currentValue) selectElement.value = currentValue;
+}
+
+/**
+ * Peuple un élément `<select>` avec tous les rayons FSQS connus
+ * (voir getKnownRayons, rayons.js), en préservant la valeur courante
+ * si elle reste valide. Remplace toute liste d'`<option>` de rayons
+ * codée en dur dans le HTML — le nom d'un rayon n'est jamais fixe,
+ * voir rayons.js.
+ * @param {HTMLSelectElement | null} selectElement
+ * @param {boolean} [includeEmptyOption] - Si true, conserve/ajoute une première option vide ("Tous les rayons" ou "Sélectionner…", déjà présente dans le HTML) sans la supprimer ; si false, le select ne contient que des rayons.
+ * @returns {void}
+ */
+function populateRayonSelect(selectElement, includeEmptyOption) {
+  if (!selectElement) return;
+  /** @type {string} */
+  const currentValue = selectElement.value;
+  /** @type {number} */
+  const keepFrom = includeEmptyOption ? 1 : 0;
+  while (selectElement.options.length > keepFrom) selectElement.remove(keepFrom);
+
+  getKnownRayons().forEach(rayon => {
+    const option = document.createElement('option');
+    option.value       = rayon;
+    option.textContent = rayon;
+    selectElement.appendChild(option);
+  });
+
+  if (currentValue && [...selectElement.options].some(o => o.value === currentValue)) {
+    selectElement.value = currentValue;
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -559,7 +594,7 @@ function _getPageRenderer(pageId) {
     rapports:            renderRap,
     'rapport-qualimetre': renderRapportQualimetre,
     utilisateurs:        renderUsers,
-    grille:              () => { const sel = el('grille-ray-sel'); showGrille(sel ? sel.value : 'Boucherie'); },
+    grille:              () => showGrille(),
     qualimetre:          showQualimetre,
     'audit-qualimetre':  renderQualAudits,
     'grille-qualimetre': showGrilleQualimetre,

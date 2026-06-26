@@ -143,6 +143,19 @@
  */
 
 /**
+ * Dictionnaire de renommages manuels de zones Qualimètre, persistant,
+ * indexé par QMZone.id — override du label par défaut (QM_ZONES,
+ * config.js) appliqué via _resolveZoneLabel (grille-qualimetre.js).
+ * QM_ZONES étant une constante figée en mémoire, ce dictionnaire est
+ * l'unique mécanisme de renommage persistant d'une zone — voir
+ * renameQmZone. Stocké côté Supabase comme ligne réservée
+ * '__zone_labels__' de la table qualimetre_custom (voir
+ * _parseQualimetreZoneLabels), sur le même principe que '__global__'
+ * pour QualimetreGlobalMap.
+ * @typedef {Record<string, string>} QualimetreZoneLabelsMap
+ */
+
+/**
  * Structure racine de la base de données applicative, maintenue en
  * mémoire et synchronisée avec localStorage + Supabase.
  * @typedef {Object} DB
@@ -156,6 +169,7 @@
  * @property {GrilleCustomMap} grilleCustom
  * @property {QualimetreCustomMap} qualimetreCustom
  * @property {QualimetreGlobalMap} qualimetreGlobal - Données globales qualimètre (équivalent de la ligne '__global__' isolée côté Supabase).
+ * @property {QualimetreZoneLabelsMap} qualimetreZoneLabels - Renommages manuels de zones (équivalent de la ligne '__zone_labels__' isolée côté Supabase).
  * @property {QualAudit[]} qualAudits
  */
 
@@ -233,6 +247,7 @@ function _buildDefaultDB() {
     grilleCustom:      {},
     qualimetreCustom:  {},
     qualimetreGlobal:  {},
+    qualimetreZoneLabels: {},
     qualAudits:        [],
   };
 }
@@ -309,6 +324,7 @@ async function loadDB() {
       grilleCustom:     _parseGrilleCustom(grilleRows),
       qualimetreCustom: _parseQualimetreCustom(qualRows),
       qualimetreGlobal: _parseQualimetreGlobal(qualRows),
+      qualimetreZoneLabels: _parseQualimetreZoneLabels(qualRows),
       qualAudits: qualAudits || [],
     };
 
@@ -352,15 +368,18 @@ function _parseGrilleCustom(rows) {
 /**
  * Transforme les lignes brutes de la table `qualimetre_custom` en
  * dictionnaire indexé par identifiant de magasin (mid), en excluant
- * la ligne spéciale '__global__'.
+ * les lignes réservées '__global__' (DB.qualimetreGlobal, voir
+ * _parseQualimetreGlobal) et '__zone_labels__' (DB.qualimetreZoneLabels,
+ * voir _parseQualimetreZoneLabels) — aucune des deux n'est un magasin
+ * réel.
  * @param {SupabaseRow[] | null | undefined} rows
  * @returns {QualimetreCustomMap}
  */
 function _parseQualimetreCustom(rows) {
   const result = {};
-  (rows || []).filter(row => row.mid !== '__global__').forEach(row => {
-    result[row.mid] = row.data;
-  });
+  (rows || [])
+    .filter(row => row.mid !== '__global__' && row.mid !== '__zone_labels__')
+    .forEach(row => { result[row.mid] = row.data; });
   return result;
 }
 
@@ -373,6 +392,22 @@ function _parseQualimetreCustom(rows) {
 function _parseQualimetreGlobal(rows) {
   const globalRow = (rows || []).find(row => row.mid === '__global__');
   return globalRow ? globalRow.data : {};
+}
+
+/**
+ * Extrait les renommages manuels de zones Qualimètre (ligne réservée
+ * '__zone_labels__', voir renameQmZone/_resolveZoneLabel,
+ * grille-qualimetre.js) des lignes brutes de la table
+ * `qualimetre_custom`. Réutilise cette table existante plutôt que
+ * d'introduire une nouvelle table Supabase, sur le même principe que
+ * '__global__' pour qualimetreGlobal — un override de libellé par
+ * zoneId n'a pas besoin de son propre stockage dédié.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {Record<string, string>}
+ */
+function _parseQualimetreZoneLabels(rows) {
+  const labelsRow = (rows || []).find(row => row.mid === '__zone_labels__');
+  return labelsRow ? labelsRow.data : {};
 }
 
 // ─────────────────────────────────────────────
@@ -433,11 +468,14 @@ async function _pushToSupabase(tables) {
       if (rows.length) operations.push(sbUpsert('grille_custom', rows));
     }
 
-    if (pushAll || tables.includes('qualimetreCustom') || tables.includes('qualimetreGlobal')) {
+    if (pushAll || tables.includes('qualimetreCustom') || tables.includes('qualimetreGlobal') || tables.includes('qualimetreZoneLabels')) {
       /** @type {SupabaseRow[]} */
       const rows = Object.entries(DB.qualimetreCustom).map(([mid, data]) => ({ id: mid, mid, data }));
       if (DB.qualimetreGlobal && Object.keys(DB.qualimetreGlobal).length) {
         rows.push({ id: '__global__', mid: '__global__', data: DB.qualimetreGlobal });
+      }
+      if (DB.qualimetreZoneLabels && Object.keys(DB.qualimetreZoneLabels).length) {
+        rows.push({ id: '__zone_labels__', mid: '__zone_labels__', data: DB.qualimetreZoneLabels });
       }
       if (rows.length) operations.push(sbUpsert('qualimetre_custom', rows));
     }

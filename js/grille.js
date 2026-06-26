@@ -1,6 +1,10 @@
 // ══════════════════════════════════════════════════════════════
 // GRILLE — Grille d'audit FSQS (référentiel + personnalisation)
-// Dépend de : storage.js (DB, CU), config.js (GRILLE_BASE_COMMUNE), ui.js
+// Dépend de : storage.js (DB, CU), config.js (GRILLE_BASE_COMMUNE),
+//   ui.js (el, sv, v, populateRayonSelect), rayons.js (getKnownRayons,
+//   renameRayon, deleteRayonEverywhere — chargé avant ce fichier),
+//   import-grille.js (_escapeHtmlAttr — chargé avant ce fichier,
+//   réutilisé ici plutôt que dupliqué)
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -60,7 +64,7 @@ const CTRL_SECTIONS = ['Stockage', 'Vente trad.', 'Libre-service'];
 // 2. ÉTAT
 // ─────────────────────────────────────────────
 
-/** @type {string} Rayon actif lors de l'ouverture du modal (pour l'édition). */
+/** @type {string} Rayon actif lors de l'ouverture du modal (pour l'édition). Valeur d'amorçage arbitraire — toujours réécrite par openCtrlModal() avant utilisation réelle (fallback sur getKnownRayons()[0], pas sur cette valeur). */
 let _ctrlRayonCurrent = 'Boucherie';
 
 // ─────────────────────────────────────────────
@@ -88,23 +92,56 @@ function getGrille(rayon) {
 // ─────────────────────────────────────────────
 
 /**
- * Affiche la grille d'un rayon, regroupée par catégorie.
- * @param {string} rayon
+ * Affiche la grille d'un rayon, regroupée par catégorie. Peuple
+ * d'abord le sélecteur de rayon (voir populateRayonSelect, ui.js —
+ * source dynamique, plus aucune liste fixe) avant de déterminer le
+ * rayon à afficher.
+ *
+ * NOTE : un `<select>` HTML sans option vide adopte automatiquement
+ * sa première option comme valeur dès qu'il est peuplé — c'est donc
+ * select.value qui porte naturellement "le premier rayon connu" une
+ * fois populateRayonSelect() passé. Le fallback explicite sur
+ * getKnownRayons()[0] ne joue un rôle que si #grille-ray-sel est
+ * absent du DOM (ne devrait pas arriver en usage normal, mais évite
+ * un crash silencieux si la page est restructurée).
+ * @param {string} [rayon] - Rayon à afficher ; si omis, utilise la valeur du select tel que peuplé, sinon le premier rayon connu, sinon affiche un état vide si aucun rayon n'existe encore.
  * @returns {void}
  */
 function showGrille(rayon) {
-  el('grille-ttl').textContent = rayon;
+  /** @type {HTMLSelectElement | null} */
+  const select = el('grille-ray-sel');
+  populateRayonSelect(select, false);
+
+  /** @type {string} */
+  const resolvedRayon = rayon || (select ? select.value : '') || getKnownRayons()[0] || '';
+
+  if (select && resolvedRayon) select.value = resolvedRayon;
+
+  /** @type {boolean} */
+  const isAdmin = CU && CU.role === 'admin';
+  if (el('btn-rename-rayon')) el('btn-rename-rayon').style.display = resolvedRayon && isAdmin ? '' : 'none';
+  if (el('btn-delete-rayon')) el('btn-delete-rayon').style.display = resolvedRayon && isAdmin ? '' : 'none';
+
+  if (!resolvedRayon) {
+    el('grille-ttl').textContent = '—';
+    el('grille-body').innerHTML  = `<div class="tsm tm" style="padding:24px;text-align:center">Aucun rayon pour l'instant. Importez une grille ou créez un rayon pour commencer.</div>`;
+    const addButton = el('btn-add-ctrl');
+    if (addButton) addButton.style.display = 'none';
+    return;
+  }
+
+  el('grille-ttl').textContent = resolvedRayon;
 
   const addButton = el('btn-add-ctrl');
-  if (addButton) addButton.style.display = (CU && CU.role === 'admin') ? '' : 'none';
+  if (addButton) addButton.style.display = isAdmin ? '' : 'none';
 
   /** @type {GrillePoint[]} */
-  const allPoints  = getGrille(rayon);
+  const allPoints  = getGrille(resolvedRayon);
   /** @type {string[]} */
   const categories = [...new Set(allPoints.map(point => point.cat))];
 
   el('grille-body').innerHTML = categories
-    .map(cat => _buildCategorySection(cat, allPoints.filter(p => p.cat === cat), rayon))
+    .map(cat => _buildCategorySection(cat, allPoints.filter(p => p.cat === cat), resolvedRayon))
     .join('');
 }
 
@@ -180,15 +217,32 @@ function _buildPointActions(rayon, pointId) {
 // ─────────────────────────────────────────────
 
 /**
+ * Peuple #ctrl-rayon-cbs (modale point de contrôle) avec une case à
+ * cocher par rayon connu (getKnownRayons, rayons.js). Remplace
+ * l'ancienne liste de 10 `<input type="checkbox">` codée en dur dans
+ * le HTML, qui était de toute façon désynchronisée des autres listes
+ * de rayons du projet (7 valeurs ailleurs).
+ * @returns {void}
+ */
+function _buildCtrlRayonCheckboxes() {
+  el('ctrl-rayon-cbs').innerHTML = getKnownRayons().map(rayon =>
+    `<label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="${_escapeHtmlAttr(rayon)}"> ${rayon}</label>`
+  ).join('');
+}
+
+/**
  * Ouvre la modale de création/édition d'un point de contrôle
  * personnalisé. Mémorise le rayon courant dans _ctrlRayonCurrent
  * (utilisé par saveCtrl() pour décider mise à jour vs duplication).
- * @param {string} [rayon] - Rayon d'origine ; retombe sur le select de rayon affiché, puis 'Boucherie'.
+ * Peuple d'abord les cases à cocher de rayon (voir
+ * _buildCtrlRayonCheckboxes) depuis getKnownRayons() — plus aucune
+ * liste fixe.
+ * @param {string} [rayon] - Rayon d'origine ; retombe sur le select de rayon affiché, puis le premier rayon connu (getKnownRayons).
  * @param {string} [pointId] - Référence vers GrillePoint.id à éditer ; absent/falsy pour une création.
  * @returns {void}
  */
 function openCtrlModal(rayon, pointId) {
-  _ctrlRayonCurrent = rayon || el('grille-ray-sel').value || 'Boucherie';
+  _ctrlRayonCurrent = rayon || (el('grille-ray-sel') ? el('grille-ray-sel').value : '') || getKnownRayons()[0] || '';
   /** @type {boolean} */
   const isEdit = !!pointId;
 
@@ -198,6 +252,8 @@ function openCtrlModal(rayon, pointId) {
 
   el('ctrl-err').classList.remove('show');
   sv('ctrl-id', pointId || '');
+
+  _buildCtrlRayonCheckboxes();
 
   // Cocher le rayon courant par défaut
   document.querySelectorAll('.ctrl-ray-cb').forEach(cb => {
@@ -344,4 +400,88 @@ function delCtrl(rayon, pointId) {
   DB.grilleCustom[rayon] = (DB.grilleCustom[rayon] || []).filter(p => p.id !== pointId);
   save();
   showGrille(rayon);
+}
+
+// ─────────────────────────────────────────────
+// 9. GESTION DU RAYON (créer / renommer / supprimer)
+// ─────────────────────────────────────────────
+// Le nom d'un rayon n'est jamais figé (voir rayons.js,
+// getKnownRayons/renameRayon/createRayon/deleteRayonEverywhere) — ces
+// fonctions sont les points d'entrée UI correspondants, déclenchés
+// depuis la page Grille (Qualistore.html).
+
+/**
+ * Ouvre une invite de saisie pour créer un nouveau rayon vide (voir
+ * createRayon, rayons.js), puis bascule l'affichage sur ce rayon.
+ * @returns {void}
+ */
+function openCreateRayonPrompt() {
+  /** @type {string | null} */
+  const name = prompt('Nom du nouveau rayon :');
+  if (name === null) return;
+
+  /** @type {boolean} */
+  const created = createRayon(name);
+  if (!created) {
+    alert(name.trim() ? `Le rayon « ${name.trim()} » existe déjà.` : 'Le nom du rayon ne peut pas être vide.');
+    return;
+  }
+
+  save();
+  showGrille(name.trim());
+}
+
+/**
+ * Ouvre une invite de saisie pour renommer le rayon actuellement
+ * affiché (voir renameRayon, rayons.js), pré-remplie avec le nom
+ * actuel. Migre toutes les références existantes (grilleCustom,
+ * audits, drafts) — voir la documentation de renameRayon.
+ * @returns {void}
+ */
+function openRenameRayonPrompt() {
+  /** @type {string} */
+  const currentRayon = el('grille-ray-sel') ? el('grille-ray-sel').value : '';
+  if (!currentRayon) return;
+
+  /** @type {string | null} */
+  const newName = prompt('Nouveau nom du rayon :', currentRayon);
+  if (newName === null) return;
+
+  /** @type {{ok: boolean, error?: string}} */
+  const result = renameRayon(currentRayon, newName);
+  if (!result.ok) {
+    if (result.error) alert(result.error);
+    return;
+  }
+
+  save();
+  showGrille(newName.trim());
+}
+
+/**
+ * Supprime le rayon actuellement affiché ainsi que TOUTES ses
+ * données (points personnalisés, audits, NC/actions liées,
+ * brouillons — voir deleteRayonEverywhere, rayons.js), après une
+ * double confirmation explicite étant donné le caractère destructif
+ * et irréversible de l'action.
+ * @returns {void}
+ */
+function confirmDeleteRayon() {
+  /** @type {string} */
+  const currentRayon = el('grille-ray-sel') ? el('grille-ray-sel').value : '';
+  if (!currentRayon) return;
+
+  /** @type {number} */
+  const auditCount = DB.audits.filter(a => a.rayon === currentRayon).length;
+  /** @type {string} */
+  const warning = auditCount
+    ? `Supprimer le rayon « ${currentRayon} » ? ${auditCount} audit(s) et toutes les données associées (NC, actions correctives) seront définitivement supprimés.`
+    : `Supprimer le rayon « ${currentRayon} » et ses points personnalisés ?`;
+
+  if (!confirm(warning)) return;
+  if (auditCount && !confirm('Cette action est IRRÉVERSIBLE. Confirmer la suppression définitive ?')) return;
+
+  deleteRayonEverywhere(currentRayon);
+  save();
+  showGrille();
 }

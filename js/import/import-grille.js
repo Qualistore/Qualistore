@@ -17,12 +17,15 @@
 //    par libellé exact déjà connu, jamais pour deviner ou valider
 //    une zone). Voir _resolveOrCreateZoneFromDocument.
 //
-//    ⚠️ DUPLICATION (3e occurrence, non corrigée à ce stade) :
-//    IMPORT_VALID_RAYONS ci-dessous est une 3e copie de la même
-//    liste de rayons que RAYONS_LIST (rayons.js) et RAYONS_FSQS
-//    (dashboard.js). Cette liste reste utilisée UNIQUEMENT pour la
-//    validation de l'import vers la grille FSQS (_importIntoGrille),
-//    pas pour le Qualimètre.
+//    ✅ RÉSOLU : l'ancienne IMPORT_VALID_RAYONS (liste fermée de 7
+//    rayons, 3e copie de la même liste que RAYONS_LIST/RAYONS_BASE_SEED
+//    dans rayons.js et l'ex-RAYONS_FSQS dans dashboard.js) a été
+//    supprimée. Aucun rayon n'est plus jamais rejeté à l'import : voir
+//    _showImportPreview, qui ne fait plus que réutiliser la casse
+//    canonique d'un rayon déjà connu (getKnownRayons(), rayons.js) si
+//    elle correspond, sans jamais refuser un rayon absent de cette
+//    liste. La seule source de vérité pour "quels rayons existent" est
+//    désormais getKnownRayons() — ne jamais réintroduire de liste fixe.
 // ─────────────────────────────────────────────
 
 /**
@@ -139,11 +142,17 @@ const IMPORT_ACCEPT_HINTS = {
 };
 
 /**
- * Rayons valides pour la normalisation à l'import. Voir
- * l'avertissement de duplication en tête de fichier.
- * @type {string[]}
+ * ⚠️ CHANGÉ : il n'existe plus de liste fermée de rayons FSQS
+ * valides. Le nom d'un rayon ne doit jamais être une contrainte
+ * fixe — il provient toujours du document importé tel qu'écrit (un
+ * rayon absent de getKnownRayons(), rayons.js, est créé à la volée à
+ * la confirmation de l'import, voir _importIntoGrille), ou d'une
+ * correction manuelle de l'utilisateur dans l'aperçu (voir
+ * _onPreviewRayonChanged). IMPORT_VALID_RAYONS et _normalizeRayon
+ * ont été supprimés ; toute ligne avec un intitulé non vide est
+ * désormais valide pour la cible 'grille' (FSQS), exactement comme
+ * pour la cible 'qualimetre' — voir _showImportPreview.
  */
-const IMPORT_VALID_RAYONS = ['Boucherie', 'Boulangerie', 'Drive', 'Marée', 'Charcuterie', 'Fromage', 'Fruits & Légumes'];
 
 /**
  * Criticités valides.
@@ -854,16 +863,6 @@ async function _extractPdfText(pdf) {
 // ─────────────────────────────────────────────
 
 /**
- * Normalise un rayon brut en l'une des valeurs connues
- * (IMPORT_VALID_RAYONS), par correspondance insensible à la casse.
- * @param {string} rayon
- * @returns {string | null} Le rayon normalisé, ou null si non reconnu.
- */
-function _normalizeRayon(rayon) {
-  return IMPORT_VALID_RAYONS.find(r => r.toLowerCase() === rayon.toLowerCase()) || null;
-}
-
-/**
  * Normalise une criticité brute en l'une des valeurs connues
  * (IMPORT_VALID_CRITS), par correspondance insensible à la casse.
  * @param {string} crit
@@ -883,14 +882,17 @@ function _normalizeCrit(crit) {
  * l'aperçu HTML (mapping + tableau de lignes), et active/désactive
  * le bouton de confirmation selon le nombre de lignes valides.
  *
- * La règle de validité dépend de `_importTarget` (INCHANGÉE par
- * rapport à la version précédente de ce fichier) :
- * - cible 'grille' (FSQS) : le rayon doit être reconnu dans
- *   IMPORT_VALID_RAYONS (liste fermée, légitime pour ce référentiel).
- * - cible 'qualimetre' : aucune liste fermée n'est appliquée ; seul
- *   un intitulé non vide est requis. La zone (même absente ou
- *   inconnue) est résolue plus tard, depuis le document, par
- *   _importIntoQualimetre — jamais rejetée ici pour ce motif.
+ * ⚠️ CHANGÉ : pour la cible 'grille' (FSQS), le rayon n'est plus
+ * jamais rejeté pour cause de non-reconnaissance — il n'existe plus
+ * de liste fermée (voir l'avertissement en tête de fichier). Si le
+ * rayon brut du document correspond, à la casse près, à un rayon déjà
+ * connu (getKnownRayons(), rayons.js), c'est la casse canonique
+ * existante qui est conservée (évite de créer "boucherie" en doublon
+ * de "Boucherie") ; sinon, le rayon est conservé exactement tel
+ * qu'écrit dans le document et sera créé à la volée à la
+ * confirmation de l'import (voir _importIntoGrille). La seule
+ * condition de validité, pour les deux cibles désormais, est un
+ * intitulé non vide.
  *
  * La criticité non déterminée depuis le document (colonne absente
  * ou valeur non reconnue) retombe sur _importDefaultCrit plutôt que
@@ -909,16 +911,21 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
 
   /** @type {ImportParsedRow[]} */
   const previewRows = [];
-  /** @type {string[]} */
-  const warnings    = [];
   /** @type {boolean} */
   const isQualimetreTarget = _importTarget === 'qualimetre';
+  /** @type {string[]} */
+  const knownRayons = isQualimetreTarget ? [] : getKnownRayons();
 
   normalizedRows.forEach((row, index) => {
     if (!row.rayon && !row.q) return;
 
-    /** @type {string | null} */
-    const normalizedRayon = _normalizeRayon(row.rayon);
+    /** @type {string} */
+    const rawRayon = (row.rayon || '').trim();
+    /** @type {string | undefined} */
+    const matchingKnownRayon = knownRayons.find(r => r.toLowerCase() === rawRayon.toLowerCase());
+    /** @type {string} */
+    const resolvedRayon = matchingKnownRayon || rawRayon;
+
     /** @type {GrilleCriticite} */
     const normalizedCrit  = _normalizeCrit(row.crit) || _importDefaultCrit;
     /** @type {number} */
@@ -927,15 +934,11 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
     /** @type {boolean} */
     const isValid = isQualimetreTarget
       ? !!row.q.trim()
-      : !!normalizedRayon && !!row.q.trim();
-
-    if (!isQualimetreTarget && !normalizedRayon) {
-      warnings.push(`Ligne ${index + 2} : rayon « ${_escapeHtml(row.rayon)} » non reconnu — sera ignorée`);
-    }
+      : !!resolvedRayon && !!row.q.trim();
 
     /** @type {ImportParsedRow} */
     const parsedRow = {
-      rayon:    normalizedRayon || row.rayon,
+      rayon:    resolvedRayon,
       rayonRaw: row.rayon,
       cat:      row.cat || 'Général',
       q:        row.q.trim(),
@@ -949,28 +952,23 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
     previewRows.push(parsedRow);
   });
 
-  /** @type {number} */
-  const validCount = _importRows.filter(r => r.valid).length;
-  /** @type {number} */
-  const skipCount  = _importRows.filter(r => !r.valid).length;
-
   el('imp-preview').style.display    = '';
   el('imp-preview-title').textContent = `Aperçu — ${readMessage}`;
-  el('imp-stats').textContent         = `${validCount} à importer${skipCount ? ' · ' + skipCount + ' ignorées' : ''}`;
 
   /** @type {DuplicateMap} */
   const duplicates = findDuplicateRows(normalizedRows);
 
   el('imp-mapping-block').innerHTML = detection ? _buildMappingBlock(detection) : '';
-  el('imp-preview-tb').innerHTML    = previewRows.map((row, i) => _buildPreviewRow(row, duplicates.has(i))).join('');
+  el('imp-preview-tb').innerHTML    = previewRows.map((row, i) => _buildPreviewRow(row, i, duplicates.has(i))).join('');
 
-  el('imp-warnings').innerHTML = warnings.length
-    ? `<div style="padding:8px;background:var(--warning-light);border-radius:var(--radius)">${warnings.slice(0, 8).join('<br>')}</div>`
-    : '';
+  // ⚠️ CHANGÉ : plus aucun rayon "non reconnu" à signaler (voir
+  // ci-dessus) — la seule cause d'ignorance possible est désormais un
+  // intitulé vide, déjà visible directement dans le tableau (icône ✕
+  // rouge), donc le bandeau d'avertissements séparé n'a plus lieu
+  // d'être pour ce motif.
+  el('imp-warnings').innerHTML = '';
 
-  el('imp-confirm-btn').disabled      = validCount === 0;
-  el('imp-confirm-btn').style.opacity = validCount > 0 ? '1' : '.5';
-  el('imp-count-btn').textContent     = validCount > 0 ? `(${validCount})` : '';
+  _refreshImportPreviewCounters();
 }
 
 /**
@@ -1100,43 +1098,186 @@ function _escapeHtmlAttr(text) {
 
 /**
  * Construit la ligne `<tr>` HTML d'aperçu d'une ligne importée.
+ *
+ * ⚠️ CHANGÉ : chaque cellule métier (rayon, catégorie, intitulé,
+ * criticité, poids) est désormais un champ éditable directement dans
+ * l'aperçu, AVANT confirmation de l'import — l'utilisateur peut
+ * corriger n'importe quelle valeur détectée à tort (ex : rayon mal
+ * détecté, intitulé tronqué) sans avoir à corriger son fichier
+ * source et le réimporter. Toute modification passe par
+ * _onPreviewFieldChanged, qui met à jour _importRows[index] puis ne
+ * re-rend QUE cette ligne (pas tout l'aperçu) pour ne jamais faire
+ * perdre le focus du champ en cours d'édition. Une ligne peut aussi
+ * être retirée individuellement de l'aperçu (_removePreviewRow) sans
+ * toucher au fichier source.
  * @param {ImportParsedRow} row
+ * @param {number} index - Index de cette ligne dans _importRows (clé de mise à jour, voir _onPreviewFieldChanged).
  * @param {boolean} isDuplicate - Vrai si cette ligne est un quasi-doublon d'une ligne précédente (voir findDuplicateRows, import-normalize.js) — signalement uniquement, n'affecte jamais `valid`.
  * @returns {string}
  */
-function _buildPreviewRow(row, isDuplicate) {
+function _buildPreviewRow(row, index, isDuplicate) {
   /** @type {string} */
-  const safeRayon = _escapeHtml(row.rayon);
+  const rowBg = row.valid ? (isDuplicate ? '#fffaf0' : '') : '#fff8f8';
   /** @type {string} */
-  const rayonCell = row.valid
-    ? `${rIcon(row.rayon)} ${safeRayon}`
-    : `<span style="color:var(--danger)">⚠ ${safeRayon}</span>`;
-
+  const fieldStyle = 'width:100%;border:1px solid transparent;background:transparent;font-size:12px;padding:3px 5px;border-radius:4px;font-family:inherit;color:inherit';
   /** @type {string} */
-  const validCell = row.valid
-    ? '<span style="color:var(--success)"><i class="ti ti-check"></i></span>'
-    : '<span style="color:var(--danger)"><i class="ti ti-x"></i></span>';
+  const focusHint = 'onfocus="this.style.borderColor=\'var(--primary-mid)\';this.style.background=\'#fff\'" onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'"';
 
   /** @type {string} */
   const duplicateBadge = isDuplicate
-    ? ' <span title="Doublon possible avec une autre ligne du fichier" style="color:var(--orange);font-size:10px;border:1px solid var(--orange);border-radius:8px;padding:1px 6px">doublon ?</span>'
+    ? ' <span title="Doublon possible avec une autre ligne du fichier" style="color:var(--orange);font-size:10px;border:1px solid var(--orange);border-radius:8px;padding:1px 6px;white-space:nowrap">doublon ?</span>'
     : '';
-
   /** @type {string} */
   const extraTitle = row.extra ? ` title="${_escapeHtmlAttr(row.extra)}"` : '';
   /** @type {string} */
   const extraIcon = row.extra ? ` <i class="ti ti-info-circle"${extraTitle} style="color:var(--text3);font-size:12px"></i>` : '';
 
-  return `<tr style="background:${row.valid ? '' : '#fff8f8'}">
-    <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${rayonCell}</td>
-    <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${_escapeHtml(row.cat)}</td>
-    <td style="padding:7px 12px;border-bottom:1px solid var(--border);max-width:220px">
-      ${row.q ? _escapeHtml(row.q) : '<span style="color:var(--text3);font-style:italic">vide</span>'}${duplicateBadge}${extraIcon}
+  /** @type {string} */
+  const rayonField = _importTarget === 'qualimetre'
+    // NOTE : en pratique, cette modale (#m-import) n'est aujourd'hui
+    // ouverte qu'avec la cible 'grille' (FSQS) — openImportModal()
+    // est toujours appelée sans argument dans Qualistore.html, voir
+    // le bouton "Importer" de la page Grille. L'import Qualimètre
+    // utilise sa propre modale et son propre aperçu, entièrement
+    // séparés (#m-gq-import, _gqRenderImportPreview, voir
+    // grille-qualimetre.js). Cette branche est donc inerte
+    // aujourd'hui ; conservée pour ne pas casser ce fichier si
+    // openImportModal('qualimetre') est un jour réactivé.
+    ? ''
+    : `<input type="text" value="${_escapeHtmlAttr(row.rayon)}" ${fieldStyle ? `style="${fieldStyle}${row.valid ? '' : ';color:var(--danger)'}"` : ''} ${focusHint}
+         oninput="_onPreviewFieldChanged(${index},'rayon',this.value)" placeholder="Rayon...">`;
+
+  /** @type {string} */
+  const critOptions = IMPORT_VALID_CRITS.map(c =>
+    `<option value="${c}" ${c === row.crit ? 'selected' : ''}>${c}</option>`
+  ).join('');
+
+  return `<tr style="background:${rowBg}">
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border)">${rayonField}</td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border)">
+      <input type="text" value="${_escapeHtmlAttr(row.cat)}" style="${fieldStyle}" ${focusHint}
+        oninput="_onPreviewFieldChanged(${index},'cat',this.value)" placeholder="Catégorie...">
     </td>
-    <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${critBdg(row.crit)}</td>
-    <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${row.p}</td>
-    <td style="padding:7px 12px;border-bottom:1px solid var(--border)">${validCell}</td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border);max-width:220px">
+      <input type="text" value="${_escapeHtmlAttr(row.q)}" style="${fieldStyle}${row.q.trim() ? '' : ';color:var(--danger)'}" ${focusHint}
+        oninput="_onPreviewFieldChanged(${index},'q',this.value)" placeholder="Intitulé requis...">${duplicateBadge}${extraIcon}
+    </td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border)">
+      <select style="${fieldStyle}" ${focusHint} onchange="_onPreviewFieldChanged(${index},'crit',this.value)">${critOptions}</select>
+    </td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border)">
+      <input type="number" min="0" value="${row.p}" style="${fieldStyle};width:56px" ${focusHint}
+        oninput="_onPreviewFieldChanged(${index},'p',this.value)">
+    </td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border);text-align:center">
+      <button class="btn btn-secondary btn-sm" style="padding:2px 6px" onclick="_removePreviewRow(${index})" aria-label="Retirer cette ligne de l'import" title="Retirer cette ligne">
+        <i class="ti ti-x" style="color:var(--danger)"></i>
+      </button>
+    </td>
   </tr>`;
+}
+
+/**
+ * Met à jour un champ d'une ligne d'aperçu suite à une édition
+ * manuelle (voir _buildPreviewRow), recalcule sa validité, puis
+ * ne re-rend QUE cette ligne (jamais tout le tableau, pour ne pas
+ * faire perdre le focus du champ en cours de saisie). Met aussi à
+ * jour les compteurs globaux (imp-stats, imp-confirm-btn) puisqu'une
+ * édition peut faire basculer une ligne entre valide et invalide.
+ * @param {number} index - Index dans _importRows.
+ * @param {'rayon'|'cat'|'q'|'crit'|'p'} field
+ * @param {string} value - Valeur brute du champ HTML (toujours une chaîne, même pour un `<input type="number">`).
+ * @returns {void}
+ */
+function _onPreviewFieldChanged(index, field, value) {
+  /** @type {ImportParsedRow | undefined} */
+  const row = _importRows[index];
+  if (!row) return;
+
+  if (field === 'p') {
+    row.p = parseInt(value) || 0;
+  } else {
+    row[field] = value;
+  }
+
+  row.valid = _importTarget === 'qualimetre'
+    ? !!row.q.trim()
+    : !!row.rayon.trim() && !!row.q.trim();
+
+  _refreshImportPreviewCounters();
+  // Ne re-rend que la ligne courante : un re-render complet du
+  // tableau perdrait le focus/curseur du champ en cours d'édition.
+  /** @type {HTMLTableRowElement | undefined} */
+  const rowEl = el('imp-preview-tb').children[index];
+  if (rowEl) {
+    /** @type {DuplicateMap} */
+    const duplicates = _getDuplicatesForCurrentImport();
+    rowEl.outerHTML = _buildPreviewRow(row, index, duplicates.has(index));
+  }
+}
+
+/**
+ * Retire une ligne de l'aperçu d'import (elle ne sera jamais
+ * importée, sans toucher au fichier source ni nécessiter de le
+ * réimporter). Action immédiate, sans confirmation : la ligne n'a
+ * pas encore été persistée, le risque est négligeable et une
+ * confirmation systématique nuirait au flux d'édition rapide de
+ * plusieurs lignes.
+ * @param {number} index - Index dans _importRows.
+ * @returns {void}
+ */
+function _removePreviewRow(index) {
+  _importRows.splice(index, 1);
+  _rerenderImportPreviewRows();
+}
+
+/**
+ * Calcule les quasi-doublons (findDuplicateRows, import-normalize.js)
+ * pour l'état d'import courant, en protégeant contre le cas où
+ * _importDetection est null (aucun fichier exploitable détecté —
+ * voir _showImportPreview) : dans ce cas il n'y a, par construction,
+ * aucune ligne dans _importRows, donc aucun doublon possible.
+ * Factorisé ici car requis à la fois par _onPreviewFieldChanged
+ * (re-rendu d'une seule ligne) et _rerenderImportPreviewRows
+ * (re-rendu complet après suppression de ligne).
+ * @returns {DuplicateMap}
+ */
+function _getDuplicatesForCurrentImport() {
+  if (!_importRawRows.length || !_importDetection) return new Map();
+  return findDuplicateRows(normalizeRows(_importRawRows, _importDetection.mapping, _importDetection.unmappedHeaders));
+}
+
+/**
+ * Reconstruit entièrement le corps du tableau d'aperçu depuis l'état
+ * courant de _importRows (après suppression d'une ligne, les index
+ * de toutes les lignes suivantes changent — un patch ligne par ligne
+ * comme dans _onPreviewFieldChanged ne suffirait pas).
+ * @returns {void}
+ */
+function _rerenderImportPreviewRows() {
+  /** @type {DuplicateMap} */
+  const duplicates = _getDuplicatesForCurrentImport();
+  el('imp-preview-tb').innerHTML = _importRows.map((row, i) => _buildPreviewRow(row, i, duplicates.has(i))).join('');
+  _refreshImportPreviewCounters();
+}
+
+/**
+ * Recalcule et affiche les compteurs globaux de l'aperçu (lignes
+ * valides/invalides, état du bouton de confirmation) depuis l'état
+ * courant de _importRows — appelé après toute édition ou suppression
+ * de ligne, sans reconstruire le tableau HTML.
+ * @returns {void}
+ */
+function _refreshImportPreviewCounters() {
+  /** @type {number} */
+  const validCount = _importRows.filter(r => r.valid).length;
+  /** @type {number} */
+  const skipCount  = _importRows.filter(r => !r.valid).length;
+
+  el('imp-stats').textContent = `${validCount} à importer${skipCount ? ' · ' + skipCount + ' sans intitulé (ignorée' + (skipCount > 1 ? 's' : '') + ')' : ''}`;
+  el('imp-confirm-btn').disabled      = validCount === 0;
+  el('imp-confirm-btn').style.opacity = validCount > 0 ? '1' : '.5';
+  el('imp-count-btn').textContent     = validCount > 0 ? `(${validCount})` : '';
 }
 
 // ─────────────────────────────────────────────
@@ -1398,7 +1539,12 @@ function _importIntoQualimetre(rows) {
 
 /**
  * Importe les lignes validées dans DB.grilleCustom, indexées par
- * nom de rayon FSQS (usage standard, cohérent avec grille.js).
+ * nom de rayon FSQS (usage standard, cohérent avec grille.js). Le
+ * rayon de chaque ligne (déjà résolu par _showImportPreview — casse
+ * canonique d'un rayon existant si trouvé, sinon valeur du document
+ * telle quelle) est créé à la volée dans DB.grilleCustom s'il
+ * n'existe pas encore : aucun rayon n'est jamais rejeté, voir
+ * l'avertissement en tête de fichier.
  * @param {ImportParsedRow[]} rows
  * @returns {void}
  */
@@ -1413,7 +1559,7 @@ function _importIntoGrille(rows) {
 
   save();
   closeModal('m-import');
-  showGrille(el('grille-ray-sel').value || 'Boucherie');
+  showGrille(el('grille-ray-sel') ? el('grille-ray-sel').value : '');
 }
 
 // ─────────────────────────────────────────────

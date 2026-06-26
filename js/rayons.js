@@ -22,15 +22,66 @@
 // ─────────────────────────────────────────────
 
 /**
- * Liste des rayons affichés sur la page Performances. Ne contraint
- * pas Audit.rayon globalement (un audit pourrait exister avec un
- * rayon hors de cette liste, simplement non affiché ici).
+ * Rayons "de base" historiques, conservés comme valeurs de
+ * démarrage pour une installation neuve (aucun audit, aucune grille
+ * personnalisée encore créée). Ne contraint plus rien : un rayon
+ * absent de cette liste est tout aussi valide dès qu'il existe dans
+ * le document importé, dans DB.grilleCustom, ou qu'il a été créé/
+ * renommé manuellement par un utilisateur (voir getKnownRayons,
+ * ⚠️ CHANGÉ ci-dessous).
  * @type {string[]}
  */
-const RAYONS_LIST = [
+const RAYONS_BASE_SEED = [
   'Boucherie', 'Boulangerie', 'Drive', 'Marée',
   'Charcuterie', 'Fromage', 'Fruits & Légumes',
 ];
+
+/**
+ * ⚠️ CHANGÉ : RAYONS_LIST n'est plus une liste fermée codée en dur.
+ * Le nom d'un rayon FSQS ne doit jamais être une contrainte fixe —
+ * il doit toujours correspondre soit à ce qu'écrit le document
+ * importé, soit à une modification manuelle de l'utilisateur (voir
+ * demande produit). getKnownRayons() est désormais la seule source
+ * de vérité ; RAYONS_LIST est conservée UNIQUEMENT pour compatibilité
+ * de nom avec du code externe non encore migré — préférer
+ * getKnownRayons() dans tout nouveau code.
+ * @type {string[]}
+ * @deprecated Utiliser getKnownRayons().
+ */
+const RAYONS_LIST = RAYONS_BASE_SEED;
+
+/**
+ * Calcule la liste de tous les rayons FSQS actuellement "connus" par
+ * l'application, en fusionnant trois sources (dédupliquées, ordre
+ * stable : seed de base, puis ajouts par ordre alphabétique) :
+ * 1. RAYONS_BASE_SEED — rayons historiques, toujours proposés même
+ *    sans aucune donnée (évite un sélecteur vide à l'installation).
+ * 2. Object.keys(DB.grilleCustom) — tout rayon ayant au moins un
+ *    point de contrôle personnalisé (création manuelle, import, ou
+ *    renommage — voir renameRayon, ui.js).
+ * 3. Les valeurs .rayon réellement utilisées dans DB.audits et
+ *    DB.drafts — un rayon peut avoir été audité sans jamais avoir
+ *    reçu de point personnalisé (il n'utilise alors que le
+ *    référentiel commun GRILLE_BASE_COMMUNE).
+ *
+ * C'est la fonction à utiliser PARTOUT où l'application a besoin de
+ * lister les rayons FSQS existants (sélecteurs, dashboard, filtres)
+ * — ne jamais réintroduire une liste fixe en dur ailleurs dans le
+ * projet.
+ * @returns {string[]}
+ */
+function getKnownRayons() {
+  /** @type {Set<string>} */
+  const known = new Set(RAYONS_BASE_SEED);
+
+  Object.keys(DB.grilleCustom || {}).forEach(rayon => known.add(rayon));
+  (DB.audits || []).forEach(audit => { if (audit.rayon) known.add(audit.rayon); });
+  (DB.drafts || []).forEach(draft => { if (draft.rayon) known.add(draft.rayon); });
+
+  /** @type {string[]} */
+  const extras = [...known].filter(r => !RAYONS_BASE_SEED.includes(r)).sort((a, b) => a.localeCompare(b, 'fr'));
+  return [...RAYONS_BASE_SEED, ...extras];
+}
 
 // ─────────────────────────────────────────────
 // 2. RENDU DE LA PAGE
@@ -55,7 +106,7 @@ function renderRay() {
     return true;
   });
 
-  el('ray-grid').innerHTML = RAYONS_LIST.map(rayon =>
+  el('ray-grid').innerHTML = getKnownRayons().map(rayon =>
     _buildRayonCard(rayon, filteredAudits.filter(a => a.rayon === rayon))
   ).join('');
 }
@@ -110,4 +161,99 @@ function _buildRayonCard(rayon, rayonAudits) {
       </div>
     </div>
   </div>`;
+}
+
+// ─────────────────────────────────────────────
+// 4. GESTION DES RAYONS (création / renommage / suppression)
+// ─────────────────────────────────────────────
+// Le nom d'un rayon FSQS n'est jamais figé : il provient soit du
+// document importé (voir import-grille.js), soit d'une action
+// manuelle de l'utilisateur via les fonctions ci-dessous. Aucune
+// liste fermée ne doit jamais réapparaître ailleurs dans le projet —
+// toujours passer par getKnownRayons() / renameRayon() / createRayon()
+// / deleteRayonEverywhere().
+
+/**
+ * Crée un rayon vide (sans aucun point personnalisé) afin qu'il
+ * apparaisse immédiatement dans getKnownRayons() — utile pour
+ * préparer un rayon avant la première saisie/import. Si le rayon
+ * existe déjà (correspondance exacte), ne fait rien (pas de doublon,
+ * pas d'écrasement).
+ * @param {string} rayonName
+ * @returns {boolean} true si le rayon a été créé, false s'il existait déjà ou si le nom est vide.
+ */
+function createRayon(rayonName) {
+  /** @type {string} */
+  const trimmed = (rayonName || '').trim();
+  if (!trimmed) return false;
+  if (getKnownRayons().includes(trimmed)) return false;
+
+  if (!DB.grilleCustom) DB.grilleCustom = {};
+  DB.grilleCustom[trimmed] = DB.grilleCustom[trimmed] || [];
+  return true;
+}
+
+/**
+ * Renomme un rayon FSQS PARTOUT où son nom apparaît dans la base :
+ * DB.grilleCustom (clé du dictionnaire), DB.audits[].rayon,
+ * DB.drafts[].rayon. Un rayon n'étant qu'une chaîne utilisée à la
+ * fois comme clé de stockage et comme libellé affiché (contrairement
+ * à QMZone côté Qualimètre, qui a un id distinct de son label), le
+ * renommage doit migrer toutes les références existantes pour ne
+ * jamais laisser de données orphelines sous l'ancien nom.
+ *
+ * Sans effet si oldName === newName, si newName est vide après trim,
+ * ou si newName correspond déjà à un AUTRE rayon existant (fusion non
+ * supportée par cette fonction — voir mergeRayons si ce besoin se
+ * confirme).
+ * @param {string} oldName - Nom actuel du rayon.
+ * @param {string} newName - Nouveau nom souhaité.
+ * @returns {{ok: boolean, error?: string}}
+ */
+function renameRayon(oldName, newName) {
+  /** @type {string} */
+  const trimmedNew = (newName || '').trim();
+  if (!trimmedNew) return { ok: false, error: 'Le nouveau nom ne peut pas être vide.' };
+  if (trimmedNew === oldName) return { ok: false, error: 'Le nouveau nom est identique à l\'actuel.' };
+  if (getKnownRayons().some(r => r.toLowerCase() === trimmedNew.toLowerCase() && r !== oldName)) {
+    return { ok: false, error: `Le rayon « ${trimmedNew} » existe déjà.` };
+  }
+
+  if (DB.grilleCustom && Object.prototype.hasOwnProperty.call(DB.grilleCustom, oldName)) {
+    DB.grilleCustom[trimmedNew] = DB.grilleCustom[oldName];
+    delete DB.grilleCustom[oldName];
+  }
+  (DB.audits || []).forEach(audit => { if (audit.rayon === oldName) audit.rayon = trimmedNew; });
+  (DB.drafts || []).forEach(draft => { if (draft.rayon === oldName) draft.rayon = trimmedNew; });
+
+  return { ok: true };
+}
+
+/**
+ * Supprime un rayon et TOUTES ses données associées : points
+ * personnalisés (DB.grilleCustom), audits réalisés (DB.audits) et
+ * leurs NC/actions liées (via _deleteStaleAudits-like cascade,
+ * répliquée ici car ce n'est pas un nettoyage par ancienneté), ainsi
+ * que les brouillons (DB.drafts). Action destructive et irréversible
+ * — l'appelant DOIT obtenir une confirmation explicite de
+ * l'utilisateur avant d'appeler cette fonction (aucune confirmation
+ * n'est demandée ici, cette fonction est un utilitaire de bas niveau
+ * réutilisable depuis plusieurs écrans).
+ * @param {string} rayonName
+ * @returns {void}
+ */
+function deleteRayonEverywhere(rayonName) {
+  if (DB.grilleCustom) delete DB.grilleCustom[rayonName];
+
+  /** @type {string[]} */
+  const removedAuditIds = DB.audits.filter(a => a.rayon === rayonName).map(a => a.id);
+  DB.audits = DB.audits.filter(a => a.rayon !== rayonName);
+  removedAuditIds.forEach(auditId => {
+    /** @type {string[]} */
+    const linkedNcIds = DB.ncs.filter(nc => nc.aid === auditId).map(nc => nc.id);
+    DB.ncs = DB.ncs.filter(nc => nc.aid !== auditId);
+    DB.actions = DB.actions.filter(action => !linkedNcIds.includes(action.ncId));
+  });
+
+  DB.drafts = (DB.drafts || []).filter(d => d.rayon !== rayonName);
 }

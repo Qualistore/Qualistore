@@ -168,7 +168,9 @@ function getQualimetrePoints(storeId, zoneId) {
 
 /**
  * Retourne la grille complète d'un magasin :
- * toutes les zones qui ont au moins un point.
+ * toutes les zones qui ont au moins un point. Applique tout
+ * renommage manuel persistant (voir _resolveZoneLabel,
+ * renameQmZone) sur le label affiché.
  * @param {string | null} storeId
  * @returns {QMZoneWithPoints[]}
  */
@@ -183,7 +185,7 @@ function getQualimetreGrille(storeId) {
     .map(zoneId => {
       /** @type {QMZone} */
       const zoneMeta = QM_ZONES.find(z => z.id === zoneId) || { id: zoneId, emoji: '', label: zoneId };
-      return { ...zoneMeta, points: getQualimetrePoints(storeId, zoneId) };
+      return { ...zoneMeta, label: _resolveZoneLabel(zoneId, zoneMeta.label), points: getQualimetrePoints(storeId, zoneId) };
     })
     .filter(zone => zone.points.length > 0);
 }
@@ -252,18 +254,66 @@ function _buildGqMagSelect() {
 }
 
 /**
+ * Résout le libellé affiché d'une zone : priorité à un renommage
+ * manuel persistant (DB.qualimetreZoneLabels, voir renameQmZone),
+ * puis au label par défaut (QM_ZONES pour une zone du référentiel,
+ * sinon l'id lui-même pour une zone ad hoc créée par import — voir
+ * _getAllZones). QM_ZONES étant une constante figée en mémoire (donc
+ * non persistable telle quelle), c'est CE mécanisme d'override,
+ * jamais une mutation de QM_ZONES, qui doit être utilisé pour
+ * renommer une zone — voir renameQmZone.
+ * @param {string} zoneId - Référence vers QMZone.id.
+ * @param {string} fallbackLabel - Label à utiliser si aucun renommage ni entrée QM_ZONES ne correspond (généralement zoneId lui-même).
+ * @returns {string}
+ */
+function _resolveZoneLabel(zoneId, fallbackLabel) {
+  if (DB.qualimetreZoneLabels && Object.prototype.hasOwnProperty.call(DB.qualimetreZoneLabels, zoneId)) {
+    return DB.qualimetreZoneLabels[zoneId];
+  }
+  /** @type {QMZone | undefined} */
+  const baseZone = QM_ZONES.find(z => z.id === zoneId);
+  return baseZone ? baseZone.label : fallbackLabel;
+}
+
+/**
+ * Renomme une zone Qualimètre PARTOUT où son libellé est affiché, en
+ * persistant le nouveau nom dans DB.qualimetreZoneLabels (override
+ * par zoneId — voir _resolveZoneLabel). Contrairement au renommage
+ * d'un rayon FSQS (voir renameRayon, rayons.js), AUCUNE clé de
+ * stockage n'est jamais modifiée : QMZone.id reste inchangé, donc
+ * DB.qualimetreCustom/qualimetreGlobal n'ont besoin d'aucune
+ * migration — seul l'affichage change. C'est une conséquence directe
+ * du fait que QMZone sépare déjà id et label (alors qu'un rayon FSQS
+ * est sa propre clé de stockage).
+ * @param {string} zoneId - Référence vers QMZone.id.
+ * @param {string} newLabel
+ * @returns {{ok: boolean, error?: string}}
+ */
+function renameQmZone(zoneId, newLabel) {
+  /** @type {string} */
+  const trimmed = (newLabel || '').trim();
+  if (!trimmed) return { ok: false, error: 'Le nouveau nom ne peut pas être vide.' };
+
+  if (!DB.qualimetreZoneLabels) DB.qualimetreZoneLabels = {};
+  DB.qualimetreZoneLabels[zoneId] = trimmed;
+  return { ok: true };
+}
+
+/**
  * Fusionne QM_ZONES avec les zones présentes dans qualimetreGlobal
- * (zones "ad hoc" créées via import, sans métadonnées emoji/label).
+ * (zones "ad hoc" créées via import, sans métadonnées emoji/label),
+ * en appliquant tout renommage manuel persistant (voir
+ * _resolveZoneLabel).
  * @returns {QMZone[]}
  */
 function _getAllZones() {
   /** @type {string[]} */
   const globalZoneIds = Object.keys(DB.qualimetreGlobal || {});
   return [
-    ...QM_ZONES,
+    ...QM_ZONES.map(z => ({ ...z, label: _resolveZoneLabel(z.id, z.label) })),
     ...globalZoneIds
       .filter(id => !QM_ZONES.find(z => z.id === id))
-      .map(id => ({ id, emoji: '', label: id })),
+      .map(id => ({ id, emoji: '', label: _resolveZoneLabel(id, id) })),
   ];
 }
 
@@ -319,7 +369,7 @@ function _gqRender() {
  * @returns {void}
  */
 function _gqUpdateAdminButtons(isAdmin) {
-  ['gq-btn-add', 'gq-btn-import', 'gq-btn-reset'].forEach(id => {
+  ['gq-btn-add', 'gq-btn-import', 'gq-btn-reset', 'btn-rename-zone'].forEach(id => {
     const btn = el(id);
     if (btn) btn.style.display = isAdmin ? '' : 'none';
   });
@@ -685,6 +735,36 @@ function _gqResetZone(storeId, zoneId) {
   }
 
   save(['qualimetreCustom', 'qualimetreGlobal']);
+  showGrilleQualimetre();
+}
+
+/**
+ * Ouvre une invite de saisie pour renommer la zone actuellement
+ * sélectionnée (voir renameQmZone), pré-remplie avec son libellé
+ * actuel. Persiste le renommage dans DB.qualimetreZoneLabels — voir
+ * la documentation de renameQmZone sur la différence avec le
+ * renommage d'un rayon FSQS (aucune clé de stockage à migrer ici).
+ * @returns {void}
+ */
+function openRenameZonePrompt() {
+  /** @type {string} */
+  const zoneId = v('gq-zone-sel');
+  if (!zoneId) return;
+
+  /** @type {QMZone | undefined} */
+  const currentZone = _getAllZones().find(z => z.id === zoneId);
+  /** @type {string | null} */
+  const newLabel = prompt('Nouveau nom de la zone :', currentZone ? currentZone.label : zoneId);
+  if (newLabel === null) return;
+
+  /** @type {{ok: boolean, error?: string}} */
+  const result = renameQmZone(zoneId, newLabel);
+  if (!result.ok) {
+    if (result.error) alert(result.error);
+    return;
+  }
+
+  save(['qualimetreZoneLabels']);
   showGrilleQualimetre();
 }
 
@@ -1109,11 +1189,13 @@ function _gqRenderImportPreview() {
     ${Object.entries(byZone).map(([zoneId, points]) => {
       /** @type {QMZone | undefined} */
       const zone = QM_ZONES.find(z => z.id === zoneId);
+      /** @type {string} */
+      const zoneLabel = _resolveZoneLabel(zoneId, zoneId);
       /** @type {boolean} */
       const willReplace = _gqZoneReplaceFlags[zoneId] ?? true;
       return `<div style="margin-bottom:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;padding:6px 10px;background:#f5f3ff;border-radius:6px;margin-bottom:4px">
-          <span>${zone ? `${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}` : zoneId} (${points.length})</span>
+          <span>${zone?.emoji ? zone.emoji + ' ' : ''}${zoneLabel} (${points.length})</span>
           <label style="display:flex;align-items:center;gap:5px;font-size:10px;font-weight:500;text-transform:none;color:#5b21b6;cursor:pointer;white-space:nowrap">
             <input type="checkbox" ${willReplace ? 'checked' : ''} onchange="_onGqZoneReplaceToggle('${zoneId}', this.checked)" style="margin:0">
             Remplacer les points existants

@@ -1,6 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 // DASHBOARD — Tableau de bord FSQS & Qualimètre
-// Dépend de : storage.js (DB, CU), ui.js, auth.js (hasPerm)
+// Dépend de : storage.js (DB, CU), ui.js, auth.js (hasPerm),
+//   rayons.js (getKnownRayons, RAYONS_BASE_SEED)
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -9,10 +10,11 @@
 //    LU (jamais construit) — confiance moyenne-élevée, à confirmer
 //    si un fichier audit-qualimetre.js est fourni.
 //
-//    ⚠️ DUPLICATION DÉTECTÉE : RAYONS_FSQS ci-dessous est strictement
-//    identique à RAYONS_LIST dans rayons.js (mêmes 7 valeurs, même
-//    ordre) — deux constantes distinctes pour la même liste. Non
-//    fusionné ici (changerait l'architecture sans accord explicite).
+//    ⚠️ DUPLICATION HISTORIQUE RÉSOLUE : RAYONS_FSQS pointait vers
+//    une copie figée strictement identique à RAYONS_LIST (rayons.js).
+//    Les deux sont désormais des alias de RAYONS_BASE_SEED
+//    (rayons.js) ; la vraie source de vérité dynamique est
+//    getKnownRayons() — voir rayons.js.
 // ─────────────────────────────────────────────
 
 /**
@@ -98,12 +100,15 @@ const CHART_SCORE_PALETTES = {
 };
 
 /**
- * Liste des rayons FSQS affichés sur le dashboard. Voir
- * l'avertissement de duplication avec RAYONS_LIST (rayons.js) en
- * tête de fichier.
+ * ⚠️ CHANGÉ : RAYONS_FSQS n'est plus une liste fermée. Conservée
+ * uniquement pour compatibilité de nom — préférer getKnownRayons()
+ * (rayons.js, chargé avant ce fichier) dans tout nouveau code. Voir
+ * l'avertissement de duplication ci-dessus, toujours valable : ne
+ * réintroduire AUCUNE liste de rayons fixe ailleurs dans le projet.
  * @type {string[]}
+ * @deprecated Utiliser getKnownRayons().
  */
-const RAYONS_FSQS = ['Boucherie', 'Boulangerie', 'Drive', 'Marée', 'Charcuterie', 'Fromage', 'Fruits & Légumes'];
+const RAYONS_FSQS = RAYONS_BASE_SEED;
 
 // ─────────────────────────────────────────────
 // 2. ÉTAT
@@ -324,7 +329,9 @@ function _renderFsqsChart(storeIds, audits) {
 
 /**
  * Affiche le score moyen par rayon FSQS dans le widget dédié du
- * dashboard, filtré par magasin si un sélecteur est présent.
+ * dashboard, filtré par magasin si un sélecteur est présent. Itère
+ * sur getKnownRayons() (rayons.js) — tout rayon créé, importé ou
+ * renommé apparaît automatiquement ici, sans liste fixe à maintenir.
  * @returns {void}
  */
 function renderRayonDash() {
@@ -342,7 +349,7 @@ function renderRayonDash() {
     return true;
   });
 
-  el('d-ray').innerHTML = RAYONS_FSQS.map(rayon => {
+  el('d-ray').innerHTML = getKnownRayons().map(rayon => {
     /** @type {Audit[]} */
     const rayonAudits = filteredAudits.filter(a => a.rayon === rayon);
     /** @type {number | null} */

@@ -146,7 +146,7 @@
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <select class="form-control" style="width:auto" id="flt-aud-mag" onchange="renderAudits()"><option value="">Tous les magasins</option></select>
-            <select class="form-control" style="width:auto" id="flt-aud-ray" onchange="renderAudits()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
+            <select class="form-control" style="width:auto" id="flt-aud-ray" onchange="renderAudits()"><option value="">Tous les rayons</option></select>
           </div>
           <span class="tsm tm" id="aud-cnt"></span>
         </div>
@@ -318,10 +318,13 @@
       <!-- GRILLE -->
       <div class="page" id="page-grille">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
-          <select class="form-control" style="width:200px" id="grille-ray-sel" onchange="showGrille(this.value)">
-            <option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option>
-          </select>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select class="form-control" style="width:200px" id="grille-ray-sel" onchange="showGrille(this.value)"></select>
+            <button class="btn btn-secondary btn-sm" id="btn-rename-rayon" onclick="openRenameRayonPrompt()" style="display:none" aria-label="Renommer le rayon" title="Renommer le rayon"><i class="ti ti-pencil"></i></button>
+            <button class="btn btn-secondary btn-sm" id="btn-delete-rayon" onclick="confirmDeleteRayon()" style="display:none" aria-label="Supprimer le rayon" title="Supprimer le rayon"><i class="ti ti-trash"></i></button>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="openCreateRayonPrompt()"><i class="ti ti-plus"></i> Nouveau rayon</button>
             <button class="btn btn-secondary btn-sm" onclick="openImportModal()"><i class="ti ti-upload"></i> Importer</button>
             <button class="btn btn-danger" id="btn-add-ctrl" onclick="openCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
           </div>
@@ -351,7 +354,10 @@
             </div>
             <div style="flex:1;min-width:180px">
               <label class="form-label">Zone</label>
-              <select class="form-control" id="gq-zone-sel" onchange="onGqZoneChange()"></select>
+              <div style="display:flex;gap:6px;align-items:center">
+                <select class="form-control" id="gq-zone-sel" onchange="onGqZoneChange()" style="flex:1"></select>
+                <button class="btn btn-secondary btn-sm" id="btn-rename-zone" onclick="openRenameZonePrompt()" style="display:none" aria-label="Renommer la zone" title="Renommer la zone"><i class="ti ti-pencil"></i></button>
+              </div>
             </div>
           </div>
           <div style="padding:4px 18px 12px;font-size:12px;color:var(--text2)" id="gq-scope-label"></div>
@@ -580,7 +586,7 @@
       <div id="as1">
         <div class="form-row">
           <div class="form-group"><label class="form-label">Magasin *</label><select class="form-control" id="a-mag"><option value="">Sélectionner...</option></select></div>
-          <div class="form-group"><label class="form-label">Rayon *</label><select class="form-control" id="a-ray"><option value="">Sélectionner...</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select></div>
+          <div class="form-group"><label class="form-label">Rayon *</label><select class="form-control" id="a-ray"><option value="">Sélectionner...</option></select></div>
         </div>
         <div class="form-row">
           <div class="form-group"><label class="form-label">Date *</label><input type="date" class="form-control" id="a-date"></div>
@@ -700,18 +706,7 @@
       <input type="hidden" id="ctrl-id">
       <div class="form-group">
         <label class="form-label">Rayon(s) * <span class="tsm tm">(plusieurs possibles)</span></label>
-        <div id="ctrl-rayon-cbs" class="cb-group" style="max-height:150px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)">
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Boucherie"> Boucherie</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Boulangerie"> Boulangerie</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Drive"> Drive</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Marée"> Marée</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Charcuterie"> Charcuterie</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Fromage"> Fromage</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Fruits & Légumes"> Fruits & Légumes</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Traiteur"> Traiteur</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Snacking"> Snacking</label>
-          <label class="cb-item"><input type="checkbox" class="ctrl-ray-cb" value="Pâtisserie"> Pâtisserie</label>
-        </div>
+        <div id="ctrl-rayon-cbs" class="cb-group" style="max-height:150px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
       </div>
       <div class="form-group">
         <label class="form-label">Section (onglet) *</label>

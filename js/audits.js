@@ -1,6 +1,8 @@
 // ══════════════════════════════════════════════════════════════
 // AUDITS — Gestion des audits FSQS (liste, création, brouillons)
-// Dépend de : storage.js (DB, CU), auth.js (hasPerm), ui.js, grille.js
+// Dépend de : storage.js (DB, CU), auth.js (hasPerm), ui.js
+//   (el, v, sv, populateMagSelect, populateRayonSelect), grille.js,
+//   rayons.js (getKnownRayons, chargé avant ce fichier)
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -155,7 +157,9 @@ let _currentDraftId = null;
 
 /**
  * Affiche la liste des audits visibles pour l'utilisateur connecté,
- * filtrée par magasin et rayon selon les sélecteurs UI.
+ * filtrée par magasin et rayon selon les sélecteurs UI. Peuple les
+ * deux sélecteurs depuis leurs sources dynamiques respectives (voir
+ * populateMagSelect/populateRayonSelect, ui.js) — aucune liste fixe.
  * @returns {void}
  */
 function renderAudits() {
@@ -167,6 +171,7 @@ function renderAudits() {
   const filterRay = v('flt-aud-ray');
 
   populateMagSelect(el('flt-aud-mag'));
+  populateRayonSelect(el('flt-aud-ray'), true);
 
   /** @type {Audit[]} */
   let audits = [...DB.audits].reverse().filter(a => storeIds.includes(a.mid));
@@ -347,6 +352,8 @@ function deleteAudit(auditId) {
 /**
  * Ouvre le wizard de création d'un nouvel audit (étape 1 :
  * sélection magasin/rayon/date), en réinitialisant l'état du module.
+ * Peuple le sélecteur de rayon depuis getKnownRayons() (rayons.js) —
+ * aucune liste fixe.
  * @returns {void}
  */
 function openAuditModal() {
@@ -360,6 +367,9 @@ function openAuditModal() {
       .filter(m => storeIds.includes(m.id) && m.statut === 'actif')
       .map(m => `<option value="${m.id}">${m.nom}</option>`)
       .join('');
+
+  populateRayonSelect(el('a-ray'), true);
+  el('a-ray').value = '';
 
   el('a-date').value    = today();
   el('a-date').readOnly = !(CU && CU.role === 'admin');
@@ -899,6 +909,7 @@ function resumeDraft(draftId) {
       .join('');
 
   el('a-mag').value     = draft.mid;
+  populateRayonSelect(el('a-ray'), true);
   el('a-ray').value     = draft.rayon;
   el('a-date').value    = draft.date;
   el('a-date').readOnly = !(CU && CU.role === 'admin');
