@@ -444,6 +444,13 @@ function auditPrev() {
  * Construit l'état des questions d'audit pour un rayon donné :
  * initialise auditAnswers, regroupe les points de grille par zone,
  * puis affiche le premier onglet de zone.
+ *
+ * ⚠️ Depuis le retrait de GRILLE_BASE_COMMUNE (grille.js, voir
+ * getGrille), un rayon peut désormais n'avoir AUCUN point de
+ * contrôle (jamais importé ni saisi manuellement) — ce cas n'existait
+ * pas auparavant. Si _auditZoneKeys est vide, switchAuditZone()
+ * n'est pas appelée (elle crasherait sur _auditZones[undefined]) et
+ * un message d'état vide est affiché à la place.
  * @param {string} rayon
  * @returns {void}
  */
@@ -465,6 +472,14 @@ function buildAuditQuestions(rayon) {
   _auditZoneKeys = Object.keys(_auditZones);
 
   _buildAuditZoneTabs();
+
+  if (!_auditZoneKeys.length) {
+    if (el('a-zone-tabs')) el('a-zone-tabs').innerHTML = '';
+    el('a-qs').innerHTML = `<div class="tsm tm" style="padding:24px;text-align:center">Ce rayon n'a aucun point de contrôle pour l'instant.<br>Importez ou ajoutez des points de contrôle dans la page Grille avant de lancer un audit.</div>`;
+    updateAuditScore();
+    return;
+  }
+
   switchAuditZone(_auditZoneKeys[0]);
   updateAuditScore();
 }

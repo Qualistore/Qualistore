@@ -1,10 +1,15 @@
 // ══════════════════════════════════════════════════════════════
-// GRILLE — Grille d'audit FSQS (référentiel + personnalisation)
-// Dépend de : storage.js (DB, CU), config.js (GRILLE_BASE_COMMUNE),
-//   ui.js (el, sv, v, populateRayonSelect), rayons.js (getKnownRayons,
-//   renameRayon, deleteRayonEverywhere — chargé avant ce fichier),
-//   import-grille.js (_escapeHtmlAttr — chargé avant ce fichier,
-//   réutilisé ici plutôt que dupliqué)
+// GRILLE — Grille d'audit FSQS (personnalisation pure, sans référentiel codé en dur)
+// Dépend de : storage.js (DB, CU), ui.js (el, sv, v,
+//   populateRayonSelect), rayons.js (getKnownRayons, renameRayon,
+//   deleteRayonEverywhere — chargé avant ce fichier), import-grille.js
+//   (_escapeHtmlAttr — chargé avant ce fichier, réutilisé ici plutôt
+//   que dupliqué)
+// ⚠️ CHANGÉ : ne dépend plus de config.js (GRILLE_BASE_COMMUNE) — ce
+// référentiel de 48 points codés en dur a été retiré de getGrille()
+// (causait des doublons visuels avec les points importés ayant le
+// même intitulé). Tout point de contrôle vient désormais de
+// DB.grilleCustom (import ou saisie manuelle) — voir getGrille.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -72,19 +77,28 @@ let _ctrlRayonCurrent = 'Boucherie';
 // ─────────────────────────────────────────────
 
 /**
- * Retourne la grille complète pour un rayon :
- * référentiel de base + points personnalisés.
- */
-/**
- * Retourne la grille complète pour un rayon :
- * référentiel de base + points personnalisés.
+ * Retourne la grille complète pour un rayon : uniquement les points
+ * personnalisés/importés (DB.grilleCustom[rayon]).
+ *
+ * ⚠️ CHANGÉ : ne fusionne plus avec GRILLE_BASE_COMMUNE (référentiel
+ * commun de 48 points codés en dur dans config.js). Cette fusion
+ * causait des doublons visuels dès qu'un fichier importé contenait
+ * un point déjà présent dans ce référentiel (même intitulé, deux
+ * entrées affichées : une héritée de GRILLE_BASE_COMMUNE — non
+ * modifiable —, une importée sous un nouvel id 'imp-...'). Tout
+ * point de contrôle FSQS provient désormais exclusivement de
+ * DB.grilleCustom — import ou saisie manuelle, jamais d'une liste
+ * figée. Un rayon sans aucun point importé/saisi n'a plus aucun
+ * point par défaut (voir showGrille, qui affiche un état vide dans
+ * ce cas) ; GRILLE_BASE_COMMUNE (config.js) n'est plus référencée
+ * nulle part dans le code actif — conservée dans config.js comme
+ * trace historique, à supprimer définitivement si confirmé inutile
+ * à long terme.
  * @param {string} rayon
  * @returns {GrillePoint[]}
  */
 function getGrille(rayon) {
-  /** @type {GrillePoint[]} */
-  const customPoints = DB.grilleCustom[rayon] || [];
-  return [...GRILLE_BASE_COMMUNE, ...customPoints];
+  return DB.grilleCustom[rayon] || [];
 }
 
 // ─────────────────────────────────────────────
@@ -137,6 +151,16 @@ function showGrille(rayon) {
 
   /** @type {GrillePoint[]} */
   const allPoints  = getGrille(resolvedRayon);
+
+  if (!allPoints.length) {
+    /** @type {string} */
+    const helpText = isAdmin
+      ? 'Utilisez « Importer » ou « Ajouter un point » pour commencer.'
+      : 'Les points seront ajoutés par l\'administrateur.';
+    el('grille-body').innerHTML = `<div class="tsm tm" style="padding:24px;text-align:center">Aucun point de contrôle pour ce rayon.<br>${helpText}</div>`;
+    return;
+  }
+
   /** @type {string[]} */
   const categories = [...new Set(allPoints.map(point => point.cat))];
 
@@ -166,39 +190,39 @@ function _buildCategorySection(category, points, rayon) {
 }
 
 /**
- * Construit la ligne HTML d'un point de contrôle. Un point est
- * considéré "personnalisé" s'il n'appartient pas au référentiel de
- * base GRILLE_BASE_COMMUNE (détection structurelle par id, pas par
- * préfixe de chaîne).
+ * Construit la ligne HTML d'un point de contrôle. Tout point de
+ * contrôle FSQS est désormais modifiable : getGrille() ne retourne
+ * plus que des points custom/importés (DB.grilleCustom), il n'existe
+ * plus de référentiel de base non modifiable à distinguer — voir
+ * getGrille. Le badge "Personnalisé" et le fond violet, devenus
+ * systématiques pour tout point, sont retirés (ils n'apportaient
+ * plus d'information utile).
  * @param {GrillePoint} point
  * @param {string} rayon
  * @returns {string}
  */
 function _buildPointRow(point, rayon) {
   /** @type {boolean} */
-  const isCustom = !GRILLE_BASE_COMMUNE.find(base => base.id === point.id);
-  /** @type {boolean} */
-  const isAdmin  = CU && CU.role === 'admin';
+  const isAdmin = CU && CU.role === 'admin';
 
-  return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)${isCustom ? ';background:#f8f0ff' : ''}">
+  return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
     <div style="flex:1">
       <div style="font-size:13px">
         ${point.q}
-        ${isCustom ? `<span class="badge" style="background:#ede9fe;color:#5b21b6;margin-left:4px">Personnalisé</span>` : ''}
       </div>
       ${point.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;font-style:italic">${point.prec}</div>` : ''}
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
       ${critBdg(point.c)}
       <span class="tsm tm" style="white-space:nowrap">Poids : <strong>${point.p}</strong></span>
-      ${isCustom && isAdmin ? _buildPointActions(rayon, point.id) : ''}
+      ${isAdmin ? _buildPointActions(rayon, point.id) : ''}
     </div>
   </div>`;
 }
 
 /**
  * Construit les boutons d'action (modifier/supprimer) pour un point
- * personnalisé, réservés aux administrateurs.
+ * de contrôle, réservés aux administrateurs.
  * @param {string} rayon
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @returns {string}
