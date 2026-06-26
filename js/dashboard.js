@@ -100,15 +100,20 @@ const CHART_SCORE_PALETTES = {
 };
 
 /**
- * ⚠️ CHANGÉ : RAYONS_FSQS n'est plus une liste fermée. Conservée
- * uniquement pour compatibilité de nom — préférer getKnownRayons()
- * (rayons.js, chargé avant ce fichier) dans tout nouveau code. Voir
- * l'avertissement de duplication ci-dessus, toujours valable : ne
- * réintroduire AUCUNE liste de rayons fixe ailleurs dans le projet.
+ * ⚠️ CHANGÉ : RAYONS_FSQS n'est plus une liste fermée utilisée pour
+ * valider quoi que ce soit — préférer getKnownRayons() (rayons.js)
+ * dans tout nouveau code. Conservée comme tableau autonome (et non
+ * comme référence vers RAYONS_BASE_SEED, rayons.js) car l'ordre de
+ * chargement des scripts dans Qualistore.html place dashboard.js
+ * AVANT rayons.js — une référence directe provoquerait une
+ * ReferenceError au chargement (les `const` top-level s'évaluent
+ * immédiatement, contrairement aux déclarations `function`, qui
+ * bénéficient du hoisting). Les valeurs doivent rester identiques à
+ * RAYONS_BASE_SEED par convention, pas par référence.
  * @type {string[]}
  * @deprecated Utiliser getKnownRayons().
  */
-const RAYONS_FSQS = RAYONS_BASE_SEED;
+const RAYONS_FSQS = ['Boucherie', 'Boulangerie', 'Drive', 'Marée', 'Charcuterie', 'Fromage', 'Fruits & Légumes'];
 
 // ─────────────────────────────────────────────
 // 2. ÉTAT
