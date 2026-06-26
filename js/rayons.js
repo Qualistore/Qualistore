@@ -257,3 +257,84 @@ function deleteRayonEverywhere(rayonName) {
 
   DB.drafts = (DB.drafts || []).filter(d => d.rayon !== rayonName);
 }
+
+// ─────────────────────────────────────────────
+// 5. ZONES DE RAYON (sous-partie d'un rayon — onglets dans l'audit)
+// ─────────────────────────────────────────────
+// Une Zone (GrillePoint.zone) est une sous-partie d'un RAYON pour un
+// classement plus facile (ex : rayon 'Boulangerie' → zone 'Lieu de
+// stockage'). Elle devient l'onglet affiché dans la modale d'audit
+// (voir buildAuditQuestions, audits.js). Contrairement à un rayon ou
+// une zone Qualimètre, une zone de grille n'a PAS d'id distinct de
+// son libellé — c'est une simple chaîne sur GrillePoint.zone, propre
+// au rayon qui la contient : deux rayons peuvent avoir chacun une
+// zone nommée "Stockage" sans aucun lien entre elles (renommer l'une
+// n'affecte jamais l'autre, voir renameGrilleZone).
+/** @type {string} */
+const IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE = 'Non classé';
+
+/**
+ * Liste les zones existantes pour un rayon donné, déduites de
+ * DB.grilleCustom[rayon] (aucune liste fixe — remplace l'ancien
+ * CTRL_SECTIONS figé à 3 valeurs, voir grille.js). Une zone vide
+ * ('') est regroupée sous IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE.
+ * @param {string} rayon
+ * @returns {string[]} Zones triées alphabétiquement, "Non classé" toujours en dernier si présent.
+ */
+function getZonesForRayon(rayon) {
+  /** @type {Set<string>} */
+  const zones = new Set();
+  (DB.grilleCustom[rayon] || []).forEach(point => {
+    /** @type {string} */
+    const trimmedZone = point.zone ? point.zone.trim() : '';
+    zones.add(trimmedZone || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE);
+  });
+
+  /** @type {boolean} */
+  const hasUnclassified = zones.delete(IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) || zones.delete('');
+  /** @type {string[]} */
+  const sorted = [...zones].sort((a, b) => a.localeCompare(b, 'fr'));
+  return hasUnclassified ? [...sorted, IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE] : sorted;
+}
+
+/**
+ * Renomme une zone à l'intérieur d'UN SEUL rayon (n'affecte jamais
+ * les zones de même nom dans d'autres rayons — voir la note
+ * d'en-tête de cette section). Migre tous les points de
+ * DB.grilleCustom[rayon] dont la zone correspond.
+ * @param {string} rayon
+ * @param {string} oldZone
+ * @param {string} newZone
+ * @returns {{ok: boolean, error?: string}}
+ */
+function renameGrilleZone(rayon, oldZone, newZone) {
+  /** @type {string} */
+  const trimmed = (newZone || '').trim();
+  if (!trimmed) return { ok: false, error: 'Le nouveau nom de zone ne peut pas être vide.' };
+  if (trimmed === oldZone) return { ok: false, error: 'Le nouveau nom est identique à l\'actuel.' };
+  if (getZonesForRayon(rayon).some(z => z.toLowerCase() === trimmed.toLowerCase() && z !== oldZone)) {
+    return { ok: false, error: `La zone « ${trimmed} » existe déjà dans ce rayon.` };
+  }
+
+  (DB.grilleCustom[rayon] || []).forEach(point => {
+    if ((point.zone || '') === oldZone) point.zone = trimmed;
+  });
+
+  return { ok: true };
+}
+
+/**
+ * Réaffecte tous les points d'une zone vers IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE
+ * au lieu de les supprimer (suppression "douce" d'une zone — les
+ * points restent disponibles, juste désorganisés). Action séparée de
+ * deleteRayonEverywhere : ici on ne touche ni au rayon, ni aux
+ * audits, ni à aucun autre rayon.
+ * @param {string} rayon
+ * @param {string} zone
+ * @returns {void}
+ */
+function unclassifyGrilleZone(rayon, zone) {
+  (DB.grilleCustom[rayon] || []).forEach(point => {
+    if ((point.zone || '') === zone) point.zone = '';
+  });
+}

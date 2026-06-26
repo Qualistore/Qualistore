@@ -48,14 +48,14 @@
  */
 
 /**
- * Point de contrôle de la grille d'audit FSQS (référentiel de base,
- * commun à tous les rayons).
+ * Point de contrôle de la grille d'audit FSQS.
  * @typedef {Object} GrillePoint
- * @property {string} id - Identifiant stable du point (ex : 'xl-1'...'xl-48').
- * @property {string} cat - Catégorie / sous-zone du point (ex : 'Stockage – Equipement').
+ * @property {string} id - Identifiant stable du point (ex : 'imp-...', 'cust-...').
+ * @property {string} zone - Sous-partie du rayon (ex : 'Lieu de stockage'), propre à ce rayon précis — devient l'onglet affiché dans la modale d'audit (voir buildAuditQuestions, audits.js). Libre et renommable, jamais partagée entre deux rayons même en cas d'intitulé identique (voir renameGrilleZone, rayons.js). Chaîne vide acceptée (regroupée sous IMPORT_UNCLASSIFIED_ZONE_LABEL à l'affichage, voir getZonesForRayon).
+ * @property {string} cat - Sous-groupe à l'intérieur de la zone (ex : 'Equipement', 'Nettoyage'). Affiché comme en-tête de groupe dans la page Grille (voir _buildCategorySection, grille.js), mais ne crée plus d'onglet — c'est zone qui en crée un.
  * @property {string} q - Intitulé de la question / du point de contrôle.
  * @property {string} prec - Précision ou exemple additionnel. Chaîne vide si absent (jamais null/undefined dans ce fichier).
- * @property {number} p - Poids / pondération du point. Valeurs observées dans ce fichier : 5 ou 10, mais non garanti exhaustif (TODO TYPE : à confirmer si la personnalisation via DB.grilleCustom autorise d'autres poids).
+ * @property {number} p - Poids / pondération du point.
  * @property {GrilleCriticite} c - Niveau de criticité du point.
  */
 

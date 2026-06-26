@@ -71,8 +71,11 @@
  * (la zone est résolue depuis le document, jamais rejetée pour
  * absence de correspondance avec une liste connue).
  * @typedef {Object} ImportParsedRow
- * @property {string} rayon - Rayon normalisé si reconnu (cible FSQS), sinon valeur brute d'origine (voir `valid`).
+ * @property {string} rayon - Rayon normalisé si reconnu (cible FSQS), sinon valeur brute d'origine (voir `valid`). ⚠️ CHANGÉ : conservé comme rayon "détecté par défaut" — l'import effectif utilise désormais `targetRayons`, voir ci-dessous.
  * @property {string} rayonRaw - Valeur de zone telle qu'écrite dans le document, jamais altérée. Utilisée par _importIntoQualimetre comme source de vérité pour la résolution de zone.
+ * @property {string[]} targetRayons - Rayon(s) FSQS où cette ligne sera réellement importée (cible 'grille' uniquement) — initialisé à `[rayon]` si `rayon` est non vide, sinon `[]`. Modifiable individuellement (voir _onPreviewFieldChanged) ou en masse pour les lignes sélectionnées (voir applyBulkRayonZoneAssignment). Une ligne avec targetRayons vide n'est PAS importée même si `valid` est true — voir confirmImport.
+ * @property {string} zone - Sous-partie du rayon (GrillePoint.zone, voir config.js) attribuée à cette ligne pour l'import FSQS — devient l'onglet dans l'audit (voir buildAuditQuestions, audits.js). Chaîne vide acceptée ("Non classé" à l'affichage). Sans effet sur la cible 'qualimetre'.
+ * @property {boolean} selected - Coché dans l'aperçu (case à gauche de chaque ligne) — détermine quelles lignes sont affectées par une assignation groupée (voir applyBulkRayonZoneAssignment), pas par l'import lui-même.
  * @property {string} cat
  * @property {string} q - Intitulé, trim() appliqué.
  * @property {GrilleCriticite} crit - Toujours normalisé (fallback 'Majeure' si non reconnu).
@@ -932,20 +935,21 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
     const poids           = parseInt(row.poids) || IMPORT_DEFAULT_POIDS[normalizedCrit];
 
     /** @type {boolean} */
-    const isValid = isQualimetreTarget
-      ? !!row.q.trim()
-      : !!resolvedRayon && !!row.q.trim();
+    const isValid = !!row.q.trim();
 
     /** @type {ImportParsedRow} */
     const parsedRow = {
-      rayon:    resolvedRayon,
-      rayonRaw: row.rayon,
-      cat:      row.cat || 'Général',
-      q:        row.q.trim(),
-      crit:     normalizedCrit,
-      p:        poids,
-      valid:    isValid,
-      extra:    row.extra || '',
+      rayon:        resolvedRayon,
+      rayonRaw:     row.rayon,
+      targetRayons: resolvedRayon ? [resolvedRayon] : [],
+      zone:         '',
+      selected:     false,
+      cat:          row.cat || 'Général',
+      q:            row.q.trim(),
+      crit:         normalizedCrit,
+      p:            poids,
+      valid:        isValid,
+      extra:        row.extra || '',
     };
 
     _importRows.push(parsedRow);
@@ -967,6 +971,17 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
   // rouge), donc le bandeau d'avertissements séparé n'a plus lieu
   // d'être pour ce motif.
   el('imp-warnings').innerHTML = '';
+
+  // Nouvelle ouverture d'aperçu : aucune ligne sélectionnée par
+  // défaut (voir _onPreviewRowSelectChanged, applyBulkRayonZoneAssignment).
+  if (el('imp-bulk-rayon-cbs')) {
+    el('imp-bulk-rayon-cbs').innerHTML = getKnownRayons().map(rayon =>
+      `<label class="cb-item" style="font-size:11px"><input type="checkbox" class="imp-bulk-rayon-cb" value="${_escapeHtmlAttr(rayon)}"> ${rayon}</label>`
+    ).join('');
+  }
+  sv('imp-bulk-zone', '');
+  if (el('imp-bulk-clear-rayons')) el('imp-bulk-clear-rayons').checked = false;
+  _updateBulkAssignBar();
 
   _refreshImportPreviewCounters();
 }
@@ -1115,6 +1130,24 @@ function _escapeHtmlAttr(text) {
  * @param {boolean} isDuplicate - Vrai si cette ligne est un quasi-doublon d'une ligne précédente (voir findDuplicateRows, import-normalize.js) — signalement uniquement, n'affecte jamais `valid`.
  * @returns {string}
  */
+/**
+ * Construit la ligne `<tr>` HTML d'aperçu d'une ligne importée.
+ *
+ * ⚠️ CHANGÉ : ajout d'une case à cocher de sélection (colonne de
+ * gauche) et de deux champs supplémentaires pour la cible 'grille' —
+ * Rayon(s) cible(s) (row.targetRayons, plusieurs valeurs séparées par
+ * virgule dans un même champ texte) et Zone (row.zone, sous-partie du
+ * rayon — voir le typedef GrillePoint, config.js). La sélection ne
+ * détermine PAS quelles lignes sont importées (c'est `valid` et
+ * `targetRayons.length` qui décident, voir confirmImport) — elle sert
+ * uniquement à choisir les lignes affectées par une assignation
+ * groupée (voir applyBulkRayonZoneAssignment, déclenchée depuis la
+ * barre d'action au-dessus du tableau).
+ * @param {ImportParsedRow} row
+ * @param {number} index - Index de cette ligne dans _importRows (clé de mise à jour, voir _onPreviewFieldChanged).
+ * @param {boolean} isDuplicate - Vrai si cette ligne est un quasi-doublon d'une ligne précédente (voir findDuplicateRows, import-normalize.js) — signalement uniquement, n'affecte jamais `valid`.
+ * @returns {string}
+ */
 function _buildPreviewRow(row, index, isDuplicate) {
   /** @type {string} */
   const rowBg = row.valid ? (isDuplicate ? '#fffaf0' : '') : '#fff8f8';
@@ -1132,20 +1165,25 @@ function _buildPreviewRow(row, index, isDuplicate) {
   /** @type {string} */
   const extraIcon = row.extra ? ` <i class="ti ti-info-circle"${extraTitle} style="color:var(--text3);font-size:12px"></i>` : '';
 
+  /** @type {boolean} */
+  const isQualimetreTarget = _importTarget === 'qualimetre';
+
+  // NOTE : en pratique, cette modale (#m-import) n'est aujourd'hui
+  // ouverte qu'avec la cible 'grille' (FSQS) — openImportModal() est
+  // toujours appelée sans argument dans Qualistore.html. L'import
+  // Qualimètre utilise sa propre modale et son propre aperçu,
+  // entièrement séparés (#m-gq-import, _gqRenderImportPreview, voir
+  // grille-qualimetre.js). Les colonnes Rayon(s)/Zone ci-dessous sont
+  // donc vides pour cette cible — conservées pour ne pas casser ce
+  // fichier si openImportModal('qualimetre') est un jour réactivé.
   /** @type {string} */
-  const rayonField = _importTarget === 'qualimetre'
-    // NOTE : en pratique, cette modale (#m-import) n'est aujourd'hui
-    // ouverte qu'avec la cible 'grille' (FSQS) — openImportModal()
-    // est toujours appelée sans argument dans Qualistore.html, voir
-    // le bouton "Importer" de la page Grille. L'import Qualimètre
-    // utilise sa propre modale et son propre aperçu, entièrement
-    // séparés (#m-gq-import, _gqRenderImportPreview, voir
-    // grille-qualimetre.js). Cette branche est donc inerte
-    // aujourd'hui ; conservée pour ne pas casser ce fichier si
-    // openImportModal('qualimetre') est un jour réactivé.
-    ? ''
-    : `<input type="text" value="${_escapeHtmlAttr(row.rayon)}" ${fieldStyle ? `style="${fieldStyle}${row.valid ? '' : ';color:var(--danger)'}"` : ''} ${focusHint}
-         oninput="_onPreviewFieldChanged(${index},'rayon',this.value)" placeholder="Rayon...">`;
+  const rayonsField = isQualimetreTarget ? '' : `<input type="text" value="${_escapeHtmlAttr(row.targetRayons.join(', '))}"
+    style="${fieldStyle}${row.targetRayons.length ? '' : ';color:var(--danger)'}" ${focusHint}
+    oninput="_onPreviewFieldChanged(${index},'targetRayons',this.value)" placeholder="Rayon(s), séparés par virgule...">`;
+  /** @type {string} */
+  const zoneField = isQualimetreTarget ? '' : `<input type="text" value="${_escapeHtmlAttr(row.zone)}" list="ctrl-zone-suggestions"
+    style="${fieldStyle}" ${focusHint}
+    oninput="_onPreviewFieldChanged(${index},'zone',this.value)" placeholder="Zone (optionnel)...">`;
 
   /** @type {string} */
   const critOptions = IMPORT_VALID_CRITS.map(c =>
@@ -1153,7 +1191,11 @@ function _buildPreviewRow(row, index, isDuplicate) {
   ).join('');
 
   return `<tr style="background:${rowBg}">
-    <td style="padding:2px 6px;border-bottom:1px solid var(--border)">${rayonField}</td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border);text-align:center">
+      <input type="checkbox" class="imp-row-select" ${row.selected ? 'checked' : ''} onchange="_onPreviewRowSelectChanged(${index},this.checked)" aria-label="Sélectionner cette ligne">
+    </td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border);min-width:140px">${rayonsField}</td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border);min-width:120px">${zoneField}</td>
     <td style="padding:2px 6px;border-bottom:1px solid var(--border)">
       <input type="text" value="${_escapeHtmlAttr(row.cat)}" style="${fieldStyle}" ${focusHint}
         oninput="_onPreviewFieldChanged(${index},'cat',this.value)" placeholder="Catégorie...">
@@ -1185,8 +1227,8 @@ function _buildPreviewRow(row, index, isDuplicate) {
  * jour les compteurs globaux (imp-stats, imp-confirm-btn) puisqu'une
  * édition peut faire basculer une ligne entre valide et invalide.
  * @param {number} index - Index dans _importRows.
- * @param {'rayon'|'cat'|'q'|'crit'|'p'} field
- * @param {string} value - Valeur brute du champ HTML (toujours une chaîne, même pour un `<input type="number">`).
+ * @param {'targetRayons'|'zone'|'cat'|'q'|'crit'|'p'} field
+ * @param {string} value - Valeur brute du champ HTML (toujours une chaîne, même pour un `<input type="number">`). Pour 'targetRayons', plusieurs rayons séparés par virgule.
  * @returns {void}
  */
 function _onPreviewFieldChanged(index, field, value) {
@@ -1196,13 +1238,15 @@ function _onPreviewFieldChanged(index, field, value) {
 
   if (field === 'p') {
     row.p = parseInt(value) || 0;
+  } else if (field === 'targetRayons') {
+    row.targetRayons = value.split(',').map(r => r.trim()).filter(Boolean);
   } else {
     row[field] = value;
   }
 
   row.valid = _importTarget === 'qualimetre'
     ? !!row.q.trim()
-    : !!row.rayon.trim() && !!row.q.trim();
+    : !!row.q.trim();
 
   _refreshImportPreviewCounters();
   // Ne re-rend que la ligne courante : un re-render complet du
@@ -1214,6 +1258,101 @@ function _onPreviewFieldChanged(index, field, value) {
     const duplicates = _getDuplicatesForCurrentImport();
     rowEl.outerHTML = _buildPreviewRow(row, index, duplicates.has(index));
   }
+}
+
+/**
+ * Coche/décoche la sélection d'une ligne d'aperçu (voir
+ * applyBulkRayonZoneAssignment — la sélection n'affecte jamais
+ * l'import lui-même, seulement quelles lignes une assignation groupée
+ * cible). Met aussi à jour le compteur "X sélectionnée(s)" affiché
+ * dans la barre d'action groupée.
+ * @param {number} index - Index dans _importRows.
+ * @param {boolean} isSelected
+ * @returns {void}
+ */
+function _onPreviewRowSelectChanged(index, isSelected) {
+  /** @type {ImportParsedRow | undefined} */
+  const row = _importRows[index];
+  if (!row) return;
+  row.selected = isSelected;
+  _updateBulkAssignBar();
+}
+
+/**
+ * Sélectionne ou désélectionne toutes les lignes d'un coup (case
+ * "tout sélectionner" en en-tête de tableau), puis ré-affiche
+ * uniquement les cases à cocher (pas tout le tableau — évite de
+ * perdre le focus d'un champ en cours d'édition ailleurs sur la
+ * page).
+ * @param {boolean} isSelected
+ * @returns {void}
+ */
+function toggleSelectAllPreviewRows(isSelected) {
+  _importRows.forEach(row => { row.selected = isSelected; });
+  document.querySelectorAll('.imp-row-select').forEach(cb => { cb.checked = isSelected; });
+  _updateBulkAssignBar();
+}
+
+/**
+ * Affiche/masque la barre d'action groupée (#imp-bulk-bar) et met à
+ * jour son compteur, selon le nombre de lignes actuellement
+ * sélectionnées dans l'aperçu.
+ * @returns {void}
+ */
+function _updateBulkAssignBar() {
+  /** @type {number} */
+  const selectedCount = _importRows.filter(r => r.selected).length;
+  /** @type {HTMLElement | null} */
+  const bar = el('imp-bulk-bar');
+  if (!bar) return;
+  bar.style.display = selectedCount > 0 ? '' : 'none';
+  if (el('imp-bulk-count')) el('imp-bulk-count').textContent = `${selectedCount} ligne(s) sélectionnée(s)`;
+}
+
+/**
+ * Applique une assignation groupée de rayon(s) et/ou de zone à
+ * toutes les lignes actuellement sélectionnées (voir
+ * _onPreviewRowSelectChanged) — déclenchée par le bouton "Assigner"
+ * de la barre d'action groupée (#imp-bulk-bar).
+ *
+ * Comportement : pour le rayon, REMPLACE toujours targetRayons des
+ * lignes sélectionnées par la sélection courante de la barre (pas
+ * d'ajout incrémental — répéter l'action avec une sélection
+ * différente écrase la précédente, pour rester prévisible). Si aucun
+ * rayon n'est coché dans la barre, targetRayons n'est pas modifié
+ * (seule la zone est appliquée, si renseignée) ; choisir explicitement
+ * "Effacer les rayons" pour vider targetRayons sans en assigner de
+ * nouveaux.
+ * Pour la zone, un champ texte vide signifie "ne pas modifier la
+ * zone" (pour vider explicitement la zone vers "Non classé",
+ * utiliser l'édition individuelle du champ, pas l'action groupée).
+ * @returns {void}
+ */
+function applyBulkRayonZoneAssignment() {
+  /** @type {string[]} */
+  const checkedRayons = [...document.querySelectorAll('.imp-bulk-rayon-cb:checked')].map(cb => cb.value);
+  /** @type {string} */
+  const bulkZone = el('imp-bulk-zone') ? v('imp-bulk-zone').trim() : '';
+  /** @type {boolean} */
+  const clearRayons = el('imp-bulk-clear-rayons') ? el('imp-bulk-clear-rayons').checked : false;
+
+  if (!checkedRayons.length && !bulkZone && !clearRayons) {
+    showToast('Sélectionnez au moins un rayon, une zone, ou "Effacer les rayons".', 'warning');
+    return;
+  }
+
+  /** @type {number} */
+  let affectedCount = 0;
+  _importRows.forEach(row => {
+    if (!row.selected) return;
+    affectedCount++;
+    if (clearRayons) row.targetRayons = [];
+    else if (checkedRayons.length) row.targetRayons = [...checkedRayons];
+    if (bulkZone) row.zone = bulkZone;
+  });
+
+  _rerenderImportPreviewRows();
+  showToast(`${affectedCount} ligne(s) mise(s) à jour.`, 'success');
 }
 
 /**
@@ -1268,16 +1407,39 @@ function _rerenderImportPreviewRows() {
  * de ligne, sans reconstruire le tableau HTML.
  * @returns {void}
  */
+/**
+ * Recalcule et affiche les compteurs globaux de l'aperçu (lignes
+ * valides/invalides, état du bouton de confirmation) depuis l'état
+ * courant de _importRows — appelé après toute édition ou suppression
+ * de ligne, sans reconstruire le tableau HTML.
+ *
+ * ⚠️ CHANGÉ : pour la cible 'grille', une ligne à l'intitulé non vide
+ * mais sans aucun rayon cible (row.targetRayons vide — voir
+ * applyBulkRayonZoneAssignment, "Effacer les rayons") est exclue de
+ * l'import au même titre qu'un intitulé vide, mais comptée et
+ * affichée séparément pour que la cause reste claire.
+ * @returns {void}
+ */
 function _refreshImportPreviewCounters() {
-  /** @type {number} */
-  const validCount = _importRows.filter(r => r.valid).length;
-  /** @type {number} */
-  const skipCount  = _importRows.filter(r => !r.valid).length;
+  /** @type {boolean} */
+  const isGrilleTarget = _importTarget !== 'qualimetre';
 
-  el('imp-stats').textContent = `${validCount} à importer${skipCount ? ' · ' + skipCount + ' sans intitulé (ignorée' + (skipCount > 1 ? 's' : '') + ')' : ''}`;
-  el('imp-confirm-btn').disabled      = validCount === 0;
-  el('imp-confirm-btn').style.opacity = validCount > 0 ? '1' : '.5';
-  el('imp-count-btn').textContent     = validCount > 0 ? `(${validCount})` : '';
+  /** @type {number} */
+  const importableCount = _importRows.filter(r => r.valid && (!isGrilleTarget || r.targetRayons.length > 0)).length;
+  /** @type {number} */
+  const noTitleCount = _importRows.filter(r => !r.valid).length;
+  /** @type {number} */
+  const noRayonCount = isGrilleTarget ? _importRows.filter(r => r.valid && r.targetRayons.length === 0).length : 0;
+
+  /** @type {string} */
+  let statsText = `${importableCount} à importer`;
+  if (noTitleCount) statsText += ` · ${noTitleCount} sans intitulé (ignorée${noTitleCount > 1 ? 's' : ''})`;
+  if (noRayonCount) statsText += ` · ${noRayonCount} sans rayon cible (ignorée${noRayonCount > 1 ? 's' : ''})`;
+
+  el('imp-stats').textContent = statsText;
+  el('imp-confirm-btn').disabled      = importableCount === 0;
+  el('imp-confirm-btn').style.opacity = importableCount > 0 ? '1' : '.5';
+  el('imp-count-btn').textContent     = importableCount > 0 ? `(${importableCount})` : '';
 }
 
 // ─────────────────────────────────────────────
@@ -1290,9 +1452,18 @@ function _refreshImportPreviewCounters() {
  * lignes valides.
  * @returns {void}
  */
+/**
+ * Confirme l'import : filtre les lignes valides (et, pour la cible
+ * 'grille', celles ayant au moins un rayon cible — voir le typedef
+ * ImportParsedRow, targetRayons), puis délègue au moteur d'import
+ * correspondant.
+ * @returns {void}
+ */
 function confirmImport() {
+  /** @type {boolean} */
+  const isGrilleTarget = _importTarget !== 'qualimetre';
   /** @type {ImportParsedRow[]} */
-  const validRows = _importRows.filter(r => r.valid);
+  const validRows = _importRows.filter(r => r.valid && (!isGrilleTarget || r.targetRayons.length > 0));
 
   if (_importTarget === 'qualimetre') {
     _importIntoQualimetre(validRows);
@@ -1548,12 +1719,28 @@ function _importIntoQualimetre(rows) {
  * @param {ImportParsedRow[]} rows
  * @returns {void}
  */
+/**
+ * Importe les lignes validées dans DB.grilleCustom. ⚠️ CHANGÉ : une
+ * ligne peut désormais cibler plusieurs rayons à la fois
+ * (row.targetRayons, voir le typedef ImportParsedRow et
+ * applyBulkRayonZoneAssignment) — un point distinct (nouvel id) est
+ * créé dans CHAQUE rayon ciblé, jamais de référence partagée entre
+ * rayons (même principe que saveCtrl pour la création manuelle multi-
+ * rayon, voir grille.js). Le rayon de chaque point créé est ainsi
+ * créé à la volée dans DB.grilleCustom s'il n'existe pas encore.
+ * Inclut désormais row.zone (sous-partie du rayon, voir le typedef
+ * GrillePoint, config.js).
+ * @param {ImportParsedRow[]} rows
+ * @returns {void}
+ */
 function _importIntoGrille(rows) {
   rows.forEach(row => {
-    if (!DB.grilleCustom[row.rayon]) DB.grilleCustom[row.rayon] = [];
-    /** @type {GrillePoint} */
-    DB.grilleCustom[row.rayon].push({
-      id: 'imp-' + uid(), cat: row.cat, q: row.q, p: row.p, c: row.crit,
+    row.targetRayons.forEach(rayon => {
+      if (!DB.grilleCustom[rayon]) DB.grilleCustom[rayon] = [];
+      /** @type {GrillePoint} */
+      DB.grilleCustom[rayon].push({
+        id: 'imp-' + uid(), zone: row.zone || '', cat: row.cat, q: row.q, p: row.p, c: row.crit,
+      });
     });
   });
 

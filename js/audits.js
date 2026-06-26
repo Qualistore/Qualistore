@@ -445,6 +445,13 @@ function auditPrev() {
  * initialise auditAnswers, regroupe les points de grille par zone,
  * puis affiche le premier onglet de zone.
  *
+ * ⚠️ CHANGÉ : le regroupement en onglets se fait désormais sur
+ * GrillePoint.zone (sous-partie du rayon, libre et renommable par
+ * rayon — voir getZonesForRayon/renameGrilleZone, rayons.js), plus
+ * sur un découpage de la catégorie (cat.split(' – ')[0]). Un point
+ * sans zone (zone vide, import sans zone détectée) est regroupé sous
+ * IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE ('Non classé', rayons.js).
+ *
  * ⚠️ Depuis le retrait de GRILLE_BASE_COMMUNE (grille.js, voir
  * getGrille), un rayon peut désormais n'avoir AUCUN point de
  * contrôle (jamais importé ni saisi manuellement) — ce cas n'existait
@@ -460,12 +467,13 @@ function buildAuditQuestions(rayon) {
   auditAnswers = {};
   allPoints.forEach(point => { auditAnswers[point.id] = { q: point.q, rep: null, cmt: '', photos: [] }; });
 
-  // Regrouper les points par zone (partie avant ' – ' dans la catégorie)
+  // Regrouper les points par zone (GrillePoint.zone — sous-partie du
+  // rayon, voir rayons.js)
   _auditZones    = {};
   _auditZoneKeys = [];
   allPoints.forEach(point => {
     /** @type {string} */
-    const zone = point.cat.split(' – ')[0];
+    const zone = (point.zone && point.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE;
     if (!_auditZones[zone]) _auditZones[zone] = [];
     _auditZones[zone].push(point);
   });

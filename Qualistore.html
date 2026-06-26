@@ -709,12 +709,9 @@
         <div id="ctrl-rayon-cbs" class="cb-group" style="max-height:150px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
       </div>
       <div class="form-group">
-        <label class="form-label">Section (onglet) *</label>
-        <select class="form-control" id="ctrl-section">
-          <option value="Stockage">Stockage</option>
-          <option value="Vente trad.">Vente trad.</option>
-          <option value="Libre-service">Libre-service</option>
-        </select>
+        <label class="form-label">Zone <span class="tsm tm">(sous-partie du rayon, devient un onglet dans l'audit — laisser vide pour "Non classé")</span></label>
+        <input class="form-control" id="ctrl-zone" list="ctrl-zone-suggestions" placeholder="ex : Lieu de stockage, Vente...">
+        <datalist id="ctrl-zone-suggestions"></datalist>
       </div>
 <div class="form-group">
         <label class="form-label">Catégorie <span class="tsm tm">(sous-section)</span></label>
@@ -830,10 +827,23 @@
           </div>
         </div>
         <div id="imp-mapping-block"></div>
+
+        <!-- Barre d'action groupée : visible uniquement si au moins une ligne est sélectionnée -->
+        <div id="imp-bulk-bar" style="display:none;margin-bottom:8px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:var(--radius);display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+          <span id="imp-bulk-count" class="tsm" style="font-weight:600;color:#5b21b6"></span>
+          <span class="tsm tm">Assigner à :</span>
+          <div id="imp-bulk-rayon-cbs" style="display:flex;flex-wrap:wrap;gap:6px;max-width:280px;max-height:60px;overflow-y:auto"></div>
+          <input type="text" id="imp-bulk-zone" placeholder="Zone (optionnel)" list="ctrl-zone-suggestions" class="form-control" style="width:160px;font-size:12px;padding:4px 8px">
+          <label class="tsm" style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="imp-bulk-clear-rayons"> Effacer les rayons</label>
+          <button class="btn btn-primary btn-sm" onclick="applyBulkRayonZoneAssignment()"><i class="ti ti-check"></i> Appliquer</button>
+        </div>
+
         <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius)">
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead><tr style="background:var(--bg)">
-              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Rayon</th>
+              <th style="padding:8px 6px;text-align:center;border-bottom:1px solid var(--border)"><input type="checkbox" onchange="toggleSelectAllPreviewRows(this.checked)" aria-label="Tout sélectionner"></th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Rayon(s)</th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Zone</th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Catégorie</th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Intitulé</th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Criticité</th>

@@ -2,9 +2,10 @@
 // GRILLE — Grille d'audit FSQS (personnalisation pure, sans référentiel codé en dur)
 // Dépend de : storage.js (DB, CU), ui.js (el, sv, v,
 //   populateRayonSelect), rayons.js (getKnownRayons, renameRayon,
-//   deleteRayonEverywhere — chargé avant ce fichier), import-grille.js
-//   (_escapeHtmlAttr — chargé avant ce fichier, réutilisé ici plutôt
-//   que dupliqué)
+//   deleteRayonEverywhere, getZonesForRayon, renameGrilleZone,
+//   IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE — chargé avant ce fichier),
+//   import-grille.js (_escapeHtmlAttr — chargé avant ce fichier,
+//   réutilisé ici plutôt que dupliqué)
 // ⚠️ CHANGÉ : ne dépend plus de config.js (GRILLE_BASE_COMMUNE) — ce
 // référentiel de 48 points codés en dur a été retiré de getGrille()
 // (causait des doublons visuels avec les points importés ayant le
@@ -60,8 +61,14 @@
 const DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
 
 /**
- * Sections disponibles dans le formulaire de point de contrôle.
+ * ⚠️ CHANGÉ : CTRL_SECTIONS n'est plus utilisée. Les zones (sous-
+ * partie d'un rayon — voir le typedef GrillePoint.zone, config.js)
+ * sont désormais dynamiques et propres à chaque rayon — voir
+ * getZonesForRayon/renameGrilleZone (rayons.js) et
+ * _buildCtrlZoneSelect (ci-dessous). Conservée à titre de trace
+ * historique ; à supprimer si confirmé inutile à long terme.
  * @type {string[]}
+ * @deprecated Utiliser getZonesForRayon(rayon) (rayons.js).
  */
 const CTRL_SECTIONS = ['Stockage', 'Vente trad.', 'Libre-service'];
 
@@ -162,10 +169,10 @@ function showGrille(rayon) {
   }
 
   /** @type {string[]} */
-  const categories = [...new Set(allPoints.map(point => point.cat))];
+  const zones = getZonesForRayon(resolvedRayon);
 
-  el('grille-body').innerHTML = categories
-    .map(cat => _buildCategorySection(cat, allPoints.filter(p => p.cat === cat), resolvedRayon))
+  el('grille-body').innerHTML = zones
+    .map(zone => _buildZoneSection(zone, allPoints.filter(p => (p.zone && p.zone.trim() || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) === zone), resolvedRayon, isAdmin))
     .join('');
 }
 
@@ -174,15 +181,47 @@ function showGrille(rayon) {
 // ─────────────────────────────────────────────
 
 /**
- * Construit la section HTML d'une catégorie (en-tête + lignes de points).
- * @param {string} category - Nom complet de la catégorie (GrillePoint.cat).
+ * Construit la section HTML d'une zone (en-tête + sous-groupes par
+ * catégorie) — une zone est une sous-partie du rayon, devenant
+ * l'onglet correspondant dans la modale d'audit (voir
+ * buildAuditQuestions, audits.js). L'en-tête de zone porte un bouton
+ * de renommage (admin uniquement), distinct du renommage de rayon
+ * (renameRayon, rayons.js) — voir renameGrilleZone.
+ * @param {string} zone
+ * @param {GrillePoint[]} points - Points appartenant à cette zone.
+ * @param {string} rayon
+ * @param {boolean} isAdmin
+ * @returns {string}
+ */
+function _buildZoneSection(zone, points, rayon, isAdmin) {
+  /** @type {string[]} */
+  const categories = [...new Set(points.map(point => point.cat || 'Général'))];
+  /** @type {string} */
+  const renameButton = isAdmin && zone !== IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE
+    ? `<button class="btn btn-secondary btn-sm" style="padding:2px 6px" onclick="openRenameGrilleZonePrompt('${_escapeHtmlAttr(rayon)}','${_escapeHtmlAttr(zone)}')" aria-label="Renommer cette zone" title="Renommer cette zone"><i class="ti ti-pencil" style="font-size:12px"></i></button>`
+    : '';
+
+  return `<div style="margin-bottom:4px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 20px;background:#f5f3ff;border-bottom:1px solid var(--border)">
+      <span style="font-size:12px;font-weight:700;color:#5b21b6;text-transform:uppercase;letter-spacing:.5px">${zone}</span>
+      ${renameButton}
+    </div>
+    ${categories.map(cat => _buildCategorySection(cat, points.filter(p => (p.cat || 'Général') === cat), rayon)).join('')}
+  </div>`;
+}
+
+/**
+ * Construit la section HTML d'une catégorie (en-tête + lignes de
+ * points) à l'intérieur d'une zone — sous-groupe, n'engendre pas
+ * d'onglet propre (contrairement à la zone, voir _buildZoneSection).
+ * @param {string} category - Nom de la catégorie (GrillePoint.cat).
  * @param {GrillePoint[]} points - Points appartenant à cette catégorie.
  * @param {string} rayon
  * @returns {string}
  */
 function _buildCategorySection(category, points, rayon) {
   return `<div>
-    <div style="padding:10px 20px;background:var(--bg);font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)">
+    <div style="padding:8px 20px;background:var(--bg);font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)">
       ${category}
     </div>
     ${points.map(point => _buildPointRow(point, rayon)).join('')}
@@ -278,6 +317,7 @@ function openCtrlModal(rayon, pointId) {
   sv('ctrl-id', pointId || '');
 
   _buildCtrlRayonCheckboxes();
+  _buildCtrlZoneSuggestions(_ctrlRayonCurrent);
 
   // Cocher le rayon courant par défaut
   document.querySelectorAll('.ctrl-ray-cb').forEach(cb => {
@@ -295,9 +335,9 @@ function openCtrlModal(rayon, pointId) {
 
 /**
  * Pré-remplit le formulaire avec les données d'un point de contrôle
- * personnalisé existant. Sans effet si le point n'est pas trouvé
- * dans DB.grilleCustom[rayon] (les points du référentiel de base ne
- * sont pas éditables).
+ * existant. Sans effet si le point n'est pas trouvé dans
+ * DB.grilleCustom[rayon] (depuis le retrait de GRILLE_BASE_COMMUNE,
+ * tout point de contrôle vit dans DB.grilleCustom — voir getGrille).
  * @param {string} rayon
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @returns {void}
@@ -308,15 +348,11 @@ function _populateCtrlForm(rayon, pointId) {
   if (!point) return;
 
   sv('ctrl-q',    point.q);
+  sv('ctrl-zone', point.zone || '');
   sv('ctrl-cat',  point.cat || '');
   sv('ctrl-prec', point.prec || '');
   sv('ctrl-poids', point.p);
   el('ctrl-crit').value = point.c;
-
-  // Déduire la section depuis la catégorie (format "Section – Sous-catégorie")
-  /** @type {string} */
-  const section = point.cat ? point.cat.split(' – ')[0] : 'Stockage';
-  el('ctrl-section').value = CTRL_SECTIONS.includes(section) ? section : 'Stockage';
 }
 
 /**
@@ -325,11 +361,31 @@ function _populateCtrlForm(rayon, pointId) {
  */
 function _resetCtrlForm() {
   sv('ctrl-q', '');
+  sv('ctrl-zone', '');
   sv('ctrl-cat', '');
   sv('ctrl-prec', '');
   sv('ctrl-poids', '');
-  el('ctrl-crit').value    = 'Majeure';
-  el('ctrl-section').value = 'Stockage';
+  el('ctrl-crit').value = 'Majeure';
+}
+
+/**
+ * Peuple la `<datalist>` de suggestions de zone (#ctrl-zone-suggestions)
+ * avec les zones déjà connues du rayon donné (getZonesForRayon,
+ * rayons.js). Champ texte libre, pas un select fermé : ces
+ * suggestions n'empêchent jamais de taper une nouvelle zone, créée
+ * implicitement à l'enregistrement (voir saveCtrl) — exactement comme
+ * pour un rayon.
+ * @param {string} rayon
+ * @returns {void}
+ */
+function _buildCtrlZoneSuggestions(rayon) {
+  /** @type {HTMLDataListElement | null} */
+  const datalist = el('ctrl-zone-suggestions');
+  if (!datalist) return;
+  datalist.innerHTML = getZonesForRayon(rayon)
+    .filter(zone => zone !== IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE)
+    .map(zone => `<option value="${_escapeHtmlAttr(zone)}">`)
+    .join('');
 }
 
 // ─────────────────────────────────────────────
@@ -337,8 +393,17 @@ function _resetCtrlForm() {
 // ─────────────────────────────────────────────
 
 /**
- * Valide et sauvegarde le formulaire de point de contrôle
- * personnalisé, pour un ou plusieurs rayons sélectionnés.
+ * Valide et sauvegarde le formulaire de point de contrôle, pour un
+ * ou plusieurs rayons sélectionnés.
+ *
+ * ⚠️ CHANGÉ : zone et cat sont désormais deux champs distincts de
+ * GrillePoint (voir config.js), plus un seul champ `cat` fusionné en
+ * "Section – Sous-catégorie". Le même nom de zone est utilisé tel
+ * quel pour chacun des rayons sélectionnés — sans lien entre eux
+ * (voir la note d'en-tête de la section ZONES DE RAYON, rayons.js) :
+ * si la zone n'existe pas encore dans l'un des rayons, elle y est
+ * créée à la volée, exactement comme un rayon est créé à la volée
+ * par l'import.
  *
  * Comportement subtil : si `existingId` est renseigné (édition),
  * SEUL le rayon `_ctrlRayonCurrent` (rayon d'origine du point édité)
@@ -354,15 +419,13 @@ function saveCtrl() {
   /** @type {string} */
   const intitule       = v('ctrl-q').trim();
   /** @type {string} */
-  const sousCategorie  = v('ctrl-cat').trim();
+  const zone           = v('ctrl-zone').trim();
+  /** @type {string} */
+  const categorie      = v('ctrl-cat').trim();
   /** @type {string} */
   const precision      = v('ctrl-prec').trim();
-  /** @type {string} */
-  const section        = el('ctrl-section').value;
   /** @type {GrilleCriticite} */
   const criticite      = el('ctrl-crit').value;
-  /** @type {string} */
-  const fullCategory   = section + (sousCategorie ? ' – ' + sousCategorie : '');
   /** @type {number} */
   const poids          = parseInt(v('ctrl-poids')) || DEFAULT_POIDS[criticite];
   /** @type {string} */
@@ -390,14 +453,14 @@ function saveCtrl() {
       if (index >= 0) {
         /** @type {GrillePoint} */
         DB.grilleCustom[rayon][index] = {
-          id: existingId, cat: fullCategory, q: intitule, p: poids, c: criticite, prec: precision,
+          id: existingId, zone, cat: categorie, q: intitule, p: poids, c: criticite, prec: precision,
         };
       }
     } else {
       // Nouveau point
       /** @type {GrillePoint} */
       DB.grilleCustom[rayon].push({
-        id: 'cust-' + uid(), cat: fullCategory, q: intitule, p: poids, c: criticite, prec: precision,
+        id: 'cust-' + uid(), zone, cat: categorie, q: intitule, p: poids, c: criticite, prec: precision,
       });
     }
   });
@@ -480,6 +543,30 @@ function openRenameRayonPrompt() {
 
   save();
   showGrille(newName.trim());
+}
+
+/**
+ * Ouvre une invite de saisie pour renommer une zone à l'intérieur
+ * d'UN rayon précis (voir renameGrilleZone, rayons.js — n'affecte
+ * jamais une zone de même nom dans un autre rayon).
+ * @param {string} rayon
+ * @param {string} zone
+ * @returns {void}
+ */
+function openRenameGrilleZonePrompt(rayon, zone) {
+  /** @type {string | null} */
+  const newName = prompt('Nouveau nom de la zone :', zone);
+  if (newName === null) return;
+
+  /** @type {{ok: boolean, error?: string}} */
+  const result = renameGrilleZone(rayon, zone, newName);
+  if (!result.ok) {
+    if (result.error) alert(result.error);
+    return;
+  }
+
+  save();
+  showGrille(rayon);
 }
 
 /**
