@@ -192,6 +192,9 @@ let _currentImportTab = 'csv';
 /** @type {ImportTarget} Destination de l'import. */
 let _importTarget = 'grille';
 
+/** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue) — réglable par l'utilisateur dans la modale avant import, voir _onDefaultCritChanged. Remplace l'ancien fallback fixe 'Majeure'. */
+let _importDefaultCrit = 'Majeure';
+
 // ─────────────────────────────────────────────
 // 3. MODAL D'IMPORT
 // ─────────────────────────────────────────────
@@ -206,10 +209,12 @@ function openImportModal(target) {
   _importTarget      = target || 'grille';
   _importRows        = [];
   _currentImportTab  = 'csv';
+  _importDefaultCrit = 'Majeure';
 
   el('imp-file-input').value   = '';
   el('imp-warnings').textContent = '';
   el('pdf-note').style.display = 'none';
+  if (el('imp-default-crit')) el('imp-default-crit').value = 'Majeure';
 
   /** @type {string} */
   const targetLabel = _importTarget === 'qualimetre' ? 'Qualimètre' : 'Grille d\'audit';
@@ -333,13 +338,12 @@ function _importCSV(file) {
 /**
  * Parse un texte CSV/TSV en lignes RawImportRow (clés = en-têtes
  * bruts du document), en détectant automatiquement le séparateur.
- * Si la première ligne ne peut pas servir d'en-tête fiable (trop
- * peu de colonnes nommées détectées), des en-têtes synthétiques
- * sont générés (voir buildSyntheticHeaders, import-detect.js) afin
- * que TOUTES les lignes soient traitées comme des données — aucune
- * heuristique de mot-clé sur la 1ère colonne n'est plus nécessaire
- * ici, cette responsabilité est désormais celle de
- * detectConceptMapping (import-detect.js).
+ * Délègue à buildRawRowsFromCellRows (import-grille.js) la décision
+ * entre tableau unique et sections multi-tableaux (zone en
+ * ligne-titre) — voir sa documentation pour le détail. Si la ligne
+ * d'en-tête (ou de chaque section) ne peut pas servir d'en-tête
+ * fiable, des en-têtes synthétiques sont générés à la place (voir
+ * buildSyntheticHeaders, import-detect.js).
  * @param {string} text
  * @returns {void}
  */
@@ -354,16 +358,16 @@ function _parseCSVText(text) {
   /** @type {string[][]} */
   const cellRows = lines.map(line => line.split(separator).map(c => c.trim().replace(/^["']|["']$/g, '')));
 
-  /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean}} */
-  const { rawRows, usedHeaderRow } = _buildRawRowsWithHeaderDetection(cellRows);
+  /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean, sectionCount: number}} */
+  const { rawRows, usedHeaderRow, sectionCount } = buildRawRowsFromCellRows(cellRows);
 
   /** @type {DetectionResult} */
-  const detection = detectConceptMapping(rawRows);
+  const detection = _forceZoneMappingToDetectedColumn(detectConceptMapping(rawRows), rawRows);
   /** @type {NormalizedImportRow[]} */
   const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
 
   /** @type {string} */
-  const readMessage = `${lines.length} ligne(s) lue(s)${usedHeaderRow ? '' : ' (sans en-tête détecté)'}`;
+  const readMessage = `${lines.length} ligne(s) lue(s)${usedHeaderRow ? '' : ' (sans en-tête détecté)'}${sectionCount > 1 ? ` — ${sectionCount} zones détectées` : ''}`;
   _showImportPreview(normalized, detection, rawRows, readMessage);
 }
 
@@ -371,17 +375,29 @@ function _parseCSVText(text) {
  * Détermine si la première ligne de cellules peut servir d'en-tête
  * fiable, et produit les RawImportRow correspondants. Une ligne
  * d'en-tête est jugée fiable si, une fois utilisée comme noms de
- * colonnes, la détection de concepts y trouve à la fois 'point' ET
- * 'zone' (les deux concepts structurants minimaux d'un référentiel
- * de contrôle) — exiger les deux plutôt qu'un seul évite qu'une
- * ligne de DONNÉES dont une valeur ressemble accidentellement à un
- * nom de colonne (ex : une valeur de criticité 'Critique' matchant
- * le motif d'en-tête /criti.../ ) soit acceptée à tort comme ligne
- * d'en-tête sur la seule foi de ce concept isolé. Si le test
- * échoue, la ligne est traitée comme une ligne de données et des
- * en-têtes synthétiques sont générés à la place.
+ * colonnes, la détection de concepts y trouve 'point' ET au moins
+ * un concept secondaire parmi zone/criticite/categorie/methode/
+ * commentaire/poids — exiger 'point' + au moins un autre concept
+ * (plutôt que 'point' + 'zone' obligatoirement) plutôt qu'un seul
+ * concept isolé évite qu'une ligne de DONNÉES dont une valeur
+ * ressemble accidentellement à un nom de colonne (ex : une valeur de
+ * criticité 'Critique' matchant le motif d'en-tête /criti.../ ) soit
+ * acceptée à tort comme ligne d'en-tête sur la seule foi de ce
+ * concept isolé.
+ *
+ * Le critère a été assoupli par rapport à 'point ET zone'
+ * obligatoires : certains documents découpent la feuille en
+ * sections par zone (une ligne-titre "Zone : XXX" au-dessus de
+ * chaque mini-tableau, voir buildRawRowsFromCellRows) — leurs
+ * tableaux n'ont alors aucune colonne zone propre, uniquement
+ * 'point' + des colonnes secondaires (catégorie, méthode...). Sans
+ * cet assouplissement, ces en-têtes de section seraient à tort
+ * traités comme des lignes de données.
+ *
+ * Si le test échoue, la ligne est traitée comme une ligne de données
+ * et des en-têtes synthétiques sont générés à la place.
  * @param {string[][]} cellRows
- * @returns {{rawRows: RawImportRow[], usedHeaderRow: boolean}}
+ * @returns {{rawRows: RawImportRow[], usedHeaderRow: boolean, headerRow: string[]}}
  */
 function _buildRawRowsWithHeaderDetection(cellRows) {
   /** @type {string[]} */
@@ -391,15 +407,17 @@ function _buildRawRowsWithHeaderDetection(cellRows) {
 
   /** @type {ConceptMapping | null} */
   const tentativeMapping = rowsAssumingHeader.length ? detectConceptMapping(rowsAssumingHeader).mapping : null;
-  if (tentativeMapping && tentativeMapping.point && tentativeMapping.zone) {
-    return { rawRows: rowsAssumingHeader, usedHeaderRow: true };
+  /** @type {boolean} */
+  const hasSecondaryConcept = !!tentativeMapping && ['zone', 'criticite', 'categorie', 'methode', 'commentaire', 'poids'].some(c => tentativeMapping[c]);
+  if (tentativeMapping && tentativeMapping.point && hasSecondaryConcept) {
+    return { rawRows: rowsAssumingHeader, usedHeaderRow: true, headerRow: candidateHeaders };
   }
 
   /** @type {string[]} */
   const syntheticHeaders = buildSyntheticHeaders(candidateHeaders.length);
   /** @type {RawImportRow[]} */
   const rowsWithSyntheticHeaders = cellRows.map(cells => _zipHeadersAndCells(syntheticHeaders, cells));
-  return { rawRows: rowsWithSyntheticHeaders, usedHeaderRow: false };
+  return { rawRows: rowsWithSyntheticHeaders, usedHeaderRow: false, headerRow: syntheticHeaders };
 }
 
 /**
@@ -416,6 +434,176 @@ function _zipHeadersAndCells(headers, cells) {
   const row = {};
   headers.forEach((header, i) => { row[header] = cells[i] !== undefined ? cells[i] : ''; });
   return row;
+}
+
+/**
+ * Nom de la colonne synthétique injectée sur chaque ligne d'une
+ * section détectée (zone en ligne-titre), portant le libellé de
+ * zone de cette section. Délibérément absent de
+ * IMPORT_CONCEPT_DEFINITIONS (import-detect.js) : ce n'est pas une
+ * colonne du document d'origine, donc elle ne doit jamais entrer en
+ * compétition avec une vraie colonne 'zone' lors du scoring — elle
+ * est injectée APRÈS la détection par section, directement comme
+ * candidate prioritaire du mapping final (voir
+ * buildRawRowsFromCellRows).
+ * @type {string}
+ */
+const IMPORT_DETECTED_ZONE_COLUMN = 'Zone (détectée)';
+
+/**
+ * Point d'entrée unique pour transformer des lignes brutes de
+ * cellules (telles que lues depuis un CSV/XLSX, avant toute
+ * détection d'en-tête) en RawImportRow exploitables par
+ * detectConceptMapping puis normalizeRows.
+ *
+ * Gère deux cas, qui DOIVENT coexister sans que l'un ne nuise à
+ * l'autre (fichiers clients mixtes — certains avec zone en colonne,
+ * d'autres en ligne-titre) :
+ * - Si au moins une ligne-titre de section est détectée
+ *   (detectSectionTitleRowIndexes, import-detect.js) : la feuille
+ *   est découpée en sections indépendantes (splitRowsIntoSections),
+ *   chacune traitée comme un mini-tableau autonome par
+ *   _buildRawRowsWithHeaderDetection ; le libellé de zone de chaque
+ *   section est injecté comme valeur d'une colonne synthétique
+ *   (IMPORT_DETECTED_ZONE_COLUMN) sur toutes ses lignes, puis cette
+ *   colonne synthétique est imposée comme mapping 'zone' — elle
+ *   prime sur toute colonne 'zone' que detectConceptMapping
+ *   trouverait par ailleurs dans la section (il ne devrait
+ *   normalement pas y en avoir, mais en cas d'ambiguïté la zone
+ *   réellement écrite en ligne-titre est la source la plus fiable).
+ * - Sinon (aucune ligne-titre détectée) : comportement inchangé, un
+ *   seul tableau couvrant toute la feuille.
+ *
+ * Le fill-down (fillDownColumn, import-detect.js) est appliqué par
+ * section, sur la colonne détectée comme 'categorie' UNIQUEMENT
+ * (cas observé : catégorie en cellules visuellement fusionnées dans
+ * le document source, vides après aplatissement) — jamais sur
+ * 'zone', 'point', ou toute autre colonne, pour ne jamais propager
+ * une valeur au-delà de ce qui est explicitement constaté.
+ * @param {string[][]} cellRows
+ * @returns {{rawRows: RawImportRow[], usedHeaderRow: boolean, sectionCount: number}}
+ */
+function buildRawRowsFromCellRows(cellRows) {
+  /** @type {number[]} */
+  const titleRowIndexes = detectSectionTitleRowIndexes(cellRows);
+
+  if (titleRowIndexes.length === 0) {
+    /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean, headerRow: string[]}} */
+    const single = _buildRawRowsWithHeaderDetection(cellRows);
+    return { rawRows: single.rawRows, usedHeaderRow: single.usedHeaderRow, sectionCount: 1 };
+  }
+
+  /** @type {ImportSection[]} */
+  const sections = splitRowsIntoSections(cellRows, titleRowIndexes);
+
+  /** @type {RawImportRow[]} */
+  const allRawRows = [];
+  /** @type {boolean} */
+  let anySectionUsedHeaderRow = false;
+
+  sections.forEach(section => {
+    if (!section.rows.length) return;
+
+    /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean, headerRow: string[]}} */
+    const built = _buildRawRowsWithHeaderDetection(section.rows);
+    if (built.usedHeaderRow) anySectionUsedHeaderRow = true;
+    if (!built.rawRows.length) return;
+
+    // Fill-down sur la colonne détectée comme 'categorie' pour cette
+    // section, si elle existe — opère sur les RawImportRow déjà
+    // zippés (et non sur les CellRow bruts) car la colonne
+    // catégorie n'est identifiable qu'après détection d'en-tête,
+    // laquelle peut différer d'une section à l'autre.
+    /** @type {ConceptMapping} */
+    const sectionMapping = detectConceptMapping(built.rawRows).mapping;
+    /** @type {RawImportRow[]} */
+    let sectionRows = built.rawRows;
+    if (sectionMapping.categorie) {
+      sectionRows = _fillDownRawRowsColumn(sectionRows, sectionMapping.categorie);
+    }
+
+    // Injection du libellé de zone de la section comme colonne
+    // synthétique, sur toutes les lignes de cette section. Cette
+    // colonne est ajoutée en PREMIÈRE position des clés de chaque
+    // ligne (ordre de définition d'un objet JS) afin qu'elle soit
+    // listée en tête des en-têtes disponibles dans le bloc de
+    // mapping de la modale (UX : la zone détectée doit être visible
+    // immédiatement, pas reléguée en fin de liste).
+    sectionRows = sectionRows.map(row => Object.assign({ [IMPORT_DETECTED_ZONE_COLUMN]: section.zoneLabel }, row));
+
+    allRawRows.push(...sectionRows);
+  });
+
+  return { rawRows: allRawRows, usedHeaderRow: anySectionUsedHeaderRow, sectionCount: sections.length };
+}
+
+/**
+ * Applique fillDownColumn (import-detect.js, qui opère sur des
+ * CellRow indexées par position) à des RawImportRow déjà zippés
+ * (indexés par en-tête). Pont entre les deux représentations :
+ * convertit en CellRow selon l'ordre des en-têtes de la première
+ * ligne, applique le fill-down, reconvertit en RawImportRow.
+ * @param {RawImportRow[]} rawRows
+ * @param {string} columnHeader - En-tête de la colonne à propager.
+ * @returns {RawImportRow[]}
+ */
+function _fillDownRawRowsColumn(rawRows, columnHeader) {
+  if (!rawRows.length) return rawRows;
+  /** @type {string[]} */
+  const headers = Object.keys(rawRows[0]);
+  /** @type {number} */
+  const columnIndex = headers.indexOf(columnHeader);
+  if (columnIndex === -1) return rawRows;
+
+  /** @type {string[][]} */
+  const asCellRows = rawRows.map(row => headers.map(h => row[h]));
+  /** @type {string[][]} */
+  const filled = fillDownColumn(asCellRows, columnIndex);
+  return filled.map(cells => _zipHeadersAndCells(headers, cells));
+}
+
+/**
+ * Post-traite un DetectionResult pour garantir que, si la colonne
+ * synthétique IMPORT_DETECTED_ZONE_COLUMN est présente parmi les
+ * en-têtes (fichier avec au moins une section détectée par zone en
+ * ligne-titre), elle est TOUJOURS retenue comme mapping 'zone' —
+ * sans dépendre du score qu'elle obtiendrait sinon face à une
+ * éventuelle autre colonne candidate. La zone réellement écrite en
+ * ligne-titre dans le document est la source la plus fiable
+ * disponible pour ces sections ; elle ne doit jamais être supplantée
+ * par une heuristique de scoring sur une autre colonne.
+ *
+ * Si une autre colonne avait été assignée à 'zone' avant cet appel,
+ * elle est libérée vers `unmappedHeaders` (son contenu n'est pas
+ * perdu : il rejoint le champ `extra` via normalizeRows, comme toute
+ * colonne non mappée).
+ *
+ * Sans effet si IMPORT_DETECTED_ZONE_COLUMN est absente des
+ * en-têtes (fichier sans aucune section détectée) — la détection
+ * standard s'applique alors normalement, comportement inchangé.
+ * @param {DetectionResult} detection
+ * @param {RawImportRow[]} rawRows
+ * @returns {DetectionResult}
+ */
+function _forceZoneMappingToDetectedColumn(detection, rawRows) {
+  /** @type {string[]} */
+  const headers = rawRows.length ? Object.keys(rawRows[0]) : [];
+  if (!headers.includes(IMPORT_DETECTED_ZONE_COLUMN)) return detection;
+  if (detection.mapping.zone === IMPORT_DETECTED_ZONE_COLUMN) return detection;
+
+  /** @type {string | null} */
+  const previousZoneHeader = detection.mapping.zone;
+  detection.mapping.zone = IMPORT_DETECTED_ZONE_COLUMN;
+
+  /** @type {Set<string>} */
+  const assignedHeaders = new Set(Object.values(detection.mapping).filter(Boolean));
+  detection.unmappedHeaders = headers.filter(h => !assignedHeaders.has(h));
+
+  // previousZoneHeader rejoint naturellement unmappedHeaders ci-dessus
+  // s'il n'est repris par aucun autre concept — rien d'autre à faire.
+  void previousZoneHeader;
+
+  return detection;
 }
 
 // ── XLSX ──
@@ -448,15 +636,15 @@ async function _importXLSX(file) {
         .filter(row => row.join('').trim())
         .map(row => row.map(c => String(c)));
 
-      /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean}} */
-      const { rawRows, usedHeaderRow } = _buildRawRowsWithHeaderDetection(cellRows);
+      /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean, sectionCount: number}} */
+      const { rawRows, usedHeaderRow, sectionCount } = buildRawRowsFromCellRows(cellRows);
       /** @type {DetectionResult} */
-      const detection = detectConceptMapping(rawRows);
+      const detection = _forceZoneMappingToDetectedColumn(detectConceptMapping(rawRows), rawRows);
       /** @type {NormalizedImportRow[]} */
       const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
 
       /** @type {string} */
-      const readMessage = `${cellRows.length} ligne(s) lue(s) depuis "${workbook.SheetNames[0]}"${usedHeaderRow ? '' : ' (sans en-tête détecté)'}`;
+      const readMessage = `${cellRows.length} ligne(s) lue(s) depuis "${workbook.SheetNames[0]}"${usedHeaderRow ? '' : ' (sans en-tête détecté)'}${sectionCount > 1 ? ` — ${sectionCount} zones détectées` : ''}`;
       _showImportPreview(normalized, detection, rawRows, readMessage);
     } catch (error) {
       alert('Erreur lors de la lecture du fichier Excel : ' + error.message);
@@ -581,6 +769,11 @@ function _normalizeCrit(crit) {
  *   un intitulé non vide est requis. La zone (même absente ou
  *   inconnue) est résolue plus tard, depuis le document, par
  *   _importIntoQualimetre — jamais rejetée ici pour ce motif.
+ *
+ * La criticité non déterminée depuis le document (colonne absente
+ * ou valeur non reconnue) retombe sur _importDefaultCrit plutôt que
+ * sur une valeur fixe — réglable par l'utilisateur dans la modale
+ * (voir _onDefaultCritChanged) avant confirmation de l'import.
  * @param {NormalizedImportRow[]} normalizedRows - Lignes déjà routées par normalizeRows (import-normalize.js) selon le mapping détecté.
  * @param {DetectionResult | null} detection - Résultat de detectConceptMapping (import-detect.js) ; null si rawRows est vide (aucun fichier exploitable).
  * @param {RawImportRow[]} rawRows - Lignes brutes d'origine, conservées pour permettre un nouveau passage de normalizeRows si l'utilisateur corrige le mapping.
@@ -605,7 +798,7 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
     /** @type {string | null} */
     const normalizedRayon = _normalizeRayon(row.rayon);
     /** @type {GrilleCriticite} */
-    const normalizedCrit  = _normalizeCrit(row.crit) || 'Majeure';
+    const normalizedCrit  = _normalizeCrit(row.crit) || _importDefaultCrit;
     /** @type {number} */
     const poids           = parseInt(row.poids) || IMPORT_DEFAULT_POIDS[normalizedCrit];
 
@@ -738,6 +931,26 @@ function _onMappingConceptChanged(concept, newHeader) {
   /** @type {Set<string>} */
   const assignedHeaders = new Set(Object.values(_importDetection.mapping).filter(Boolean));
   _importDetection.unmappedHeaders = allHeaders.filter(h => !assignedHeaders.has(h));
+
+  /** @type {NormalizedImportRow[]} */
+  const normalized = normalizeRows(_importRawRows, _importDetection.mapping, _importDetection.unmappedHeaders);
+  _showImportPreview(normalized, _importDetection, _importRawRows, el('imp-preview-title').textContent.replace('Aperçu — ', ''));
+}
+
+/**
+ * Appelée depuis le sélecteur de criticité par défaut de la modale
+ * d'import lorsque l'utilisateur change la valeur de repli appliquée
+ * aux lignes sans criticité déterminable depuis le document. Met à
+ * jour l'état puis, si un fichier est déjà chargé, rejoue
+ * normalizeRows + _showImportPreview SANS re-scanner le fichier
+ * (même logique que _onMappingConceptChanged) : seule la criticité
+ * de repli change, jamais le mapping ni les données brutes.
+ * @param {GrilleCriticite} newDefaultCrit
+ * @returns {void}
+ */
+function _onDefaultCritChanged(newDefaultCrit) {
+  _importDefaultCrit = newDefaultCrit;
+  if (!_importDetection || !_importRawRows.length) return;
 
   /** @type {NormalizedImportRow[]} */
   const normalized = normalizeRows(_importRawRows, _importDetection.mapping, _importDetection.unmappedHeaders);
@@ -891,15 +1104,18 @@ function _findExistingZoneIdByLabel(normalizedLabel, storeId) {
 
 /**
  * Vérifie si un id de zone est déjà utilisé (QM_ZONES,
- * qualimetreGlobal, ou qualimetreCustom[storeId]).
+ * qualimetreGlobal, qualimetreCustom[storeId], ou les zones déjà
+ * résolues plus tôt dans l'import en cours — voir sessionZoneIds).
  * @param {string} zoneId
  * @param {string} storeId
+ * @param {Map<string, string> | null} [sessionZoneIds] - Zones déjà créées/résolues plus tôt dans l'import en cours (clé = libellé normalisé, valeur = id), voir _resolveOrCreateZoneFromDocument.
  * @returns {boolean}
  */
-function _isZoneIdTaken(zoneId, storeId) {
+function _isZoneIdTaken(zoneId, storeId, sessionZoneIds) {
   if (QM_ZONES.some(z => z.id === zoneId)) return true;
   if (DB.qualimetreGlobal && Object.prototype.hasOwnProperty.call(DB.qualimetreGlobal, zoneId)) return true;
   if (storeId && DB.qualimetreCustom?.[storeId] && Object.prototype.hasOwnProperty.call(DB.qualimetreCustom[storeId], zoneId)) return true;
+  if (sessionZoneIds && [...sessionZoneIds.values()].includes(zoneId)) return true;
   return false;
 }
 
@@ -911,37 +1127,69 @@ function _isZoneIdTaken(zoneId, storeId) {
  *    "Non classé" (jamais devinée, jamais rattachée à une autre
  *    zone du fichier).
  * 2. Si une zone existante (QM_ZONES, qualimetreGlobal,
- *    qualimetreCustom[storeId]) porte exactement ce libellé
- *    (normalisé), elle est réutilisée — ceci évite uniquement les
- *    doublons, ce n'est pas un mapping métier.
+ *    qualimetreCustom[storeId], OU une zone déjà résolue plus tôt
+ *    dans CET import — voir sessionZoneIds) porte exactement ce
+ *    libellé (normalisé), elle est réutilisée — ceci évite
+ *    uniquement les doublons, ce n'est pas un mapping métier.
  * 3. Sinon, un nouvel id est généré depuis le libellé du document
  *    (slug déterministe). En cas de collision d'id déjà utilisé,
  *    un suffixe numérique déterministe est ajouté.
+ *
+ * ⚠️ sessionZoneIds (clé = libellé normalisé via _normalizeZoneLabel,
+ * valeur = id résolu) DOIT être fourni et réutilisé (même objet Map)
+ * par l'appelant à travers tout un même import, et mis à jour après
+ * chaque appel avec le résultat retourné — sinon deux lignes
+ * consécutives portant le MÊME libellé de zone, encore absent de la
+ * base au moment du premier appel, seraient chacune traitées comme
+ * "nouvelle zone" et recevraient des ids différents
+ * (zone-1, zone-2, zone-3...) au lieu d'être regroupées sous un seul
+ * id — la persistance en base ne se produit qu'à la fin de la
+ * boucle d'import (save()), donc consulter uniquement QM_ZONES/
+ * qualimetreGlobal/qualimetreCustom ne suffit pas à détecter les
+ * zones que l'import est en train de créer lui-même.
  * @param {string} rawZoneLabel - Valeur brute de la colonne zone, telle qu'écrite dans le document (ImportParsedRow.rayonRaw).
  * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * @param {Map<string, string> | null} [sessionZoneIds] - Zones déjà résolues plus tôt dans le même import (voir avertissement ci-dessus). Optionnel pour compatibilité ; en son absence, le comportement retombe sur l'ancienne logique (déduplication uniquement contre l'état déjà persisté).
  * @returns {ResolvedZone}
  */
-function _resolveOrCreateZoneFromDocument(rawZoneLabel, storeId) {
+function _resolveOrCreateZoneFromDocument(rawZoneLabel, storeId, sessionZoneIds) {
   /** @type {string} */
   const trimmed = (rawZoneLabel || '').trim().replace(/\s+/g, ' ');
 
   if (!trimmed) {
     /** @type {string} */
     const normalizedUnclassified = _normalizeZoneLabel(IMPORT_UNCLASSIFIED_ZONE_LABEL);
+
+    if (sessionZoneIds && sessionZoneIds.has(normalizedUnclassified)) {
+      return { id: sessionZoneIds.get(normalizedUnclassified), reused: true, isUnclassified: true };
+    }
+
     /** @type {string | null} */
     const existingUnclassified = _findExistingZoneIdByLabel(normalizedUnclassified, storeId);
-    if (existingUnclassified) return { id: existingUnclassified, reused: true, isUnclassified: true };
+    if (existingUnclassified) {
+      if (sessionZoneIds) sessionZoneIds.set(normalizedUnclassified, existingUnclassified);
+      return { id: existingUnclassified, reused: true, isUnclassified: true };
+    }
 
     /** @type {string} */
     const unclassifiedId = _slugifyZoneLabel(IMPORT_UNCLASSIFIED_ZONE_LABEL);
+    if (sessionZoneIds) sessionZoneIds.set(normalizedUnclassified, unclassifiedId);
     return { id: unclassifiedId, reused: false, isUnclassified: true };
   }
 
   /** @type {string} */
   const normalizedLabel = _normalizeZoneLabel(trimmed);
+
+  if (sessionZoneIds && sessionZoneIds.has(normalizedLabel)) {
+    return { id: sessionZoneIds.get(normalizedLabel), reused: true, isUnclassified: false };
+  }
+
   /** @type {string | null} */
   const existingId = _findExistingZoneIdByLabel(normalizedLabel, storeId);
-  if (existingId) return { id: existingId, reused: true, isUnclassified: false };
+  if (existingId) {
+    if (sessionZoneIds) sessionZoneIds.set(normalizedLabel, existingId);
+    return { id: existingId, reused: true, isUnclassified: false };
+  }
 
   /** @type {string} */
   const baseSlug = _slugifyZoneLabel(trimmed);
@@ -949,11 +1197,12 @@ function _resolveOrCreateZoneFromDocument(rawZoneLabel, storeId) {
   let candidateId = baseSlug;
   /** @type {number} */
   let suffix = 2;
-  while (_isZoneIdTaken(candidateId, storeId)) {
+  while (_isZoneIdTaken(candidateId, storeId, sessionZoneIds)) {
     candidateId = `${baseSlug}-${suffix}`;
     suffix++;
   }
 
+  if (sessionZoneIds) sessionZoneIds.set(normalizedLabel, candidateId);
   return { id: candidateId, reused: false, isUnclassified: false };
 }
 
@@ -963,6 +1212,15 @@ function _resolveOrCreateZoneFromDocument(rawZoneLabel, storeId) {
  * cible de chaque ligne est résolue depuis la valeur brute de zone
  * du document (voir _resolveOrCreateZoneFromDocument) — jamais
  * depuis une liste de rayons FSQS ni un mapping métier figé.
+ *
+ * ⚠️ CORRIGÉ : une même Map `sessionZoneIds` est créée ici et
+ * réutilisée pour TOUTES les lignes de cet import (voir
+ * l'avertissement dans la documentation de
+ * _resolveOrCreateZoneFromDocument) — sans elle, chaque ligne d'une
+ * zone nouvellement créée par ce même import recevait un id
+ * différent (la zone n'étant pas encore persistée en base au moment
+ * de résoudre la ligne suivante), fragmentant à tort une seule zone
+ * du document en autant de zones que de lignes.
  * @param {ImportParsedRow[]} rows
  * @returns {void}
  */
@@ -981,10 +1239,12 @@ function _importIntoQualimetre(rows) {
   const zonesReused = new Set();
   /** @type {Set<string>} Zones nouvellement créées par cet import (peuvent regrouper plusieurs lignes du document). */
   const zonesCreated = new Set();
+  /** @type {Map<string, string>} Voir avertissement ci-dessus : clé = libellé normalisé, valeur = id résolu, alimentée et consultée au fil de cette boucle. */
+  const sessionZoneIds = new Map();
 
   rows.forEach(row => {
     /** @type {ResolvedZone} */
-    const zone = _resolveOrCreateZoneFromDocument(row.rayonRaw, storeId);
+    const zone = _resolveOrCreateZoneFromDocument(row.rayonRaw, storeId, sessionZoneIds);
 
     if (zone.isUnclassified) unclassifiedCount++;
 

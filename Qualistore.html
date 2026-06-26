@@ -795,6 +795,16 @@
         <span style="color:#15803d">Exemple : <code style="background:#fff;padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
       </div>
 
+      <!-- Criticité par défaut -->
+      <div class="form-group">
+        <label class="form-label">Criticité par défaut <span style="color:var(--text2);font-size:11px">(appliquée aux lignes sans criticité reconnue dans le fichier)</span></label>
+        <select class="form-control" id="imp-default-crit" onchange="_onDefaultCritChanged(this.value)">
+          <option value="Mineure">Mineure</option>
+          <option value="Majeure" selected>Majeure</option>
+          <option value="Critique">Critique</option>
+        </select>
+      </div>
+
       <!-- Drop zone -->
       <div id="imp-drop" style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:32px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--bg)"
         ondragover="event.preventDefault();this.style.borderColor='var(--primary-mid)';this.style.background='var(--primary-light)'"
@@ -1001,6 +1011,15 @@
         <label class="form-label">Appliquer à</label>
         <select class="form-control" id="gqi-mag-sel" onchange="_gqRenderImportPreview()">
           <option value="">— Tous les magasins (global) —</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Criticité par défaut <span style="color:var(--text2);font-size:11px">(appliquée aux lignes sans criticité reconnue dans le fichier)</span></label>
+        <select class="form-control" id="gqi-default-crit" onchange="_onGqDefaultCritChanged(this.value)">
+          <option value="Mineure">Mineure</option>
+          <option value="Majeure" selected>Majeure</option>
+          <option value="Critique">Critique</option>
         </select>
       </div>
 

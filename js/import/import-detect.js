@@ -154,16 +154,16 @@ const IMPORT_CONCEPT_DEFINITIONS = [
   {
     concept: 'point',
     headerPatterns: [
-      /^(point de contr[oô]le|point|intitul[eé]|question|verification|vérification)$/,
-      /point.*contr[oô]le|^point$|intitul[eé]|question|verif|vérif|contr[oô]le|libell[eé]|description du point/,
+      /^(point de contr[oô]le|point|intitul[eé]|question|verification|vérification|item|[eé]l[eé]ment)$/,
+      /point.*contr[oô]le|^point$|intitul[eé]|question|verif|vérif|contr[oô]le|libell[eé]|description du point|^item$|[eé]l[eé]ment/,
     ],
     contentScorer: null, // texte libre, pas de pattern de contenu fiable
   },
   {
     concept: 'methode',
     headerPatterns: [
-      /^(m[eé]thode|m[eé]thode de v[eé]rification|indication|modalit[eé])$/,
-      /m[eé]thode|indication|modalit[eé]|comment v[eé]rifier|protocole/,
+      /^(m[eé]thode|m[eé]thode de v[eé]rification|indication|modalit[eé]|pr[eé]cisions?)$/,
+      /m[eé]thode|indication|modalit[eé]|comment v[eé]rifier|protocole|pr[eé]cisions?/,
     ],
     contentScorer: null,
   },
@@ -178,16 +178,16 @@ const IMPORT_CONCEPT_DEFINITIONS = [
   {
     concept: 'commentaire',
     headerPatterns: [
-      /^(commentaire|remarque|note|observation|pr[eé]cision)$/,
-      /comment|remarque|note|observ|pr[eé]cision|detail|détail/,
+      /^(commentaire|remarque|note|observation)$/,
+      /comment|remarque|note|observ|detail|détail/,
     ],
     contentScorer: null,
   },
   {
     concept: 'categorie',
     headerPatterns: [
-      /^(cat[eé]gorie|sous-?cat[eé]gorie|famille|sous-?zone)$/,
-      /cat[eé]gorie|famille|sous-?zone|sous-?rayon/,
+      /^(cat[eé]gorie|sous-?cat[eé]gorie|famille|sous-?zone|th[eè]me)$/,
+      /cat[eé]gorie|famille|sous-?zone|sous-?rayon|th[eè]me/,
     ],
     contentScorer: null,
   },
@@ -412,4 +412,189 @@ function buildSyntheticHeaders(columnCount) {
   const headers = [];
   for (let i = 0; i < columnCount; i++) headers.push(`Colonne ${i + 1}`);
   return headers;
+}
+
+// ─────────────────────────────────────────────
+// 5. ZONE EN LIGNE-TITRE (sections multi-tableaux dans une feuille)
+//
+// Certains fichiers clients ne mettent pas la zone dans une colonne
+// dédiée : ils répètent un mini-tableau complet (en-tête + lignes)
+// par zone, précédé d'une ligne-titre du type "Zone : STOCKAGE" qui
+// occupe seule la première colonne. Ce bloc détecte ces lignes-titre
+// et découpe la feuille en sections indépendantes, chacune retraitée
+// comme un tableau autonome par le reste du pipeline (voir
+// buildRawRowsFromCellRows, import-grille.js).
+//
+// ⚠️ Ne remplace jamais la détection "zone en colonne" existante :
+// les deux mécanismes coexistent. Un fichier sans aucune ligne-titre
+// détectée traverse ce bloc sans aucun effet (une seule section
+// couvrant tout le tableau).
+// ─────────────────────────────────────────────
+
+/**
+ * Ligne brute de cellules, indexée par position de colonne (avant
+ * toute détection d'en-tête), telle que produite par un lecteur
+ * CSV/XLSX. Distincte de RawImportRow (qui est déjà indexée par
+ * en-tête de colonne) : ce typedef représente un niveau de
+ * représentation plus bas, nécessaire pour repérer les lignes-titre
+ * avant même de savoir où se trouve la ligne d'en-tête.
+ * @typedef {string[]} CellRow
+ */
+
+/**
+ * Motifs reconnaissant un préfixe de ligne-titre de section
+ * (zone donnée en ligne plutôt qu'en colonne). Volontairement
+ * extensible : ajouter un synonyme observé chez un client = ajouter
+ * une entrée à cette liste.
+ * @type {RegExp[]}
+ */
+const IMPORT_SECTION_TITLE_PATTERNS = [
+  /^zone\s*:/i,
+  /^secteur\s*:/i,
+  /^rayon\s*:/i,
+];
+
+/**
+ * Détecte les index de lignes-titre de section dans des lignes
+ * brutes de cellules. Deux niveaux de signal :
+ * - signal FORT : la colonne A porte un préfixe reconnu
+ *   (IMPORT_SECTION_TITLE_PATTERNS) et c'est la seule valeur non
+ *   vide de la ligne.
+ * - signal FAIBLE : la colonne A est la seule valeur non vide de la
+ *   ligne, mais sans préfixe reconnu (ex : "COMMUN" seul). Ce signal
+ *   n'est retenu que si au moins un signal FORT existe déjà ailleurs
+ *   dans le fichier — sans cela, une ligne de donnée isolée (case
+ *   vide à droite par accident de saisie) serait prise à tort pour
+ *   un titre de section. La présence d'au moins une zone préfixée
+ *   confirme que le fichier suit bien ce schéma de mise en page.
+ * @param {CellRow[]} cellRows
+ * @returns {number[]} Index (dans cellRows) des lignes-titre détectées, triés par ordre croissant.
+ */
+function detectSectionTitleRowIndexes(cellRows) {
+  /** @type {number[]} */
+  const strongIndexes = [];
+  /** @type {number[]} */
+  const weakIndexes = [];
+
+  cellRows.forEach((row, index) => {
+    /** @type {string} */
+    const first = String(row[0] || '').trim();
+    if (!first) return;
+
+    /** @type {boolean} */
+    const restEmpty = row.slice(1).every(cell => !String(cell || '').trim());
+    if (!restEmpty) return;
+
+    /** @type {boolean} */
+    const hasRecognizedPrefix = IMPORT_SECTION_TITLE_PATTERNS.some(p => p.test(first));
+    if (hasRecognizedPrefix) {
+      strongIndexes.push(index);
+    } else {
+      weakIndexes.push(index);
+    }
+  });
+
+  if (strongIndexes.length === 0) {
+    // Aucun signal fort dans tout le fichier : on ne retient aucun
+    // signal faible, pour ne jamais prendre une ligne de donnée
+    // isolée pour un titre de section (voir doc ci-dessus).
+    return [];
+  }
+
+  return strongIndexes.concat(weakIndexes).sort((a, b) => a - b);
+}
+
+/**
+ * Extrait le libellé de zone à partir du texte brut d'une
+ * ligne-titre de section. Retire le préfixe reconnu s'il y en a un
+ * ("Zone : STOCKAGE / ATELIER" -> "STOCKAGE / ATELIER") ; renvoie le
+ * texte tel quel (trim) si aucun préfixe ne correspond (cas du
+ * signal faible, ex : "COMMUN" -> "COMMUN").
+ * @param {string} rawTitle
+ * @returns {string}
+ */
+function extractZoneLabelFromSectionTitle(rawTitle) {
+  /** @type {string} */
+  const trimmed = String(rawTitle || '').trim();
+  for (const pattern of IMPORT_SECTION_TITLE_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return trimmed.replace(pattern, '').trim();
+    }
+  }
+  return trimmed;
+}
+
+/**
+ * Une section issue du découpage d'une feuille multi-tableaux : le
+ * libellé de zone porté par sa ligne-titre, et les lignes de
+ * contenu qui la suivent jusqu'à la prochaine ligne-titre (ou la fin
+ * du fichier). Les lignes de contenu incluent la ligne d'en-tête
+ * propre à cette section (ex : "Thème | Item | ...") — c'est au
+ * reste du pipeline (détection d'en-tête existante) de la repérer,
+ * exactement comme pour un tableau simple.
+ * @typedef {Object} ImportSection
+ * @property {string} zoneLabel
+ * @property {CellRow[]} rows
+ */
+
+/**
+ * Découpe des lignes brutes de cellules en sections indépendantes,
+ * à partir des index de lignes-titre déjà détectés
+ * (detectSectionTitleRowIndexes). Les lignes précédant la première
+ * ligne-titre (en-têtes de document, lignes vides...) sont ignorées
+ * pour cette découpe : elles ne forment jamais de section et seront
+ * naturellement écartées par la détection d'en-tête existante si
+ * elles ne contiennent rien d'exploitable.
+ * @param {CellRow[]} cellRows
+ * @param {number[]} titleRowIndexes - Doit être trié par ordre croissant (voir detectSectionTitleRowIndexes).
+ * @returns {ImportSection[]}
+ */
+function splitRowsIntoSections(cellRows, titleRowIndexes) {
+  /** @type {ImportSection[]} */
+  const sections = [];
+
+  titleRowIndexes.forEach((titleIndex, i) => {
+    /** @type {number} */
+    const nextTitleIndex = i + 1 < titleRowIndexes.length ? titleRowIndexes[i + 1] : cellRows.length;
+    /** @type {string} */
+    const zoneLabel = extractZoneLabelFromSectionTitle(cellRows[titleIndex][0]);
+    /** @type {CellRow[]} */
+    const rows = cellRows.slice(titleIndex + 1, nextTitleIndex);
+    sections.push({ zoneLabel, rows });
+  });
+
+  return sections;
+}
+
+/**
+ * Applique un "fill-down" sur une colonne : toute cellule vide
+ * reçoit la dernière valeur non vide rencontrée au-dessus d'elle
+ * dans la même colonne. Reproduit l'effet visuel d'une fusion de
+ * cellules Excel (la valeur "semble" couvrir plusieurs lignes alors
+ * qu'elle n'est réellement présente que sur la première), qui
+ * disparaît après aplatissement en lignes/colonnes simples.
+ *
+ * Ne modifie jamais les lignes en place : renvoie un nouveau
+ * tableau. Une cellule vide en tout début de colonne (aucune valeur
+ * au-dessus à propager) reste vide — jamais de valeur inventée.
+ * @param {CellRow[]} cellRows
+ * @param {number} columnIndex
+ * @returns {CellRow[]}
+ */
+function fillDownColumn(cellRows, columnIndex) {
+  /** @type {string} */
+  let lastValue = '';
+  return cellRows.map(row => {
+    /** @type {string} */
+    const current = String(row[columnIndex] || '').trim();
+    if (current) {
+      lastValue = current;
+      return row;
+    }
+    if (!lastValue) return row; // rien à propager encore, on laisse vide
+    /** @type {CellRow} */
+    const filled = row.slice();
+    filled[columnIndex] = lastValue;
+    return filled;
+  });
 }

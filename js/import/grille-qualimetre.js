@@ -139,6 +139,9 @@ let _gqDetection = null;
  */
 let _gqZoneReplaceFlags = {};
 
+/** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue) — réglable par l'utilisateur dans la modale avant import, voir _onGqDefaultCritChanged. Remplace l'ancien fallback fixe 'Majeure' appliqué dans _gqNormalizeCrit. */
+let _gqDefaultCrit = 'Majeure';
+
 // ─────────────────────────────────────────────
 // 3. ACCÈS AUX POINTS — source de vérité unique
 // Priorité : personnalisation magasin > grille globale > vide
@@ -752,8 +755,10 @@ function openGqImportModal() {
   _gqRawRows    = [];
   _gqDetection  = null;
   _gqZoneReplaceFlags = {};
+  _gqDefaultCrit = 'Majeure';
   el('gq-import-preview').innerHTML = '';
   el('gq-import-err').classList.remove('show');
+  if (el('gqi-default-crit')) el('gqi-default-crit').value = 'Majeure';
 
   const magSelect = el('gqi-mag-sel');
   if (magSelect) {
@@ -800,7 +805,19 @@ function handleGqImportFile(input) {
         /** @type {Object} Classeur XLSX (librairie SheetJS, non typée en détail). */
         const workbook  = XLSX.read(event.target.result, { type: 'array' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        _gqParseCSV(XLSX.utils.sheet_to_csv(worksheet, { FS: ';' }));
+        // ⚠️ CORRIGÉ : sheet_to_json({header:1}) donne les cellules
+        // brutes directement, sans jamais repasser par du texte CSV
+        // intermédiaire (contrairement à l'ancien sheet_to_csv +
+        // _gqParseCSV) — une cellule contenant un saut de ligne
+        // interne (légal en XLSX) ne casse donc plus le découpage en
+        // lignes logiques. Même approche que _importXLSX
+        // (import-grille.js, FSQS), pour cohérence entre les deux
+        // moteurs.
+        /** @type {string[][]} */
+        const cellRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
+          .filter(row => row.join('').trim())
+          .map(row => row.map(c => String(c)));
+        _gqParseCellRows(cellRows);
       };
       reader.readAsArrayBuffer(file);
     });
@@ -854,20 +871,38 @@ function _gqLoadPDFJS(callback) {
  * la logique partagée entre _gqParseCSV (1er parsing) et
  * _onGqMappingConceptChanged (rejeu après correction manuelle du
  * mapping).
+ *
+ * ⚠️ CORRIGÉ : le filtre "ligne de titre de zone" (criticité ET
+ * poids vides) ne s'applique désormais QUE si le document possède
+ * réellement une colonne mappée à 'criticite' OU 'poids` (paramètre
+ * `mapping`). Sans cette condition, un document qui n'a tout
+ * simplement AUCUNE de ces deux colonnes (cas réel observé : relevé
+ * d'audit C/NC sans référentiel de criticité) verrait TOUTES ses
+ * lignes filtrées à tort, puisque crit/poids y sont alors
+ * systématiquement vides pour des raisons n'ayant rien à voir avec
+ * une ligne-titre. Quand aucune des deux colonnes n'existe, la
+ * criticité retombe sur _gqDefaultCrit pour chaque ligne (voir
+ * _gqNormalizeCrit) — jamais sur un filtrage de la ligne elle-même.
  * @param {NormalizedImportRow[]} normalized
+ * @param {ConceptMapping | null} [mapping] - Mapping détecté pour ce document ; utilisé uniquement pour savoir si le filtre "ligne de titre" est pertinent ici (voir avertissement ci-dessus). Si absent (compatibilité), le filtre s'applique comme avant.
  * @returns {GqParsedRow[]}
  */
-function _buildGqParsedRows(normalized) {
+function _buildGqParsedRows(normalized, mapping) {
+  /** @type {boolean} */
+  const hasCritOrPoidsColumn = !mapping || !!mapping.criticite || !!mapping.poids;
+
   /** @type {GqParsedRow[]} */
   const rows = [];
   normalized.forEach(row => {
     if (!row.q.trim()) return;
 
     // Ignorer les lignes de titre de zone (criticité et poids vides)
-    if (!row.crit && !row.poids) return;
+    // — seulement pertinent si le document a une de ces colonnes ;
+    // voir avertissement ci-dessus.
+    if (hasCritOrPoidsColumn && !row.crit && !row.poids) return;
 
     /** @type {GrilleCriticite} */
-    const crit  = _gqNormalizeCrit(row.crit || 'Majeure');
+    const crit  = _gqNormalizeCrit(row.crit) || _gqDefaultCrit;
     /** @type {number} */
     const poids = parseInt(row.poids) || GQ_DEFAULT_POIDS[crit];
     /** @type {ResolvedZone} */
@@ -908,21 +943,22 @@ function _gqInitZoneReplaceFlags(rows) {
 }
 
 /**
- * Parse un contenu CSV/TSV en lignes RawImportRow (clés = en-têtes
- * bruts du document), détecte les concepts métier (zone, point,
- * criticité, méthode, commentaire) via detectConceptMapping
- * (import-detect.js), normalise via normalizeRows
- * (import-normalize.js), puis résout chaque zone via
- * _resolveOrCreateZoneFromDocument (import-grille.js — partagée
- * avec l'import de grille FSQS, jamais de zone par défaut devinée).
- * Les quasi-doublons sont signalés (voir findDuplicateRows,
- * import-normalize.js) sans jamais être exclus automatiquement.
+ * Parse un contenu CSV/TSV en lignes RawImportRow puis délègue à
+ * _gqParseCellRows. Simple adaptateur texte -> cellRows (découpage
+ * par séparateur détecté automatiquement) ; toute la logique de
+ * détection/normalisation/résolution vit dans _gqParseCellRows (voir
+ * sa documentation), partagée avec le chemin XLSX (handleGqImportFile)
+ * qui fournit ses cellRows directement depuis SheetJS sans jamais
+ * repasser par du texte CSV intermédiaire.
  *
- * Les lignes de "titre de zone" (sans criticité ni poids — motif
- * fréquent dans les exports où une ligne ne fait que regrouper
- * visuellement une section) sont toujours ignorées, comme dans la
- * version précédente de ce fichier.
- * @param {string} text - Contenu texte brut du fichier.
+ * ⚠️ Limite connue (préexistante, non corrigée ici) : ce découpage
+ * texte simple (split sur retour à la ligne) ne respecte pas les
+ * guillemets RFC 4180 — une cellule CSV contenant elle-même un saut
+ * de ligne (légal si entourée de guillemets) casserait le découpage
+ * en lignes logiques. Le chemin XLSX n'a pas cette limite (cellRows
+ * obtenus directement depuis les cellules du classeur, jamais via
+ * une sérialisation texte) — voir handleGqImportFile.
+ * @param {string} text - Contenu texte brut du fichier (CSV/TSV/TXT).
  * @returns {void}
  */
 function _gqParseCSV(text) {
@@ -935,16 +971,56 @@ function _gqParseCSV(text) {
   /** @type {string[][]} */
   const cellRows = lines.map(line => line.split(separator).map(c => c.trim().replace(/^["']|["']$/g, '')));
 
-  /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean}} */
-  const { rawRows } = _buildRawRowsWithHeaderDetection(cellRows);
+  _gqParseCellRows(cellRows);
+}
+
+/**
+ * Cœur du parsing Qualimètre, partagé entre le chemin CSV/TSV/TXT
+ * (_gqParseCSV, après découpage texte -> cellRows) et le chemin XLSX
+ * (handleGqImportFile, cellRows obtenus directement depuis SheetJS
+ * via sheet_to_json — jamais via sheet_to_csv + re-découpage texte,
+ * pour ne jamais casser sur une cellule contenant un saut de ligne).
+ *
+ * Détecte les concepts métier (zone, point, criticité, méthode,
+ * commentaire) via detectConceptMapping (import-detect.js), normalise
+ * via normalizeRows (import-normalize.js), puis résout chaque zone
+ * via _resolveOrCreateZoneFromDocument (import-grille.js — partagée
+ * avec l'import de grille FSQS, jamais de zone par défaut devinée).
+ * Les quasi-doublons sont signalés (voir findDuplicateRows,
+ * import-normalize.js) sans jamais être exclus automatiquement.
+ *
+ * Branché sur buildRawRowsFromCellRows (import-grille.js) : gère
+ * aussi les documents où la zone est donnée en ligne-titre plutôt
+ * qu'en colonne (sections multi-tableaux, voir sa documentation) —
+ * exactement comme pour l'import de grille FSQS. Les deux mécanismes
+ * (zone en colonne, zone en ligne-titre) coexistent ; un document
+ * sans aucune ligne-titre détectée traverse ce branchement sans
+ * aucun effet. La colonne synthétique de zone détectée par section
+ * est imposée comme mapping 'zone' via
+ * _forceZoneMappingToDetectedColumn (import-grille.js), même logique
+ * que pour l'import FSQS.
+ *
+ * Les lignes de "titre de zone" embarquées dans un tableau à zone en
+ * colonne (motif fréquent dans les exports où une ligne ne fait que
+ * regrouper visuellement une section, sans rapport avec les sections
+ * détectées ci-dessus) sont ignorées UNIQUEMENT si le document
+ * possède une colonne criticité ou poids (voir _buildGqParsedRows)
+ * — sinon ce filtre supprimerait à tort toutes les lignes d'un
+ * document qui n'a simplement aucune de ces deux colonnes.
+ * @param {string[][]} cellRows - Lignes brutes de cellules, déjà découpées par colonne (peu importe la source : texte CSV découpé, ou cellules XLSX natives).
+ * @returns {void}
+ */
+function _gqParseCellRows(cellRows) {
+  /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean, sectionCount: number}} */
+  const { rawRows } = buildRawRowsFromCellRows(cellRows);
 
   /** @type {DetectionResult} */
-  const detection = detectConceptMapping(rawRows);
+  const detection = _forceZoneMappingToDetectedColumn(detectConceptMapping(rawRows), rawRows);
   /** @type {NormalizedImportRow[]} */
   const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
 
   /** @type {GqParsedRow[]} */
-  const rows = _buildGqParsedRows(normalized);
+  const rows = _buildGqParsedRows(normalized, detection.mapping);
 
   if (!rows.length) { _gqImportErr('Aucune ligne valide trouvée.'); return; }
   _gqRawRows   = rawRows;
@@ -977,16 +1053,24 @@ async function _gqParsePDF(file) {
 /**
  * Normalise une valeur de criticité brute en une des 3 valeurs
  * connues, par détection de sous-chaîne (insensible à la casse).
- * Retombe sur 'Majeure' si aucune correspondance.
+ *
+ * ⚠️ CHANGÉ : retourne désormais `null` si la valeur brute est vide
+ * ou non reconnue, au lieu de retomber silencieusement sur
+ * 'Majeure' — le fallback est maintenant la responsabilité de
+ * l'appelant via _gqDefaultCrit (réglable par l'utilisateur, voir
+ * _onGqDefaultCritChanged), pas de cette fonction de normalisation
+ * pure.
  * @param {string} raw
- * @returns {GrilleCriticite}
+ * @returns {GrilleCriticite | null}
  */
 function _gqNormalizeCrit(raw) {
   /** @type {string} */
   const normalized = (raw || '').toLowerCase().trim();
+  if (!normalized) return null;
   if (normalized.includes('crit')) return 'Critique';
   if (normalized.includes('min'))  return 'Mineure';
-  return 'Majeure';
+  if (normalized.includes('maj'))  return 'Majeure';
+  return null;
 }
 
 /**
@@ -1150,7 +1234,29 @@ function _onGqMappingConceptChanged(concept, newHeader) {
   /** @type {NormalizedImportRow[]} */
   const normalized = normalizeRows(_gqRawRows, _gqDetection.mapping, _gqDetection.unmappedHeaders);
 
-  _gqImportData = _buildGqParsedRows(normalized);
+  _gqImportData = _buildGqParsedRows(normalized, _gqDetection.mapping);
+  _gqRenderImportPreview();
+}
+
+/**
+ * Appelée depuis le sélecteur de criticité par défaut de la modale
+ * d'import Qualimètre lorsque l'utilisateur change la valeur de
+ * repli appliquée aux lignes sans criticité déterminable depuis le
+ * document. Met à jour l'état puis, si un fichier est déjà chargé,
+ * rejoue _buildGqParsedRows SANS re-scanner le fichier (même logique
+ * que _onGqMappingConceptChanged) : seule la criticité de repli
+ * change, jamais le mapping ni les données brutes. Équivalent
+ * Qualimètre de _onDefaultCritChanged (import-grille.js).
+ * @param {GrilleCriticite} newDefaultCrit
+ * @returns {void}
+ */
+function _onGqDefaultCritChanged(newDefaultCrit) {
+  _gqDefaultCrit = newDefaultCrit;
+  if (!_gqDetection || !_gqRawRows.length) return;
+
+  /** @type {NormalizedImportRow[]} */
+  const normalized = normalizeRows(_gqRawRows, _gqDetection.mapping, _gqDetection.unmappedHeaders);
+  _gqImportData = _buildGqParsedRows(normalized, _gqDetection.mapping);
   _gqRenderImportPreview();
 }
 
