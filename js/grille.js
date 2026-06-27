@@ -193,10 +193,17 @@ function _onGrilleEnseigneChanged() {
 function showGrilleCardsView() {
   _currentGrilleRayon = '';
 
-  if (el('grille-enseigne-sel') && !el('grille-enseigne-sel').options.length) {
-    el('grille-enseigne-sel').innerHTML = '<option value="">Sélectionner une enseigne...</option>' +
+  /** @type {HTMLSelectElement | null} */
+  const enseigneSelect = el('grille-enseigne-sel');
+  if (enseigneSelect) {
+    /** @type {string} */
+    const currentValue = enseigneSelect.value;
+    enseigneSelect.innerHTML = '<option value="">Sélectionner une enseigne...</option>' +
       getKnownEnseignes().map(e => `<option value="${_escapeHtmlAttr(e)}">${e}</option>`).join('') +
       '<option value="__sans_enseigne__">— Sans enseigne —</option>';
+    if (currentValue && [...enseigneSelect.options].some(o => o.value === currentValue)) {
+      enseigneSelect.value = currentValue;
+    }
   }
 
   /** @type {string} */
