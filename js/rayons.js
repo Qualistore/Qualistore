@@ -334,10 +334,31 @@ const IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE = 'Non classé';
  * @param {string} rayon
  * @returns {string[]} Zones triées alphabétiquement, "Non classé" toujours en dernier si présent.
  */
-function getZonesForRayon(rayon) {
+/**
+ * Liste les zones existantes pour un rayon donné, déduites des
+ * points de ce rayon (aucune liste fixe — remplace l'ancien
+ * CTRL_SECTIONS figé à 3 valeurs, voir grille.js). Une zone vide
+ * ('') est regroupée sous IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE.
+ *
+ * ⚠️ CHANGÉ : accepte un storeId optionnel pour lister les zones
+ * d'une grille spécifique à un magasin (DB.grilleCustomByStore),
+ * avec la même résolution magasin → grille commune que getGrille
+ * (grille.js) — si storeId est fourni et que ce magasin a une
+ * grille propre non vide pour ce rayon, ses zones sont retournées ;
+ * sinon on retombe sur les zones de la grille commune
+ * (DB.grilleCustom[rayon]).
+ * @param {string} rayon
+ * @param {string} [storeId] - Référence vers Magasin.id ; omis ou vide = grille commune uniquement.
+ * @returns {string[]} Zones triées alphabétiquement, "Non classé" toujours en dernier si présent.
+ */
+function getZonesForRayon(rayon, storeId) {
+  /** @type {GrillePoint[]} */
+  let points = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : [];
+  if (!points.length) points = DB.grilleCustom[rayon] || [];
+
   /** @type {Set<string>} */
   const zones = new Set();
-  (DB.grilleCustom[rayon] || []).forEach(point => {
+  points.forEach(point => {
     /** @type {string} */
     const trimmedZone = point.zone ? point.zone.trim() : '';
     zones.add(trimmedZone || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE);
@@ -360,16 +381,29 @@ function getZonesForRayon(rayon) {
  * @param {string} newZone
  * @returns {{ok: boolean, error?: string}}
  */
-function renameGrilleZone(rayon, oldZone, newZone) {
+/**
+ * Renomme une zone à l'intérieur d'UN SEUL rayon, pour un magasin
+ * donné (ou la grille commune) — n'affecte jamais les zones de même
+ * nom dans un autre rayon, ni dans un autre magasin (voir la note
+ * d'en-tête de cette section). Migre tous les points concernés.
+ * @param {string} rayon
+ * @param {string} oldZone
+ * @param {string} newZone
+ * @param {string} [storeId] - Magasin concerné (DB.grilleCustomByStore) ; absent/vide = grille commune (DB.grilleCustom).
+ * @returns {{ok: boolean, error?: string}}
+ */
+function renameGrilleZone(rayon, oldZone, newZone, storeId) {
   /** @type {string} */
   const trimmed = (newZone || '').trim();
   if (!trimmed) return { ok: false, error: 'Le nouveau nom de zone ne peut pas être vide.' };
   if (trimmed === oldZone) return { ok: false, error: 'Le nouveau nom est identique à l\'actuel.' };
-  if (getZonesForRayon(rayon).some(z => z.toLowerCase() === trimmed.toLowerCase() && z !== oldZone)) {
+  if (getZonesForRayon(rayon, storeId).some(z => z.toLowerCase() === trimmed.toLowerCase() && z !== oldZone)) {
     return { ok: false, error: `La zone « ${trimmed} » existe déjà dans ce rayon.` };
   }
 
-  (DB.grilleCustom[rayon] || []).forEach(point => {
+  /** @type {GrillePoint[]} */
+  const points = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : (DB.grilleCustom[rayon] || []);
+  points.forEach(point => {
     if ((point.zone || '') === oldZone) point.zone = trimmed;
   });
 

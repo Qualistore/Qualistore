@@ -318,8 +318,11 @@
       <!-- GRILLE -->
       <div class="page" id="page-grille">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
-          <div style="display:flex;gap:6px;align-items:center">
-            <select class="form-control" style="width:200px" id="grille-ray-sel" onchange="showGrille(this.value)"></select>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <select class="form-control" style="width:200px" id="grille-mag-sel" onchange="showGrille()">
+              <option value="">Grille commune (tous magasins)</option>
+            </select>
+            <select class="form-control" style="width:200px" id="grille-ray-sel" onchange="showGrille()"></select>
             <button class="btn btn-secondary btn-sm" id="btn-rename-rayon" onclick="openRenameRayonPrompt()" style="display:none" aria-label="Renommer le rayon" title="Renommer le rayon"><i class="ti ti-pencil"></i></button>
             <button class="btn btn-secondary btn-sm" id="btn-delete-rayon" onclick="confirmDeleteRayon()" style="display:none" aria-label="Supprimer le rayon" title="Supprimer le rayon"><i class="ti ti-trash"></i></button>
           </div>
@@ -330,6 +333,7 @@
             <button class="btn btn-danger" id="btn-add-ctrl" onclick="openCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
           </div>
         </div>
+        <div class="tsm tm" id="grille-scope-label" style="margin-bottom:8px"></div>
         <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-list-check"></i> Grille – <span id="grille-ttl">Boucherie</span></div><div style="display:flex;gap:6px;align-items:center" id="grille-hdr-btns"></div></div><div id="grille-body"></div></div>
       </div>
 
@@ -786,6 +790,12 @@
         Séparateur auto-détecté : <code style="background:var(--surface);padding:1px 5px;border-radius:4px">;</code> ou <code style="background:var(--surface);padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
         Le mapping détecté est affiché et modifiable avant import.<br>
         <span style="color:var(--success-dark)">Exemple : <code style="background:var(--surface);padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
+      </div>
+
+      <!-- Magasin(s) cible(s) (FSQS uniquement) — la grille de points peut désormais être spécifique à un magasin, voir getGrille (grille.js) -->
+      <div class="form-group" id="imp-default-mags-group">
+        <label class="form-label">Magasin(s) cible(s) <span style="color:var(--text2);font-size:11px">(groupés par enseigne — laisser vide pour appliquer à la grille commune, partagée par tous les magasins sans surcharge propre)</span></label>
+        <div id="imp-default-mag-cbs" class="cb-group" style="max-height:160px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
       </div>
 
       <!-- Rayon(s) cible(s) (FSQS uniquement) -->

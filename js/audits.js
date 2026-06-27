@@ -408,7 +408,7 @@ function auditNext() {
     const date = v('a-date');
     if (!mid || !ray || !date) { alert('Magasin, rayon et date sont requis.'); return; }
 
-    buildAuditQuestions(ray);
+    buildAuditQuestions(ray, mid);
     el('as1').style.display = 'none';
     el('as2').style.display = '';
     el('a-ray-ttl').textContent = ray;
@@ -452,6 +452,12 @@ function auditPrev() {
  * sans zone (zone vide, import sans zone détectée) est regroupé sous
  * IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE ('Non classé', rayons.js).
  *
+ * ⚠️ CHANGÉ : accepte désormais storeId, propagé à getGrille
+ * (grille.js) — un magasin ayant sa propre grille personnalisée pour
+ * ce rayon (DB.grilleCustomByStore) utilise SES points au lieu de la
+ * grille commune (DB.grilleCustom), avec retombée automatique sur la
+ * grille commune si ce magasin n'a pas encore de surcharge propre.
+ *
  * ⚠️ Depuis le retrait de GRILLE_BASE_COMMUNE (grille.js, voir
  * getGrille), un rayon peut désormais n'avoir AUCUN point de
  * contrôle (jamais importé ni saisi manuellement) — ce cas n'existait
@@ -459,11 +465,12 @@ function auditPrev() {
  * n'est pas appelée (elle crasherait sur _auditZones[undefined]) et
  * un message d'état vide est affiché à la place.
  * @param {string} rayon
+ * @param {string} [storeId] - Référence vers Magasin.id (le magasin audité) ; omis ou vide = grille commune uniquement.
  * @returns {void}
  */
-function buildAuditQuestions(rayon) {
+function buildAuditQuestions(rayon, storeId) {
   /** @type {GrillePoint[]} */
-  const allPoints = getGrille(rayon);
+  const allPoints = getGrille(rayon, storeId);
   auditAnswers = {};
   allPoints.forEach(point => { auditAnswers[point.id] = { q: point.q, rep: null, cmt: '', photos: [] }; });
 
@@ -645,7 +652,7 @@ function setAudRep(pointId, response, clickedButton) {
  */
 function updateAuditScore() {
   /** @type {GrillePoint[]} */
-  const allPoints  = getGrille(v('a-ray'));
+  const allPoints  = getGrille(v('a-ray'), v('a-mag'));
   /** @type {AuditAnswer[]} */
   const allAnswers = Object.values(auditAnswers);
   /** @type {number} */
@@ -706,7 +713,7 @@ function submitAudit() {
   /** @type {Magasin | {}} */
   const store  = DB.magasins.find(m => m.id === mid) || {};
   /** @type {GrillePoint[]} */
-  const points = getGrille(rayon);
+  const points = getGrille(rayon, mid);
 
   // Compléter les réponses manquantes par N/A
   points.forEach(point => {
@@ -959,7 +966,7 @@ function resumeDraft(draftId) {
   el('a-next').innerHTML = 'Valider l\'audit <i class="ti ti-check"></i>';
 
   auditAnswers = { ...draft.answers };
-  buildAuditQuestions(draft.rayon);
+  buildAuditQuestions(draft.rayon, draft.mid);
 
   // Restaurer les réponses déjà saisies
   Object.entries(draft.answers).forEach(([pointId, answer]) => {

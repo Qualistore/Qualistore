@@ -245,6 +245,7 @@ function _buildDefaultDB() {
     alertes:           [],
     drafts:            [],
     grilleCustom:      {},
+    grilleCustomByStore: {},
     deletedRayons:     [],
     qualimetreCustom:  {},
     qualimetreGlobal:  {},
@@ -323,6 +324,7 @@ async function loadDB() {
       alertes:  alertes  || [],
       drafts:   drafts   || [],
       grilleCustom:     _parseGrilleCustom(grilleRows),
+      grilleCustomByStore: _parseGrilleCustomByStore(grilleRows),
       deletedRayons:    _parseDeletedRayons(grilleRows),
       qualimetreCustom: _parseQualimetreCustom(qualRows),
       qualimetreGlobal: _parseQualimetreGlobal(qualRows),
@@ -363,11 +365,55 @@ async function loadDB() {
  * @param {SupabaseRow[] | null | undefined} rows
  * @returns {GrilleCustomMap}
  */
+/**
+ * Transforme les lignes brutes de la table `grille_custom` en
+ * dictionnaire indexé par rayon, en excluant la ligne réservée
+ * '__deleted_rayons__' (DB.deletedRayons, voir _parseDeletedRayons)
+ * et toute ligne préfixée '__store__' (DB.grilleCustomByStore, voir
+ * _parseGrilleCustomByStore) — ni l'une ni l'autre n'est un rayon
+ * réel de la grille commune.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {GrilleCustomMap}
+ */
 function _parseGrilleCustom(rows) {
   const result = {};
   (rows || [])
-    .filter(row => row.rayon !== '__deleted_rayons__')
+    .filter(row => row.rayon !== '__deleted_rayons__' && !row.rayon.startsWith('__store__'))
     .forEach(row => { result[row.rayon] = row.data; });
+  return result;
+}
+
+/**
+ * Extrait les grilles spécifiques à un magasin (DB.grilleCustomByStore)
+ * des lignes brutes de la table `grille_custom` — lignes préfixées
+ * '__store__{storeId}__{rayon}' (voir _pushToSupabase). Réutilise
+ * cette table existante plutôt que d'introduire une nouvelle table
+ * Supabase, sur le même principe que les autres lignes réservées de
+ * ce fichier.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {Record<string, GrilleCustomMap>}
+ */
+function _parseGrilleCustomByStore(rows) {
+  /** @type {Record<string, GrilleCustomMap>} */
+  const result = {};
+  (rows || [])
+    .filter(row => row.rayon.startsWith('__store__'))
+    .forEach(row => {
+      // Format : '__store__{storeId}__{rayon}' — storeId et rayon
+      // peuvent eux-mêmes contenir '__' en théorie (peu probable en
+      // pratique pour un nom de magasin/rayon), donc on découpe sur
+      // les deux premières occurrences du séparateur seulement.
+      /** @type {string[]} */
+      const parts = row.rayon.split('__');
+      // parts[0] = '', parts[1] = 'store', parts[2] = storeId, reste = rayon
+      /** @type {string} */
+      const storeId = parts[2];
+      /** @type {string} */
+      const rayon = parts.slice(3).join('__');
+      if (!storeId || !rayon) return;
+      if (!result[storeId]) result[storeId] = {};
+      result[storeId][rayon] = row.data;
+    });
   return result;
 }
 
@@ -484,12 +530,23 @@ async function _pushToSupabase(tables) {
     if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
     if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
 
-    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons')) {
+    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore')) {
       /** @type {SupabaseRow[]} */
       const rows = Object.entries(DB.grilleCustom).map(([rayon, data]) => ({ id: rayon, rayon, data }));
       if (DB.deletedRayons && DB.deletedRayons.length) {
         rows.push({ id: '__deleted_rayons__', rayon: '__deleted_rayons__', data: DB.deletedRayons });
       }
+      // Grilles spécifiques à un magasin (DB.grilleCustomByStore) —
+      // réutilise la même table grille_custom, une ligne par
+      // (magasin, rayon), id préfixé '__store__{storeId}__{rayon}'
+      // pour ne jamais collisionner avec un nom de rayon réel ni avec
+      // les autres lignes réservées (__deleted_rayons__) — voir
+      // _parseGrilleCustomByStore.
+      Object.entries(DB.grilleCustomByStore || {}).forEach(([storeId, rayons]) => {
+        Object.entries(rayons).forEach(([rayon, data]) => {
+          rows.push({ id: `__store__${storeId}__${rayon}`, rayon: `__store__${storeId}__${rayon}`, data });
+        });
+      });
       if (rows.length) operations.push(sbUpsert('grille_custom', rows));
     }
 

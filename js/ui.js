@@ -389,6 +389,106 @@ function populateMagSelect(selectElement) {
 }
 
 /**
+ * Construit le HTML de cases à cocher pour une sélection multiple de
+ * magasins, groupées par enseigne (Magasin.enseigne) — une case par
+ * magasin, plus une case "toute l'enseigne" qui coche/décoche en une
+ * fois tous les magasins de cette enseigne. Les magasins sans
+ * enseigne renseignée sont groupés sous "Sans enseigne". Ne filtre
+ * que sur visibleMids() (permissions de l'utilisateur courant) —
+ * pas de filtre supplémentaire par statut actif/inactif, pour rester
+ * cohérent avec l'usage prévu (sélection pour import ou grille,
+ * potentiellement utile même sur un magasin temporairement inactif).
+ *
+ * Structure générée (pour un id de groupe `groupId` donné, utilisé
+ * pour préfixer les ids HTML et éviter toute collision si plusieurs
+ * instances de ce composant coexistent sur la même page — voir
+ * l'import FSQS ET la page Grille, qui en ont chacun une) :
+ * ```
+ * <div class="enseigne-group">
+ *   <label><input type="checkbox" class="{groupId}-enseigne-cb" data-enseigne="Carrefour" onchange="toggleEnseigneCheckboxes('{groupId}','Carrefour',this.checked)"> Carrefour</label>
+ *   <div style="margin-left:20px">
+ *     <label><input type="checkbox" class="{groupId}-mag-cb" value="mag1" data-enseigne="Carrefour"> Carrefour Centre-Ville</label>
+ *     ...
+ *   </div>
+ * </div>
+ * ```
+ * @param {string} groupId - Préfixe unique pour les classes/attributs de ce groupe de cases (ex : 'imp-default-mag', 'grille-mag').
+ * @param {string} [onChangeCallback] - Nom (sous forme de chaîne, pour insertion directe dans l'attribut onchange généré) d'une fonction globale supplémentaire à appeler à chaque (dé)sélection d'un magasin individuel — en plus de _onMagasinCheckboxChanged (état visuel de la case enseigne), toujours appelée. Omis = aucun callback supplémentaire.
+ * @returns {string}
+ */
+function buildMagasinCheckboxesByEnseigne(groupId, onChangeCallback) {
+  /** @type {Magasin[]} */
+  const stores = DB.magasins.filter(m => visibleMids().includes(m.id));
+
+  /** @type {Map<string, Magasin[]>} */
+  const byEnseigne = new Map();
+  stores.forEach(store => {
+    /** @type {string} */
+    const enseigne = (store.enseigne || '').trim() || 'Sans enseigne';
+    if (!byEnseigne.has(enseigne)) byEnseigne.set(enseigne, []);
+    byEnseigne.get(enseigne).push(store);
+  });
+
+  /** @type {string[]} */
+  const enseignes = [...byEnseigne.keys()].sort((a, b) => {
+    if (a === 'Sans enseigne') return 1;
+    if (b === 'Sans enseigne') return -1;
+    return a.localeCompare(b, 'fr');
+  });
+
+  /** @type {string} */
+  const extraCall = onChangeCallback ? `${onChangeCallback}();` : '';
+
+  return enseignes.map(enseigne => `
+    <div class="enseigne-group" style="margin-bottom:6px">
+      <label class="cb-item" style="font-weight:600">
+        <input type="checkbox" class="${groupId}-enseigne-cb" data-enseigne="${_escapeHtmlAttr(enseigne)}" onchange="toggleEnseigneCheckboxes('${groupId}','${_escapeHtmlAttr(enseigne)}',this.checked);${extraCall}">
+        ${enseigne}
+      </label>
+      <div style="margin-left:20px">
+        ${byEnseigne.get(enseigne).map(store => `
+          <label class="cb-item">
+            <input type="checkbox" class="${groupId}-mag-cb" value="${store.id}" data-enseigne="${_escapeHtmlAttr(enseigne)}" onchange="_onMagasinCheckboxChanged('${groupId}');${extraCall}">
+            ${_escapeHtmlAttr(store.nom)}
+          </label>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+/**
+ * Coche/décoche tous les magasins d'une enseigne donnée à la fois,
+ * suite à un clic sur la case "toute l'enseigne" (voir
+ * buildMagasinCheckboxesByEnseigne).
+ * @param {string} groupId
+ * @param {string} enseigne
+ * @param {boolean} isChecked
+ * @returns {void}
+ */
+function toggleEnseigneCheckboxes(groupId, enseigne, isChecked) {
+  document.querySelectorAll(`.${groupId}-mag-cb[data-enseigne="${enseigne}"]`).forEach(cb => {
+    cb.checked = isChecked;
+  });
+}
+
+/**
+ * Recale l'état de la case "toute l'enseigne" suite à une
+ * (dé)sélection individuelle d'un magasin — cochée si tous les
+ * magasins de cette enseigne sont cochés, décochée sinon (y compris
+ * état partiel, pas d'état indéterminé visuel pour rester simple).
+ * @param {string} groupId
+ * @returns {void}
+ */
+function _onMagasinCheckboxChanged(groupId) {
+  document.querySelectorAll(`.${groupId}-enseigne-cb`).forEach(enseigneCb => {
+    /** @type {string} */
+    const enseigne = enseigneCb.dataset.enseigne;
+    /** @type {HTMLInputElement[]} */
+    const magCbs = [...document.querySelectorAll(`.${groupId}-mag-cb[data-enseigne="${enseigne}"]`)];
+    enseigneCb.checked = magCbs.length > 0 && magCbs.every(cb => cb.checked);
+  });
+}
+
+/**
  * Peuple un élément `<select>` avec tous les rayons FSQS connus
  * (voir getKnownRayons, rayons.js), en préservant la valeur courante
  * si elle reste valide. Remplace toute liste d'`<option>` de rayons

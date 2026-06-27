@@ -79,32 +79,45 @@ const CTRL_SECTIONS = ['Stockage', 'Vente trad.', 'Libre-service'];
 /** @type {string} Rayon actif lors de l'ouverture du modal (pour l'édition). Valeur d'amorçage arbitraire — toujours réécrite par openCtrlModal() avant utilisation réelle (fallback sur getKnownRayons()[0], pas sur cette valeur). */
 let _ctrlRayonCurrent = 'Boucherie';
 
+/** @type {string} Magasin actif lors de l'ouverture du modal (pour l'édition) — chaîne vide = grille commune (DB.grilleCustom), sinon référence vers Magasin.id (DB.grilleCustomByStore). Toujours réécrite par openCtrlModal() avant utilisation réelle. */
+let _ctrlStoreCurrent = '';
+
 // ─────────────────────────────────────────────
 // 3. SERVICE DONNÉES
 // ─────────────────────────────────────────────
 
 /**
- * Retourne la grille complète pour un rayon : uniquement les points
- * personnalisés/importés (DB.grilleCustom[rayon]).
+ * Retourne la grille de points de contrôle d'un rayon.
  *
- * ⚠️ CHANGÉ : ne fusionne plus avec GRILLE_BASE_COMMUNE (référentiel
- * commun de 48 points codés en dur dans config.js). Cette fusion
- * causait des doublons visuels dès qu'un fichier importé contenait
- * un point déjà présent dans ce référentiel (même intitulé, deux
- * entrées affichées : une héritée de GRILLE_BASE_COMMUNE — non
- * modifiable —, une importée sous un nouvel id 'imp-...'). Tout
- * point de contrôle FSQS provient désormais exclusivement de
- * DB.grilleCustom — import ou saisie manuelle, jamais d'une liste
- * figée. Un rayon sans aucun point importé/saisi n'a plus aucun
- * point par défaut (voir showGrille, qui affiche un état vide dans
- * ce cas) ; GRILLE_BASE_COMMUNE (config.js) n'est plus référencée
- * nulle part dans le code actif — conservée dans config.js comme
- * trace historique, à supprimer définitivement si confirmé inutile
- * à long terme.
+ * ⚠️ CHANGÉ : la grille peut désormais être spécifique à un magasin
+ * (DB.grilleCustomByStore[storeId][rayon]) plutôt que strictement
+ * partagée entre tous les magasins. Résolution magasin → global,
+ * exactement comme getQualimetrePoints (grille-qualimetre.js) :
+ * - si storeId est fourni ET que ce magasin a au moins un point
+ *   personnalisé pour ce rayon, on retourne UNIQUEMENT ces points
+ *   (pas de fusion avec la grille globale — un magasin avec sa
+ *   propre grille n'hérite plus de la grille commune pour ce rayon).
+ * - sinon (storeId absent, ou magasin sans surcharge pour ce rayon),
+ *   on retombe sur DB.grilleCustom[rayon] (grille "globale" — c'est
+ *   l'ancien DB.grilleCustom, inchangé pour la compatibilité avec
+ *   les grilles déjà créées avant ce changement, qui deviennent
+ *   ainsi la base par défaut pour tous les magasins qui n'ont pas
+ *   encore de surcharge propre).
+ *
+ * Plus aucune fusion avec GRILLE_BASE_COMMUNE (référentiel commun de
+ * 48 points codés en dur dans config.js, retiré précédemment) — tout
+ * point de contrôle FSQS provient exclusivement de DB.grilleCustom
+ * et/ou DB.grilleCustomByStore, import ou saisie manuelle.
  * @param {string} rayon
+ * @param {string} [storeId] - Référence vers Magasin.id ; omis ou vide = grille globale uniquement.
  * @returns {GrillePoint[]}
  */
-function getGrille(rayon) {
+function getGrille(rayon, storeId) {
+  if (storeId) {
+    /** @type {GrillePoint[]} */
+    const storePoints = DB.grilleCustomByStore?.[storeId]?.[rayon] || [];
+    if (storePoints.length) return storePoints;
+  }
   return DB.grilleCustom[rayon] || [];
 }
 
@@ -128,7 +141,37 @@ function getGrille(rayon) {
  * @param {string} [rayon] - Rayon à afficher ; si omis, utilise la valeur du select tel que peuplé, sinon le premier rayon connu, sinon affiche un état vide si aucun rayon n'existe encore.
  * @returns {void}
  */
+/**
+ * Affiche la grille d'un rayon pour un magasin donné (ou la grille
+ * commune si aucun magasin n'est sélectionné), regroupée par zone
+ * puis par catégorie. Peuple d'abord les sélecteurs de magasin et de
+ * rayon avant de déterminer quoi afficher.
+ *
+ * ⚠️ CHANGÉ : la grille de points de contrôle peut désormais être
+ * spécifique à un magasin (voir getGrille, DB.grilleCustomByStore) —
+ * #grille-mag-sel permet de choisir "Grille commune (tous magasins)"
+ * (valeur vide, comportement historique : DB.grilleCustom[rayon]) ou
+ * un magasin précis (DB.grilleCustomByStore[storeId][rayon], avec
+ * retombée automatique sur la grille commune si ce magasin n'a pas
+ * encore de surcharge propre pour ce rayon — voir getGrille).
+ *
+ * NOTE : un `<select>` HTML sans option vide adopte automatiquement
+ * sa première option comme valeur dès qu'il est peuplé — c'est donc
+ * select.value qui porte naturellement "le premier rayon connu" une
+ * fois populateRayonSelect() passé. Le fallback explicite sur
+ * getKnownRayons()[0] ne joue un rôle que si #grille-ray-sel est
+ * absent du DOM (ne devrait pas arriver en usage normal, mais évite
+ * un crash silencieux si la page est restructurée).
+ * @param {string} [rayon] - Rayon à afficher ; si omis, utilise la valeur du select tel que peuplé, sinon le premier rayon connu, sinon affiche un état vide si aucun rayon n'existe encore.
+ * @returns {void}
+ */
 function showGrille(rayon) {
+  /** @type {HTMLSelectElement | null} */
+  const magSelect = el('grille-mag-sel');
+  populateMagSelect(magSelect);
+  /** @type {string} */
+  const storeId = magSelect ? magSelect.value : '';
+
   /** @type {HTMLSelectElement | null} */
   const select = el('grille-ray-sel');
   populateRayonSelect(select, false);
@@ -137,6 +180,14 @@ function showGrille(rayon) {
   const resolvedRayon = rayon || (select ? select.value : '') || getKnownRayons()[0] || '';
 
   if (select && resolvedRayon) select.value = resolvedRayon;
+
+  if (el('grille-scope-label')) {
+    /** @type {Magasin | undefined} */
+    const store = storeId ? DB.magasins.find(m => m.id === storeId) : undefined;
+    el('grille-scope-label').innerHTML = storeId
+      ? `<i class="ti ti-building-store"></i> Grille spécifique à <strong>${store ? store.nom : storeId}</strong> — les points non personnalisés pour ce magasin reprennent la grille commune.`
+      : `<i class="ti ti-world"></i> Grille commune, partagée par tous les magasins sans personnalisation propre.`;
+  }
 
   /** @type {boolean} */
   const isAdmin = CU && CU.role === 'admin';
@@ -158,7 +209,7 @@ function showGrille(rayon) {
   if (addButton) addButton.style.display = isAdmin ? '' : 'none';
 
   /** @type {GrillePoint[]} */
-  const allPoints  = getGrille(resolvedRayon);
+  const allPoints  = getGrille(resolvedRayon, storeId);
 
   if (el('btn-clear-ctrl-points')) {
     el('btn-clear-ctrl-points').style.display = (isAdmin && allPoints.length > 0) ? '' : 'none';
@@ -174,10 +225,10 @@ function showGrille(rayon) {
   }
 
   /** @type {string[]} */
-  const zones = getZonesForRayon(resolvedRayon);
+  const zones = getZonesForRayon(resolvedRayon, storeId);
 
   el('grille-body').innerHTML = zones
-    .map(zone => _buildZoneSection(zone, allPoints.filter(p => (p.zone && p.zone.trim() || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) === zone), resolvedRayon, isAdmin))
+    .map(zone => _buildZoneSection(zone, allPoints.filter(p => ((p.zone && p.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) === zone), resolvedRayon, storeId, isAdmin))
     .join('');
 }
 
@@ -195,23 +246,24 @@ function showGrille(rayon) {
  * @param {string} zone
  * @param {GrillePoint[]} points - Points appartenant à cette zone.
  * @param {string} rayon
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune.
  * @param {boolean} isAdmin
  * @returns {string}
  */
-function _buildZoneSection(zone, points, rayon, isAdmin) {
+function _buildZoneSection(zone, points, rayon, storeId, isAdmin) {
   /** @type {string[]} */
   const categories = [...new Set(points.map(point => point.cat || 'Général'))];
   /** @type {string} */
   const renameButton = isAdmin && zone !== IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE
-    ? `<button class="btn btn-secondary btn-sm" style="padding:2px 6px" onclick="openRenameGrilleZonePrompt('${_escapeHtmlAttr(rayon)}','${_escapeHtmlAttr(zone)}')" aria-label="Renommer cette zone" title="Renommer cette zone"><i class="ti ti-pencil" style="font-size:12px"></i></button>`
+    ? `<button class="btn btn-secondary btn-sm" style="padding:2px 6px" onclick="openRenameGrilleZonePrompt('${_escapeHtmlAttr(rayon)}','${_escapeHtmlAttr(zone)}','${_escapeHtmlAttr(storeId)}')" aria-label="Renommer cette zone" title="Renommer cette zone"><i class="ti ti-pencil" style="font-size:12px"></i></button>`
     : '';
 
   return `<div style="margin-bottom:4px">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 20px;background:#f5f3ff;border-bottom:1px solid var(--border)">
-      <span style="font-size:12px;font-weight:700;color:#5b21b6;text-transform:uppercase;letter-spacing:.5px">${zone}</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 20px;background:var(--qual-light);border-bottom:1px solid var(--border)">
+      <span style="font-size:12px;font-weight:700;color:var(--qual-dark);text-transform:uppercase;letter-spacing:.5px">${zone}</span>
       ${renameButton}
     </div>
-    ${categories.map(cat => _buildCategorySection(cat, points.filter(p => (p.cat || 'Général') === cat), rayon)).join('')}
+    ${categories.map(cat => _buildCategorySection(cat, points.filter(p => (p.cat || 'Général') === cat), rayon, storeId)).join('')}
   </div>`;
 }
 
@@ -222,30 +274,30 @@ function _buildZoneSection(zone, points, rayon, isAdmin) {
  * @param {string} category - Nom de la catégorie (GrillePoint.cat).
  * @param {GrillePoint[]} points - Points appartenant à cette catégorie.
  * @param {string} rayon
+ * @param {string} storeId
  * @returns {string}
  */
-function _buildCategorySection(category, points, rayon) {
+function _buildCategorySection(category, points, rayon, storeId) {
   return `<div>
     <div style="padding:8px 20px;background:var(--bg);font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)">
       ${category}
     </div>
-    ${points.map(point => _buildPointRow(point, rayon)).join('')}
+    ${points.map(point => _buildPointRow(point, rayon, storeId)).join('')}
   </div>`;
 }
 
 /**
  * Construit la ligne HTML d'un point de contrôle. Tout point de
  * contrôle FSQS est désormais modifiable : getGrille() ne retourne
- * plus que des points custom/importés (DB.grilleCustom), il n'existe
- * plus de référentiel de base non modifiable à distinguer — voir
- * getGrille. Le badge "Personnalisé" et le fond violet, devenus
- * systématiques pour tout point, sont retirés (ils n'apportaient
- * plus d'information utile).
+ * plus que des points custom/importés (DB.grilleCustom ou
+ * DB.grilleCustomByStore), il n'existe plus de référentiel de base
+ * non modifiable à distinguer — voir getGrille.
  * @param {GrillePoint} point
  * @param {string} rayon
+ * @param {string} storeId
  * @returns {string}
  */
-function _buildPointRow(point, rayon) {
+function _buildPointRow(point, rayon, storeId) {
   /** @type {boolean} */
   const isAdmin = CU && CU.role === 'admin';
 
@@ -259,7 +311,7 @@ function _buildPointRow(point, rayon) {
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
       ${critBdg(point.c)}
       <span class="tsm tm" style="white-space:nowrap">Poids : <strong>${point.p}</strong></span>
-      ${isAdmin ? _buildPointActions(rayon, point.id) : ''}
+      ${isAdmin ? _buildPointActions(rayon, storeId, point.id) : ''}
     </div>
   </div>`;
 }
@@ -268,14 +320,15 @@ function _buildPointRow(point, rayon) {
  * Construit les boutons d'action (modifier/supprimer) pour un point
  * de contrôle, réservés aux administrateurs.
  * @param {string} rayon
+ * @param {string} storeId
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @returns {string}
  */
-function _buildPointActions(rayon, pointId) {
-  return `<button class="btn btn-secondary btn-sm" onclick="openCtrlModal('${rayon}','${pointId}')" aria-label="Modifier">
+function _buildPointActions(rayon, storeId, pointId) {
+  return `<button class="btn btn-secondary btn-sm" onclick="openCtrlModal('${rayon}','${pointId}','${storeId}')" aria-label="Modifier">
     <i class="ti ti-pencil"></i>
   </button>
-  <button class="btn btn-danger btn-sm" onclick="delCtrl('${rayon}','${pointId}')" aria-label="Supprimer">
+  <button class="btn btn-danger btn-sm" onclick="delCtrl('${rayon}','${pointId}','${storeId}')" aria-label="Supprimer">
     <i class="ti ti-trash"></i>
   </button>`;
 }
@@ -300,17 +353,19 @@ function _buildCtrlRayonCheckboxes() {
 
 /**
  * Ouvre la modale de création/édition d'un point de contrôle
- * personnalisé. Mémorise le rayon courant dans _ctrlRayonCurrent
- * (utilisé par saveCtrl() pour décider mise à jour vs duplication).
- * Peuple d'abord les cases à cocher de rayon (voir
- * _buildCtrlRayonCheckboxes) depuis getKnownRayons() — plus aucune
- * liste fixe.
+ * personnalisé. Mémorise le rayon et le magasin courants dans
+ * _ctrlRayonCurrent/_ctrlStoreCurrent (utilisés par saveCtrl() pour
+ * décider où écrire). Peuple d'abord les cases à cocher de rayon
+ * (voir _buildCtrlRayonCheckboxes) depuis getKnownRayons() — plus
+ * aucune liste fixe.
  * @param {string} [rayon] - Rayon d'origine ; retombe sur le select de rayon affiché, puis le premier rayon connu (getKnownRayons).
  * @param {string} [pointId] - Référence vers GrillePoint.id à éditer ; absent/falsy pour une création.
+ * @param {string} [storeId] - Magasin d'origine du point édité (DB.grilleCustomByStore) ; absent/vide = grille commune (DB.grilleCustom). Retombe sur le select de magasin affiché si omis.
  * @returns {void}
  */
-function openCtrlModal(rayon, pointId) {
+function openCtrlModal(rayon, pointId, storeId) {
   _ctrlRayonCurrent = rayon || (el('grille-ray-sel') ? el('grille-ray-sel').value : '') || getKnownRayons()[0] || '';
+  _ctrlStoreCurrent = storeId !== undefined ? storeId : (el('grille-mag-sel') ? el('grille-mag-sel').value : '');
   /** @type {boolean} */
   const isEdit = !!pointId;
 
@@ -322,7 +377,7 @@ function openCtrlModal(rayon, pointId) {
   sv('ctrl-id', pointId || '');
 
   _buildCtrlRayonCheckboxes();
-  _buildCtrlZoneSuggestions(_ctrlRayonCurrent);
+  _buildCtrlZoneSuggestions(_ctrlRayonCurrent, _ctrlStoreCurrent);
 
   // Cocher le rayon courant par défaut
   document.querySelectorAll('.ctrl-ray-cb').forEach(cb => {
@@ -330,7 +385,7 @@ function openCtrlModal(rayon, pointId) {
   });
 
   if (isEdit) {
-    _populateCtrlForm(rayon, pointId);
+    _populateCtrlForm(rayon, pointId, _ctrlStoreCurrent);
   } else {
     _resetCtrlForm();
   }
@@ -341,15 +396,20 @@ function openCtrlModal(rayon, pointId) {
 /**
  * Pré-remplit le formulaire avec les données d'un point de contrôle
  * existant. Sans effet si le point n'est pas trouvé dans
- * DB.grilleCustom[rayon] (depuis le retrait de GRILLE_BASE_COMMUNE,
- * tout point de contrôle vit dans DB.grilleCustom — voir getGrille).
+ * DB.grilleCustom[rayon] ou DB.grilleCustomByStore[storeId][rayon]
+ * selon le scope (depuis le retrait de GRILLE_BASE_COMMUNE, tout
+ * point de contrôle vit dans l'un de ces deux endroits — voir
+ * getGrille).
  * @param {string} rayon
  * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {string} [storeId] - Magasin d'origine du point ; absent/vide = grille commune.
  * @returns {void}
  */
-function _populateCtrlForm(rayon, pointId) {
+function _populateCtrlForm(rayon, pointId, storeId) {
+  /** @type {GrillePoint[]} */
+  const source = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : (DB.grilleCustom[rayon] || []);
   /** @type {GrillePoint | undefined} */
-  const point = (DB.grilleCustom[rayon] || []).find(p => p.id === pointId);
+  const point = source.find(p => p.id === pointId);
   if (!point) return;
 
   sv('ctrl-q',    point.q);
@@ -383,11 +443,19 @@ function _resetCtrlForm() {
  * @param {string} rayon
  * @returns {void}
  */
-function _buildCtrlZoneSuggestions(rayon) {
+/**
+ * Peuple #ctrl-zone-suggestions (modale point de contrôle) avec une
+ * option par zone connue du rayon, dans le scope (magasin ou commun)
+ * donné — voir getZonesForRayon.
+ * @param {string} rayon
+ * @param {string} [storeId]
+ * @returns {void}
+ */
+function _buildCtrlZoneSuggestions(rayon, storeId) {
   /** @type {HTMLDataListElement | null} */
   const datalist = el('ctrl-zone-suggestions');
   if (!datalist) return;
-  datalist.innerHTML = getZonesForRayon(rayon)
+  datalist.innerHTML = getZonesForRayon(rayon, storeId)
     .filter(zone => zone !== IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE)
     .map(zone => `<option value="${_escapeHtmlAttr(zone)}">`)
     .join('');
@@ -409,6 +477,36 @@ function _buildCtrlZoneSuggestions(rayon) {
  * si la zone n'existe pas encore dans l'un des rayons, elle y est
  * créée à la volée, exactement comme un rayon est créé à la volée
  * par l'import.
+ *
+ * Comportement subtil : si `existingId` est renseigné (édition),
+ * SEUL le rayon `_ctrlRayonCurrent` (rayon d'origine du point édité)
+ * reçoit une mise à jour in-place. Pour tout autre rayon
+ * sélectionné dans `selectedRayons`, un NOUVEAU point personnalisé
+ * est créé (nouvel id `cust-...`) — il n'y a pas de duplication par
+ * référence d'un même point vers plusieurs rayons.
+ * @returns {void}
+ */
+/**
+ * Valide et sauvegarde le formulaire de point de contrôle, pour un
+ * ou plusieurs rayons sélectionnés.
+ *
+ * ⚠️ CHANGÉ : zone et cat sont désormais deux champs distincts de
+ * GrillePoint (voir config.js), plus un seul champ `cat` fusionné en
+ * "Section – Sous-catégorie". Le même nom de zone est utilisé tel
+ * quel pour chacun des rayons sélectionnés — sans lien entre eux
+ * (voir la note d'en-tête de la section ZONES DE RAYON, rayons.js) :
+ * si la zone n'existe pas encore dans l'un des rayons, elle y est
+ * créée à la volée, exactement comme un rayon est créé à la volée
+ * par l'import.
+ *
+ * ⚠️ CHANGÉ : si _ctrlStoreCurrent est non vide (modale ouverte
+ * depuis la grille d'un magasin précis — voir openCtrlModal), le
+ * point est écrit dans DB.grilleCustomByStore[storeId][rayon] au
+ * lieu de DB.grilleCustom[rayon] (grille commune). C'est toujours
+ * le MÊME magasin (_ctrlStoreCurrent) qui reçoit le point pour
+ * chacun des rayons sélectionnés — il n'y a pas de sélection
+ * multi-magasin dans ce formulaire (contrairement à l'import, voir
+ * import-grille.js), seulement multi-rayon.
  *
  * Comportement subtil : si `existingId` est renseigné (édition),
  * SEUL le rayon `_ctrlRayonCurrent` (rayon d'origine du point édité)
@@ -448,23 +546,36 @@ function saveCtrl() {
     return;
   }
 
+  /** @type {boolean} */
+  const isStoreScoped = !!_ctrlStoreCurrent;
+
   selectedRayons.forEach(rayon => {
-    if (!DB.grilleCustom[rayon]) DB.grilleCustom[rayon] = [];
+    /** @type {GrillePoint[]} */
+    let target;
+    if (isStoreScoped) {
+      if (!DB.grilleCustomByStore) DB.grilleCustomByStore = {};
+      if (!DB.grilleCustomByStore[_ctrlStoreCurrent]) DB.grilleCustomByStore[_ctrlStoreCurrent] = {};
+      if (!DB.grilleCustomByStore[_ctrlStoreCurrent][rayon]) DB.grilleCustomByStore[_ctrlStoreCurrent][rayon] = [];
+      target = DB.grilleCustomByStore[_ctrlStoreCurrent][rayon];
+    } else {
+      if (!DB.grilleCustom[rayon]) DB.grilleCustom[rayon] = [];
+      target = DB.grilleCustom[rayon];
+    }
 
     if (existingId && rayon === _ctrlRayonCurrent) {
       // Mise à jour du point existant
       /** @type {number} */
-      const index = DB.grilleCustom[rayon].findIndex(p => p.id === existingId);
+      const index = target.findIndex(p => p.id === existingId);
       if (index >= 0) {
         /** @type {GrillePoint} */
-        DB.grilleCustom[rayon][index] = {
+        target[index] = {
           id: existingId, zone, cat: categorie, q: intitule, p: poids, c: criticite, prec: precision,
         };
       }
     } else {
       // Nouveau point
       /** @type {GrillePoint} */
-      DB.grilleCustom[rayon].push({
+      target.push({
         id: 'cust-' + uid(), zone, cat: categorie, q: intitule, p: poids, c: criticite, prec: precision,
       });
     }
@@ -487,9 +598,22 @@ function saveCtrl() {
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @returns {void}
  */
-function delCtrl(rayon, pointId) {
+/**
+ * Supprime un point de contrôle personnalisé, après confirmation.
+ * @param {string} rayon
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {string} [storeId] - Magasin d'origine du point (DB.grilleCustomByStore) ; absent/vide = grille commune (DB.grilleCustom).
+ * @returns {void}
+ */
+function delCtrl(rayon, pointId, storeId) {
   if (!confirm('Supprimer ce point de contrôle personnalisé ?')) return;
-  DB.grilleCustom[rayon] = (DB.grilleCustom[rayon] || []).filter(p => p.id !== pointId);
+  if (storeId) {
+    if (DB.grilleCustomByStore?.[storeId]?.[rayon]) {
+      DB.grilleCustomByStore[storeId][rayon] = DB.grilleCustomByStore[storeId][rayon].filter(p => p.id !== pointId);
+    }
+  } else {
+    DB.grilleCustom[rayon] = (DB.grilleCustom[rayon] || []).filter(p => p.id !== pointId);
+  }
   save();
   showGrille(rayon);
 }
@@ -558,13 +682,22 @@ function openRenameRayonPrompt() {
  * @param {string} zone
  * @returns {void}
  */
-function openRenameGrilleZonePrompt(rayon, zone) {
+/**
+ * Ouvre une invite de saisie pour renommer une zone à l'intérieur
+ * d'UN rayon précis, pour un magasin donné (ou la grille commune) —
+ * voir renameGrilleZone, rayons.js.
+ * @param {string} rayon
+ * @param {string} zone
+ * @param {string} [storeId] - Magasin concerné ; absent/vide = grille commune.
+ * @returns {void}
+ */
+function openRenameGrilleZonePrompt(rayon, zone, storeId) {
   /** @type {string | null} */
   const newName = prompt('Nouveau nom de la zone :', zone);
   if (newName === null) return;
 
   /** @type {{ok: boolean, error?: string}} */
-  const result = renameGrilleZone(rayon, zone, newName);
+  const result = renameGrilleZone(rayon, zone, newName, storeId);
   if (!result.ok) {
     if (result.error) alert(result.error);
     return;
@@ -613,18 +746,43 @@ function confirmDeleteRayon() {
  * l'historique d'audit ni devoir recréer le rayon.
  * @returns {void}
  */
+/**
+ * Supprime UNIQUEMENT les points de contrôle du rayon actuellement
+ * affiché, dans le scope actuellement sélectionné (grille commune ou
+ * magasin précis — voir #grille-mag-sel) — contrairement à
+ * confirmDeleteRayon, le rayon lui-même reste (toujours visible dans
+ * le sélecteur, conservé dans getKnownRayons() via DB.audits/drafts
+ * s'il y a déjà eu un audit dessus) et les audits déjà réalisés sur
+ * ce rayon ne sont pas touchés. Utile pour repartir d'une grille
+ * vide sur ce rayon (ex : reprendre un import raté) sans perdre
+ * l'historique d'audit ni devoir recréer le rayon.
+ * @returns {void}
+ */
 function confirmClearGrillePoints() {
   /** @type {string} */
   const currentRayon = el('grille-ray-sel') ? el('grille-ray-sel').value : '';
   if (!currentRayon) return;
 
+  /** @type {string} */
+  const storeId = el('grille-mag-sel') ? el('grille-mag-sel').value : '';
+  /** @type {GrillePoint[]} */
+  const currentPoints = storeId ? (DB.grilleCustomByStore?.[storeId]?.[currentRayon] || []) : (DB.grilleCustom[currentRayon] || []);
   /** @type {number} */
-  const pointCount = (DB.grilleCustom[currentRayon] || []).length;
+  const pointCount = currentPoints.length;
   if (!pointCount) return;
 
-  if (!confirm(`Supprimer les ${pointCount} point(s) de contrôle du rayon « ${currentRayon} » ? Le rayon et ses audits déjà réalisés sont conservés. Cette action est irréversible.`)) return;
+  /** @type {Magasin | undefined} */
+  const store = storeId ? DB.magasins.find(m => m.id === storeId) : undefined;
+  /** @type {string} */
+  const scopeLabel = store ? ` (magasin « ${store.nom} » uniquement)` : ' (grille commune)';
 
-  DB.grilleCustom[currentRayon] = [];
+  if (!confirm(`Supprimer les ${pointCount} point(s) de contrôle du rayon « ${currentRayon} »${scopeLabel} ? Le rayon et ses audits déjà réalisés sont conservés. Cette action est irréversible.`)) return;
+
+  if (storeId) {
+    DB.grilleCustomByStore[storeId][currentRayon] = [];
+  } else {
+    DB.grilleCustom[currentRayon] = [];
+  }
   save();
   showGrille(currentRayon);
 }
