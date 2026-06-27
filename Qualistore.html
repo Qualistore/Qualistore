@@ -326,10 +326,11 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary btn-sm" onclick="openCreateRayonPrompt()"><i class="ti ti-plus"></i> Nouveau rayon</button>
             <button class="btn btn-secondary btn-sm" onclick="openImportModal()"><i class="ti ti-upload"></i> Importer</button>
+            <button class="btn btn-secondary btn-sm" id="btn-clear-ctrl-points" onclick="confirmClearGrillePoints()" style="display:none;color:var(--danger)"><i class="ti ti-eraser"></i> Vider les points</button>
             <button class="btn btn-danger" id="btn-add-ctrl" onclick="openCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
           </div>
         </div>
-        <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-list-check"></i> Grille commune – <span id="grille-ttl">Boucherie</span></div><div style="display:flex;gap:6px;align-items:center" id="grille-hdr-btns"><span class="badge" style="background:var(--success-light);color:#15803d"><i class="ti ti-table-import" style="font-size:12px"></i> 48 points – Grille inspection interne</span></div></div><div id="grille-body"></div></div>
+        <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-list-check"></i> Grille – <span id="grille-ttl">Boucherie</span></div><div style="display:flex;gap:6px;align-items:center" id="grille-hdr-btns"></div></div><div id="grille-body"></div></div>
       </div>
 
 <!-- GRILLE QUALIMÈTRE -->
@@ -785,6 +786,12 @@
         Séparateur auto-détecté : <code style="background:#fff;padding:1px 5px;border-radius:4px">;</code> ou <code style="background:#fff;padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
         Le mapping détecté est affiché et modifiable avant import.<br>
         <span style="color:#15803d">Exemple : <code style="background:#fff;padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
+      </div>
+
+      <!-- Rayon(s) cible(s) (FSQS uniquement) -->
+      <div class="form-group" id="imp-default-rayons-group">
+        <label class="form-label">Rayon(s) cible(s) <span style="color:var(--text2);font-size:11px">(les libellés détectés dans le fichier deviennent des zones à l'intérieur du/des rayon(s) choisis ici)</span></label>
+        <div id="imp-default-rayon-cbs" class="cb-group" style="max-height:120px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
       </div>
 
       <!-- Criticité par défaut -->

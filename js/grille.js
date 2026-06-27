@@ -148,6 +148,7 @@ function showGrille(rayon) {
     el('grille-body').innerHTML  = `<div class="tsm tm" style="padding:24px;text-align:center">Aucun rayon pour l'instant. Importez une grille ou créez un rayon pour commencer.</div>`;
     const addButton = el('btn-add-ctrl');
     if (addButton) addButton.style.display = 'none';
+    if (el('btn-clear-ctrl-points')) el('btn-clear-ctrl-points').style.display = 'none';
     return;
   }
 
@@ -158,6 +159,10 @@ function showGrille(rayon) {
 
   /** @type {GrillePoint[]} */
   const allPoints  = getGrille(resolvedRayon);
+
+  if (el('btn-clear-ctrl-points')) {
+    el('btn-clear-ctrl-points').style.display = (isAdmin && allPoints.length > 0) ? '' : 'none';
+  }
 
   if (!allPoints.length) {
     /** @type {string} */
@@ -595,4 +600,31 @@ function confirmDeleteRayon() {
   deleteRayonEverywhere(currentRayon);
   save();
   showGrille();
+}
+
+/**
+ * Supprime UNIQUEMENT les points de contrôle du rayon actuellement
+ * affiché (DB.grilleCustom[rayon] vidé) — contrairement à
+ * confirmDeleteRayon, le rayon lui-même reste (toujours visible dans
+ * le sélecteur, conservé dans getKnownRayons() via DB.audits/drafts
+ * s'il y a déjà eu un audit dessus) et les audits déjà réalisés sur
+ * ce rayon ne sont pas touchés. Utile pour repartir d'une grille
+ * vide sur ce rayon (ex : reprendre un import raté) sans perdre
+ * l'historique d'audit ni devoir recréer le rayon.
+ * @returns {void}
+ */
+function confirmClearGrillePoints() {
+  /** @type {string} */
+  const currentRayon = el('grille-ray-sel') ? el('grille-ray-sel').value : '';
+  if (!currentRayon) return;
+
+  /** @type {number} */
+  const pointCount = (DB.grilleCustom[currentRayon] || []).length;
+  if (!pointCount) return;
+
+  if (!confirm(`Supprimer les ${pointCount} point(s) de contrôle du rayon « ${currentRayon} » ? Le rayon et ses audits déjà réalisés sont conservés. Cette action est irréversible.`)) return;
+
+  DB.grilleCustom[currentRayon] = [];
+  save();
+  showGrille(currentRayon);
 }

@@ -11,7 +11,7 @@
 //
 //    ✅ CORRIGÉ : _importIntoQualimetre() résout désormais la zone
 //    cible à partir de la valeur de zone telle qu'elle apparaît
-//    dans le document importé (row.rayonRaw), au lieu d'utiliser le
+//    dans le document importé (row.zoneRaw), au lieu d'utiliser le
 //    rayon FSQS normalisé. La résolution ne dépend d'aucune liste
 //    figée (QM_ZONES n'est consultée que pour ÉVITER une duplication
 //    par libellé exact déjà connu, jamais pour deviner ou valider
@@ -20,12 +20,18 @@
 //    ✅ RÉSOLU : l'ancienne IMPORT_VALID_RAYONS (liste fermée de 7
 //    rayons, 3e copie de la même liste que RAYONS_LIST/RAYONS_BASE_SEED
 //    dans rayons.js et l'ex-RAYONS_FSQS dans dashboard.js) a été
-//    supprimée. Aucun rayon n'est plus jamais rejeté à l'import : voir
-//    _showImportPreview, qui ne fait plus que réutiliser la casse
-//    canonique d'un rayon déjà connu (getKnownRayons(), rayons.js) si
-//    elle correspond, sans jamais refuser un rayon absent de cette
-//    liste. La seule source de vérité pour "quels rayons existent" est
-//    désormais getKnownRayons() — ne jamais réintroduire de liste fixe.
+//    supprimée. Aucun rayon n'est plus jamais rejeté à l'import.
+//
+//    ✅ CORRIGÉ (confusion zone/rayon) : le libellé détecté dans le
+//    document (colonne "Zone" ou ligne-titre de section) n'est PLUS
+//    JAMAIS traité comme un rayon FSQS à créer — il alimente
+//    désormais row.zone (sous-partie d'un rayon, voir le typedef
+//    GrillePoint, config.js), jamais row.rayon (ce champ n'existe
+//    plus dans ImportParsedRow). Le rayon FSQS cible est un choix
+//    explicite de l'utilisateur AVANT l'import (_importDefaultRayons,
+//    sélecteur au-dessus de la zone de dépose), jamais déduit du
+//    document. L'ancien comportement créait à tort un nouveau RAYON
+//    pour chaque libellé de section détecté.
 // ─────────────────────────────────────────────
 
 /**
@@ -71,10 +77,9 @@
  * (la zone est résolue depuis le document, jamais rejetée pour
  * absence de correspondance avec une liste connue).
  * @typedef {Object} ImportParsedRow
- * @property {string} rayon - Rayon normalisé si reconnu (cible FSQS), sinon valeur brute d'origine (voir `valid`). ⚠️ CHANGÉ : conservé comme rayon "détecté par défaut" — l'import effectif utilise désormais `targetRayons`, voir ci-dessous.
- * @property {string} rayonRaw - Valeur de zone telle qu'écrite dans le document, jamais altérée. Utilisée par _importIntoQualimetre comme source de vérité pour la résolution de zone.
- * @property {string[]} targetRayons - Rayon(s) FSQS où cette ligne sera réellement importée (cible 'grille' uniquement) — initialisé à `[rayon]` si `rayon` est non vide, sinon `[]`. Modifiable individuellement (voir _onPreviewFieldChanged) ou en masse pour les lignes sélectionnées (voir applyBulkRayonZoneAssignment). Une ligne avec targetRayons vide n'est PAS importée même si `valid` est true — voir confirmImport.
- * @property {string} zone - Sous-partie du rayon (GrillePoint.zone, voir config.js) attribuée à cette ligne pour l'import FSQS — devient l'onglet dans l'audit (voir buildAuditQuestions, audits.js). Chaîne vide acceptée ("Non classé" à l'affichage). Sans effet sur la cible 'qualimetre'.
+ * @property {string} zoneRaw - Valeur de zone telle qu'écrite dans le document, jamais altérée (RENOMMÉ depuis rayonRaw). Utilisée par _importIntoQualimetre comme source de vérité pour la résolution de zone Qualimètre, indépendamment de `zone` (qui peut avoir été ajustée à la casse canonique pour la cible 'grille', voir _showImportPreview).
+ * @property {string[]} targetRayons - Rayon(s) FSQS où cette ligne sera réellement importée (cible 'grille' uniquement) — initialisé à _importDefaultRayons (rayon(s) choisis par l'utilisateur AVANT l'import, voir le sélecteur au-dessus de la zone de dépose). Modifiable individuellement (voir _onPreviewFieldChanged) ou en masse pour les lignes sélectionnées (voir applyBulkRayonZoneAssignment). Une ligne avec targetRayons vide n'est PAS importée même si `valid` est true — voir confirmImport.
+ * @property {string} zone - Sous-partie du rayon (GrillePoint.zone, voir config.js) attribuée à cette ligne pour l'import FSQS — devient l'onglet dans l'audit (voir buildAuditQuestions, audits.js). Initialisé depuis `zoneRaw` (libellé détecté dans le document — colonne "Zone" ou ligne-titre de section), avec résolution à la casse canonique d'une zone déjà existante dans un des rayons cibles si trouvée. Chaîne vide acceptée ("Non classé" à l'affichage). Sans effet sur la cible 'qualimetre'.
  * @property {boolean} selected - Coché dans l'aperçu (case à gauche de chaque ligne) — détermine quelles lignes sont affectées par une assignation groupée (voir applyBulkRayonZoneAssignment), pas par l'import lui-même.
  * @property {string} cat
  * @property {string} q - Intitulé, trim() appliqué.
@@ -231,26 +236,45 @@ let _importTarget = 'grille';
 /** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue) — réglable par l'utilisateur dans la modale avant import, voir _onDefaultCritChanged. Remplace l'ancien fallback fixe 'Majeure'. */
 let _importDefaultCrit = 'Majeure';
 
+/** @type {string[]} Rayon(s) FSQS choisis par l'utilisateur AVANT l'import (sélecteur au-dessus de la zone de dépose, voir _onImportDefaultRayonsChanged) — appliqué comme targetRayons par défaut à toutes les lignes de l'aperçu (cible 'grille' uniquement). Un rayon n'est jamais déduit du document : c'est toujours un choix explicite de l'utilisateur, modifiable ensuite ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). */
+let _importDefaultRayons = [];
+
 // ─────────────────────────────────────────────
 // 3. MODAL D'IMPORT
 // ─────────────────────────────────────────────
 
 /**
- * Ouvre la modale d'import, réinitialise l'état et l'aperçu, et
- * sélectionne l'onglet CSV par défaut.
+ * Ouvre la modale d'import, réinitialise l'état du module
+ * (_importRows, criticité par défaut, rayon(s) cible(s) par défaut)
+ * et bascule sur l'onglet CSV.
+ *
+ * ⚠️ CHANGÉ : peuple désormais #imp-default-rayon-cbs (rayon(s)
+ * cible(s) choisis AVANT l'import — voir _importDefaultRayons,
+ * _onImportDefaultRayonsChanged). Ce bloc est masqué pour la cible
+ * 'qualimetre', qui n'a pas la notion de rayon FSQS.
  * @param {ImportTarget} [target] - Destination de l'import ; 'grille' par défaut.
  * @returns {void}
  */
 function openImportModal(target) {
-  _importTarget      = target || 'grille';
-  _importRows        = [];
-  _currentImportTab  = 'csv';
-  _importDefaultCrit = 'Majeure';
+  _importTarget        = target || 'grille';
+  _importRows          = [];
+  _currentImportTab    = 'csv';
+  _importDefaultCrit   = 'Majeure';
+  _importDefaultRayons = [];
 
   el('imp-file-input').value   = '';
   el('imp-warnings').textContent = '';
   el('pdf-note').style.display = 'none';
   if (el('imp-default-crit')) el('imp-default-crit').value = 'Majeure';
+
+  if (el('imp-default-rayons-group')) {
+    el('imp-default-rayons-group').style.display = _importTarget === 'qualimetre' ? 'none' : '';
+  }
+  if (el('imp-default-rayon-cbs')) {
+    el('imp-default-rayon-cbs').innerHTML = getKnownRayons().map(rayon =>
+      `<label class="cb-item"><input type="checkbox" class="imp-default-rayon-cb" value="${_escapeHtmlAttr(rayon)}" onchange="_onImportDefaultRayonsChanged()"> ${rayon}</label>`
+    ).join('');
+  }
 
   /** @type {string} */
   const targetLabel = _importTarget === 'qualimetre' ? 'Qualimètre' : 'Grille d\'audit';
@@ -260,6 +284,19 @@ function openImportModal(target) {
   _clearImportPreview();
   switchImportTab('csv');
   openModal('m-import');
+}
+
+/**
+ * Met à jour _importDefaultRayons depuis les cases cochées dans
+ * #imp-default-rayon-cbs. Sans effet sur un fichier déjà chargé dans
+ * l'aperçu — ce choix s'applique uniquement aux PROCHAINS fichiers
+ * traités (voir _showImportPreview, appelée à chaque nouveau
+ * chargement de fichier) ; il n'écrase jamais des targetRayons déjà
+ * ajustés manuellement ligne par ligne sur un aperçu en cours.
+ * @returns {void}
+ */
+function _onImportDefaultRayonsChanged() {
+  _importDefaultRayons = [...document.querySelectorAll('.imp-default-rayon-cb:checked')].map(cb => cb.value);
 }
 
 // ─────────────────────────────────────────────
@@ -907,6 +944,43 @@ function _normalizeCrit(crit) {
  * @param {string} readMessage - Message affiché dans le titre de l'aperçu (ex : nombre de lignes lues).
  * @returns {void}
  */
+/**
+ * Normalise et valide les lignes déjà routées par le détecteur de
+ * concepts (import-detect.js/import-normalize.js), construit
+ * l'aperçu HTML (mapping + tableau de lignes), et active/désactive
+ * le bouton de confirmation selon le nombre de lignes valides.
+ *
+ * ⚠️ CHANGÉ : le libellé détecté depuis le document (colonne "Zone"
+ * du fichier, ou libellé de ligne-titre de section, voir
+ * import-detect.js) alimente désormais row.zone — JAMAIS row.rayon.
+ * Un rayon FSQS n'est plus jamais déduit du document : targetRayons
+ * de chaque ligne est initialisé avec _importDefaultRayons (rayon(s)
+ * choisis par l'utilisateur dans le sélecteur au-dessus de l'aperçu
+ * AVANT l'import, voir _onImportDefaultRayonsChanged), identique pour
+ * toutes les lignes du fichier. L'ancien comportement créait à tort
+ * un nouveau RAYON pour chaque libellé de section détecté — désormais
+ * ce libellé devient une ZONE à l'intérieur du/des rayon(s) choisis,
+ * cohérent avec le sens réel de "zone = sous-partie d'un rayon".
+ * Une zone détectée correspondant, à la casse près, à une zone déjà
+ * connue dans au moins un des rayons par défaut (getZonesForRayon,
+ * rayons.js) conserve la casse canonique existante.
+ *
+ * La seule condition de validité, pour les deux cibles, est un
+ * intitulé non vide — voir le typedef ImportParsedRow pour la
+ * distinction entre `valid` (intitulé) et l'exclusion supplémentaire
+ * par `targetRayons` vide (cible 'grille' uniquement, voir
+ * confirmImport).
+ *
+ * La criticité non déterminée depuis le document (colonne absente
+ * ou valeur non reconnue) retombe sur _importDefaultCrit plutôt que
+ * sur une valeur fixe — réglable par l'utilisateur dans la modale
+ * (voir _onDefaultCritChanged) avant confirmation de l'import.
+ * @param {NormalizedImportRow[]} normalizedRows - Lignes déjà routées par normalizeRows (import-normalize.js) selon le mapping détecté.
+ * @param {DetectionResult | null} detection - Résultat de detectConceptMapping (import-detect.js) ; null si rawRows est vide (aucun fichier exploitable).
+ * @param {RawImportRow[]} rawRows - Lignes brutes d'origine, conservées pour permettre un nouveau passage de normalizeRows si l'utilisateur corrige le mapping.
+ * @param {string} readMessage - Message affiché dans le titre de l'aperçu (ex : nombre de lignes lues).
+ * @returns {void}
+ */
 function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
   _importRows  = [];
   _importRawRows = rawRows;
@@ -916,18 +990,24 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
   const previewRows = [];
   /** @type {boolean} */
   const isQualimetreTarget = _importTarget === 'qualimetre';
+
+  // Casse canonique : fusionne les zones déjà connues de tous les
+  // rayons par défaut sélectionnés (pas seulement le premier), pour
+  // que la correspondance fonctionne quel que soit le rayon visé.
   /** @type {string[]} */
-  const knownRayons = isQualimetreTarget ? [] : getKnownRayons();
+  const knownZones = isQualimetreTarget ? [] : [...new Set(
+    _importDefaultRayons.flatMap(rayon => getZonesForRayon(rayon))
+  )];
 
   normalizedRows.forEach((row, index) => {
-    if (!row.rayon && !row.q) return;
+    if (!row.zone && !row.q) return;
 
     /** @type {string} */
-    const rawRayon = (row.rayon || '').trim();
+    const rawZone = (row.zone || '').trim();
     /** @type {string | undefined} */
-    const matchingKnownRayon = knownRayons.find(r => r.toLowerCase() === rawRayon.toLowerCase());
+    const matchingKnownZone = knownZones.find(z => z.toLowerCase() === rawZone.toLowerCase());
     /** @type {string} */
-    const resolvedRayon = matchingKnownRayon || rawRayon;
+    const resolvedZone = matchingKnownZone || rawZone;
 
     /** @type {GrilleCriticite} */
     const normalizedCrit  = _normalizeCrit(row.crit) || _importDefaultCrit;
@@ -939,10 +1019,9 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
 
     /** @type {ImportParsedRow} */
     const parsedRow = {
-      rayon:        resolvedRayon,
-      rayonRaw:     row.rayon,
-      targetRayons: resolvedRayon ? [resolvedRayon] : [],
-      zone:         '',
+      zoneRaw:      row.zone,
+      targetRayons: isQualimetreTarget ? [] : [..._importDefaultRayons],
+      zone:         isQualimetreTarget ? '' : resolvedZone,
       selected:     false,
       cat:          row.cat || 'Général',
       q:            row.q.trim(),
@@ -1678,7 +1757,7 @@ function _importIntoQualimetre(rows) {
 
   rows.forEach(row => {
     /** @type {ResolvedZone} */
-    const zone = _resolveOrCreateZoneFromDocument(row.rayonRaw, storeId, sessionZoneIds);
+    const zone = _resolveOrCreateZoneFromDocument(row.zoneRaw, storeId, sessionZoneIds);
 
     if (zone.isUnclassified) unclassifiedCount++;
 

@@ -27,7 +27,7 @@
 // ─────────────────────────────────────────────
 
 /**
- * Ligne au format à 5 champs fixes (rayon/cat/q/crit/poids) déjà
+ * Ligne au format à 5 champs fixes (zone/cat/q/crit/poids) déjà
  * consommé par import-grille.js/grille-qualimetre.js, enrichie d'un
  * champ `extra` qui concatène le contenu des colonnes du document
  * n'ayant été assignées à aucun concept métier connu (voir
@@ -35,8 +35,19 @@
  * RawImportRow (import-detect.js), dont les clés sont les en-têtes
  * bruts du document — NormalizedImportRow est le résultat, après
  * routage par le mapping, vers ce format de sortie fixe.
+ *
+ * ⚠️ CHANGÉ : le champ `rayon` a été renommé `zone`. Le concept
+ * détecté depuis le document (mapping.zone — une colonne "Zone" du
+ * fichier, ou le libellé d'une ligne-titre de section, voir
+ * import-detect.js) a TOUJOURS représenté une ZONE, jamais un rayon —
+ * un rayon FSQS n'est jamais déduit du document, il est choisi par
+ * l'utilisateur avant l'import (voir le sélecteur de rayon(s) cible,
+ * import-grille.js). L'ancien nommage `rayon` ici était la source de
+ * la confusion : le moteur FSQS créait à tort un nouveau RAYON pour
+ * chaque libellé de section du document, alors qu'il fallait créer
+ * une ZONE à l'intérieur du rayon choisi par l'utilisateur.
  * @typedef {Object} NormalizedImportRow
- * @property {string} rayon
+ * @property {string} zone
  * @property {string} cat
  * @property {string} q
  * @property {string} crit
@@ -90,7 +101,7 @@ function normalizeRows(rawRows, mapping, unmappedHeaders) {
  */
 function _normalizeOneRow(row, mapping, unmappedHeaders) {
   /** @type {string} */
-  const rayon = mapping.zone ? String(row[mapping.zone] || '') : '';
+  const zone = mapping.zone ? String(row[mapping.zone] || '') : '';
   /** @type {string} */
   const q = mapping.point ? String(row[mapping.point] || '') : '';
   /** @type {string} */
@@ -122,7 +133,7 @@ function _normalizeOneRow(row, mapping, unmappedHeaders) {
   });
 
   return {
-    rayon,
+    zone,
     cat,
     q,
     crit,
@@ -162,7 +173,7 @@ function findDuplicateRows(rows) {
 
   rows.forEach((row, index) => {
     /** @type {string} */
-    const key = `${_normalizeForDuplicateKey(row.rayon)}|${_normalizeForDuplicateKey(row.q)}`;
+    const key = `${_normalizeForDuplicateKey(row.zone)}|${_normalizeForDuplicateKey(row.q)}`;
     if (!row.q.trim()) return; // une ligne sans intitulé n'est jamais comparée (rien de significatif à dédupliquer)
 
     if (seen.has(key)) {
