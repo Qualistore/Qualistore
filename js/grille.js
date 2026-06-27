@@ -431,6 +431,31 @@ function _buildCategorySection(category, points, rayon, storeId) {
  * @param {string} storeId - Magasin actuellement affiché (page Grilles) ; transmis aux actions UNIQUEMENT si point._scope === 'store' (sinon le point est commun, voir _buildPointActions).
  * @returns {string}
  */
+/**
+ * Construit la ligne HTML d'un point de contrôle.
+ *
+ * ⚠️ CHANGÉ : depuis la fusion grille commune + points propres au
+ * magasin (voir getGrille), un point affiché dans le contexte d'un
+ * magasin peut venir de DEUX endroits différents — point.\_scope
+ * ('common' ou 'store', ajouté par getGrille à la lecture, jamais
+ * persisté) indique lequel. Les actions (modifier/supprimer)
+ * utilisent ce scope pour agir au bon endroit : un point commun
+ * affiché ici reste un point commun, le modifier affecte TOUS les
+ * magasins de l'enseigne, pas seulement celui-ci — voir
+ * _buildPointActions. Un badge discret "Commun" signale ce cas à
+ * l'utilisateur pour éviter toute surprise.
+ *
+ * ⚠️ AJOUTÉ : un point saisi manuellement via le formulaire (id
+ * préfixé 'cust-', voir saveCtrl) reçoit un fond légèrement teinté
+ * pour le distinguer au premier coup d'œil d'un point importé (id
+ * préfixé 'imp-') — uniquement dans l'onglet Grilles (page
+ * d'édition), pas dans la modale d'audit (audits.js, qui réutilise
+ * GrillePoint mais pas cette fonction de rendu).
+ * @param {GrillePoint & {_scope?: 'common'|'store'}} point
+ * @param {string} rayon
+ * @param {string} storeId - Magasin actuellement affiché (page Grilles) ; transmis aux actions UNIQUEMENT si point._scope === 'store' (sinon le point est commun, voir _buildPointActions).
+ * @returns {string}
+ */
 function _buildPointRow(point, rayon, storeId) {
   /** @type {boolean} */
   const isAdmin = CU && CU.role === 'admin';
@@ -440,11 +465,17 @@ function _buildPointRow(point, rayon, storeId) {
   const commonBadge = (isCommon && storeId)
     ? ' <span class="tsm" style="color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:0 6px;font-size:10px;vertical-align:middle">Commun</span>'
     : '';
+  /** @type {boolean} */
+  const isManual = point.id.startsWith('cust-');
+  /** @type {string} */
+  const manualBadge = isManual
+    ? ' <span class="tsm" style="color:var(--warning-dark);background:var(--warning-light);border-radius:8px;padding:0 6px;font-size:10px;vertical-align:middle">Saisi manuellement</span>'
+    : '';
 
-  return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
+  return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)${isManual ? ';background:var(--warning-light)' : ''}">
     <div style="flex:1">
       <div style="font-size:13px">
-        ${point.q}${commonBadge}
+        ${point.q}${commonBadge}${manualBadge}
       </div>
       ${point.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;font-style:italic">${point.prec}</div>` : ''}
     </div>
