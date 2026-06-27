@@ -846,10 +846,12 @@
         <span style="color:var(--success-dark)">Exemple : <code style="background:var(--surface);padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
       </div>
 
-      <!-- Magasin(s) cible(s) (FSQS uniquement) — la grille de points peut désormais être spécifique à un magasin, voir getGrille (grille.js) -->
+      <!-- Enseigne cible (FSQS uniquement) — l'import remplit la grille de base du rayon, héritée par tous les magasins de cette enseigne -->
       <div class="form-group" id="imp-default-mags-group">
-        <label class="form-label">Magasin(s) cible(s) <span style="color:var(--text2);font-size:11px">(groupés par enseigne — laisser vide pour appliquer à la grille commune, partagée par tous les magasins sans surcharge propre)</span></label>
-        <div id="imp-default-mag-cbs" class="cb-group" style="max-height:160px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
+        <label class="form-label">Enseigne <span style="color:var(--text2);font-size:11px">(optionnel — laisser vide pour la grille commune à tous)</span></label>
+        <select class="form-control" id="imp-default-enseigne-sel" onchange="_onImportDefaultEnseigneChanged()">
+          <option value="">— Grille commune (toutes enseignes) —</option>
+        </select>
       </div>
 
       <!-- Rayon(s) cible(s) (FSQS uniquement) -->

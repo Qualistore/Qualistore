@@ -284,8 +284,9 @@ function openImportModal(target) {
       `<label class="cb-item"><input type="checkbox" class="imp-default-rayon-cb" value="${_escapeHtmlAttr(rayon)}" onchange="_onImportDefaultRayonsChanged()"> ${rayon}</label>`
     ).join('');
   }
-  if (el('imp-default-mag-cbs')) {
-    el('imp-default-mag-cbs').innerHTML = buildMagasinCheckboxesByEnseigne('imp-default-mag', '_onImportDefaultStoresChanged');
+  if (el('imp-default-enseigne-sel')) {
+    el('imp-default-enseigne-sel').innerHTML = '<option value="">— Grille commune (toutes enseignes) —</option>' +
+      getKnownEnseignes().map(e => `<option value="${_escapeHtmlAttr(e)}">${e}</option>`).join('');
   }
 
   /** @type {string} */
@@ -324,8 +325,22 @@ function _onImportDefaultRayonsChanged() {
  * getGrille, grille.js.
  * @returns {void}
  */
-function _onImportDefaultStoresChanged() {
-  _importDefaultStores = [...document.querySelectorAll('.imp-default-mag-mag-cb:checked')].map(cb => cb.value);
+/**
+ * Met à jour _importDefaultStores avec TOUS les magasins de
+ * l'enseigne choisie dans #imp-default-enseigne-sel (single-select —
+ * import par enseigne, pas par magasin individuel). À l'import, ces
+ * magasins héritent de la grille comme base (DB.grilleCustomByStore),
+ * sans jamais inclure les points créés via le formulaire manuel
+ * (ceux-là restent des cas particuliers propres à chaque magasin,
+ * voir saveCtrl, grille.js — non touchés par l'import).
+ * @returns {void}
+ */
+function _onImportDefaultEnseigneChanged() {
+  /** @type {string} */
+  const enseigne = v('imp-default-enseigne-sel');
+  _importDefaultStores = enseigne
+    ? DB.magasins.filter(m => m.enseigne === enseigne).map(m => m.id)
+    : [];
 }
 
 // ─────────────────────────────────────────────
