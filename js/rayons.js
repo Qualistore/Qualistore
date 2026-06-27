@@ -239,11 +239,24 @@ function renameRayon(oldName, newName) {
  * l'utilisateur avant d'appeler cette fonction (aucune confirmation
  * n'est demandée ici, cette fonction est un utilitaire de bas niveau
  * réutilisable depuis plusieurs écrans).
+ *
+ * ⚠️ CORRIGÉ : supprime aussi explicitement côté Supabase (sbDeleteWhere)
+ * chaque ligne concernée. Sans cela, un simple save() après cette
+ * fonction ne fait qu'upserter les tableaux DB restants — une ligne
+ * dont l'id a disparu de DB n'est jamais retirée côté serveur par un
+ * upsert (voir sbUpsert, supabase.js : "merge-duplicates", jamais un
+ * remplacement complet de table). Au rechargement suivant
+ * (loadDB()), Supabase renvoie encore l'ancienne ligne → le rayon,
+ * ses points, ses audits/NC/actions/brouillons réapparaissaient.
+ * Les appels Supabase sont best-effort (erreurs réseau silencieuses,
+ * comme le reste de la synchronisation — voir _pushToSupabase) ; la
+ * suppression locale, elle, est immédiate et inconditionnelle.
  * @param {string} rayonName
  * @returns {void}
  */
 function deleteRayonEverywhere(rayonName) {
   if (DB.grilleCustom) delete DB.grilleCustom[rayonName];
+  sbDeleteWhere('grille_custom', 'rayon', rayonName).catch(() => {});
 
   /** @type {string[]} */
   const removedAuditIds = DB.audits.filter(a => a.rayon === rayonName).map(a => a.id);
@@ -253,9 +266,16 @@ function deleteRayonEverywhere(rayonName) {
     const linkedNcIds = DB.ncs.filter(nc => nc.aid === auditId).map(nc => nc.id);
     DB.ncs = DB.ncs.filter(nc => nc.aid !== auditId);
     DB.actions = DB.actions.filter(action => !linkedNcIds.includes(action.ncId));
+
+    linkedNcIds.forEach(ncId => sbDeleteWhere('actions', 'ncId', ncId).catch(() => {}));
+    sbDeleteWhere('ncs', 'aid', auditId).catch(() => {});
+    sbDeleteWhere('audits', 'id', auditId).catch(() => {});
   });
 
+  /** @type {string[]} */
+  const removedDraftIds = (DB.drafts || []).filter(d => d.rayon === rayonName).map(d => d.id);
   DB.drafts = (DB.drafts || []).filter(d => d.rayon !== rayonName);
+  removedDraftIds.forEach(draftId => sbDeleteWhere('drafts', 'id', draftId).catch(() => {}));
 }
 
 // ─────────────────────────────────────────────
