@@ -425,3 +425,68 @@ function unclassifyGrilleZone(rayon, zone) {
     if ((point.zone || '') === zone) point.zone = '';
   });
 }
+
+// ─────────────────────────────────────────────
+// 6. ASSIGNATION RAYON ↔ MAGASIN
+// ─────────────────────────────────────────────
+// Un magasin ne peut auditer que les rayons qui lui ont été
+// explicitement assignés (Magasin.rayons, voir magasins.js) — AUCUN
+// fallback "tous les rayons" pour un magasin sans assignation, même
+// créé avant l'introduction de ce champ. C'est un choix strict
+// délibéré : l'admin assigne manuellement (un par un ou "tout
+// assigner" en une fois), après quoi les utilisateurs liés à ce
+// magasin peuvent auditer les rayons assignés.
+
+/**
+ * Liste les rayons assignés à un magasin (Magasin.rayons), triés
+ * alphabétiquement. Tableau vide si le magasin n'existe pas ou n'a
+ * aucun rayon assigné — jamais de fallback vers getKnownRayons().
+ * @param {string} storeId - Référence vers Magasin.id.
+ * @returns {string[]}
+ */
+function getRayonsForMagasin(storeId) {
+  /** @type {Magasin | undefined} */
+  const store = DB.magasins.find(m => m.id === storeId);
+  if (!store || !store.rayons) return [];
+  return [...store.rayons].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+/**
+ * Remplace intégralement la liste des rayons assignés à un magasin
+ * (pas un ajout incrémental — la liste fournie devient la nouvelle
+ * liste complète). Ne filtre pas sur getKnownRayons() : un rayon
+ * assigné qui serait ensuite supprimé (deleteRayonEverywhere) reste
+ * dans Magasin.rayons jusqu'à réaffectation manuelle, exactement
+ * comme Magasin.enseigne pour une enseigne supprimée (voir
+ * deleteEnseigne, magasins.js) — cohérence délibérée entre les deux
+ * mécanismes d'assignation "douce".
+ * @param {string} storeId
+ * @param {string[]} rayons
+ * @returns {void}
+ */
+function setMagasinRayons(storeId, rayons) {
+  /** @type {Magasin | undefined} */
+  const store = DB.magasins.find(m => m.id === storeId);
+  if (!store) return;
+  store.rayons = [...new Set(rayons)];
+}
+
+/**
+ * Coche/décoche un seul rayon pour un magasin, sans toucher aux
+ * autres rayons déjà assignés.
+ * @param {string} storeId
+ * @param {string} rayon
+ * @param {boolean} isAssigned
+ * @returns {void}
+ */
+function toggleMagasinRayon(storeId, rayon, isAssigned) {
+  /** @type {Magasin | undefined} */
+  const store = DB.magasins.find(m => m.id === storeId);
+  if (!store) return;
+  if (!store.rayons) store.rayons = [];
+  if (isAssigned) {
+    if (!store.rayons.includes(rayon)) store.rayons.push(rayon);
+  } else {
+    store.rayons = store.rayons.filter(r => r !== rayon);
+  }
+}

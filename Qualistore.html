@@ -541,6 +541,28 @@
   </div>
 </div>
 
+<!-- MODAL: ASSIGNATION RAYONS À UN MAGASIN -->
+<div class="modal-ov" id="m-assign-rayons">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="m-assign-rayons-ttl"><i class="ti ti-category" style="color:var(--primary)"></i> Rayons assignés</div>
+      <button class="btn-x" onclick="closeModal('m-assign-rayons')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ar-store-id">
+      <div class="flex-btw mb-4">
+        <span class="tsm tm">Seuls les rayons cochés seront proposables à l'audit pour ce magasin.</span>
+        <button class="btn btn-secondary btn-sm" onclick="assignAllRayonsToStore()"><i class="ti ti-checks"></i> Tout assigner</button>
+      </div>
+      <div id="ar-rayon-cbs" class="cb-group" style="max-height:280px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-assign-rayons')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveAssignRayons()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: MODIFIER NC -->
 <div class="modal-ov" id="m-nc-edit">
   <div class="modal" style="max-width:480px">
@@ -604,8 +626,12 @@
     <div class="modal-body">
       <div id="as1">
         <div class="form-row">
-          <div class="form-group"><label class="form-label">Magasin *</label><select class="form-control" id="a-mag"><option value="">Sélectionner...</option></select></div>
-          <div class="form-group"><label class="form-label">Rayon *</label><select class="form-control" id="a-ray"><option value="">Sélectionner...</option></select></div>
+          <div class="form-group"><label class="form-label">Magasin *</label><select class="form-control" id="a-mag" onchange="_onAuditMagChanged()"><option value="">Sélectionner...</option></select></div>
+          <div class="form-group">
+            <label class="form-label">Rayon *</label>
+            <select class="form-control" id="a-ray"><option value="">Sélectionner...</option></select>
+            <div class="tsm" style="display:none;color:var(--warning-dark);margin-top:4px" id="a-ray-empty-hint"><i class="ti ti-alert-triangle"></i> Aucun rayon assigné à ce magasin — voir la page Magasins.</div>
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group"><label class="form-label">Date *</label><input type="date" class="form-control" id="a-date"></div>

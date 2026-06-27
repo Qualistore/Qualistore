@@ -352,8 +352,12 @@ function deleteAudit(auditId) {
 /**
  * Ouvre le wizard de création d'un nouvel audit (étape 1 :
  * sélection magasin/rayon/date), en réinitialisant l'état du module.
- * Peuple le sélecteur de rayon depuis getKnownRayons() (rayons.js) —
- * aucune liste fixe.
+ *
+ * ⚠️ CHANGÉ : le sélecteur de rayon (#a-ray) ne propose plus TOUS les
+ * rayons connus, mais uniquement ceux assignés au magasin choisi
+ * (voir getRayonsForMagasin, rayons.js, et _onAuditMagChanged) — un
+ * magasin sans aucun rayon assigné ne peut produire aucun audit, le
+ * select rayon reste vide et désactivé jusqu'à un choix de magasin.
  * @returns {void}
  */
 function openAuditModal() {
@@ -368,8 +372,11 @@ function openAuditModal() {
       .map(m => `<option value="${m.id}">${m.nom}</option>`)
       .join('');
 
-  populateRayonSelect(el('a-ray'), true);
-  el('a-ray').value = '';
+  // Aucun magasin choisi encore -> aucun rayon proposable (voir
+  // _onAuditMagChanged, déclenchée au choix d'un magasin).
+  populateRayonSelect(el('a-ray'), true, []);
+  el('a-ray').value    = '';
+  el('a-ray').disabled = true;
 
   el('a-date').value    = today();
   el('a-date').readOnly = !(CU && CU.role === 'admin');
@@ -386,6 +393,30 @@ function openAuditModal() {
   _currentDraftId = null;
   auditStep       = 0;
   openModal('m-audit');
+}
+
+/**
+ * Repeuple le sélecteur de rayon (#a-ray) selon les rayons assignés
+ * au magasin sélectionné (voir getRayonsForMagasin, rayons.js) —
+ * déclenchée par le `onchange` de #a-mag. Désactive le select rayon
+ * (et affiche un message) si le magasin choisi n'a aucun rayon
+ * assigné, pour éviter de laisser l'utilisateur croire qu'un audit
+ * est possible alors qu'aucun rayon n'est proposable.
+ * @returns {void}
+ */
+function _onAuditMagChanged() {
+  /** @type {string} */
+  const storeId = v('a-mag');
+  /** @type {string[]} */
+  const rayons = storeId ? getRayonsForMagasin(storeId) : [];
+
+  populateRayonSelect(el('a-ray'), true, rayons);
+  el('a-ray').value    = '';
+  el('a-ray').disabled = rayons.length === 0;
+
+  if (el('a-ray-empty-hint')) {
+    el('a-ray-empty-hint').style.display = (storeId && rayons.length === 0) ? '' : 'none';
+  }
 }
 
 // ─────────────────────────────────────────────

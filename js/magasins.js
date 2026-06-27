@@ -18,6 +18,7 @@
  * @property {string} [adr] - Adresse, chaîne vide si non renseignée.
  * @property {string} statut - Valeur observée : 'actif'. D'autres valeurs probables (ex : 'inactif') non confirmées dans ce fichier.
  * @property {string | null} [did] - Référence vers User.id du directeur assigné (rôle 'directeur'), ou null/absent si non assigné.
+ * @property {string[]} [rayons] - Rayons FSQS assignés à ce magasin (voir getRayonsForMagasin, rayons.js) — détermine quels rayons sont proposables à l'audit pour ce magasin. ⚠️ STRICT : absent ou vide = AUCUN rayon auditable pour ce magasin (pas de fallback "tous les rayons"), même pour les magasins créés avant l'introduction de ce champ — voir openCreateAssignRayonsModal pour l'assignation manuelle (ou en masse).
  */
 
 /**
@@ -108,6 +109,8 @@ function _buildStoreCard(store, canManage) {
   const openNcCount = DB.ncs.filter(n => n.mid === store.id && n.statut === 'Ouverte').length;
   /** @type {User | undefined} */
   const director    = DB.users.find(u => u.id === store.did);
+  /** @type {number} */
+  const rayonCount  = getRayonsForMagasin(store.id).length;
 
   return `<div class="card">
     <div class="card-hdr">
@@ -122,6 +125,10 @@ function _buildStoreCard(store, canManage) {
       <div style="font-size:12px;margin-bottom:12px">
         <i class="ti ti-user" style="color:var(--primary)"></i>
         ${director ? director.nom : '<span class="tm">Non assigné</span>'}
+      </div>
+      <div style="font-size:12px;margin-bottom:12px${rayonCount === 0 ? ';color:var(--warning-dark)' : ''}">
+        <i class="ti ti-category" style="color:${rayonCount === 0 ? 'var(--warning)' : 'var(--primary)'}"></i>
+        ${rayonCount === 0 ? 'Aucun rayon assigné — audit impossible' : `${rayonCount} rayon(s) assigné(s)`}
       </div>
       ${_buildStoreStats(score, auditCount, openNcCount)}
       ${score !== null ? pbar(score) : ''}
@@ -171,6 +178,9 @@ function _buildStoreActions(store) {
   return `<div style="display:flex;gap:8px;margin-top:14px">
     <button class="btn btn-secondary btn-sm" style="flex:1" onclick="openMagModal('${store.id}')">
       <i class="ti ti-pencil"></i> Modifier
+    </button>
+    <button class="btn btn-secondary btn-sm" style="flex:1" onclick="openAssignRayonsModal('${store.id}')">
+      <i class="ti ti-category"></i> Rayons
     </button>
     <button class="btn btn-danger btn-sm" onclick="confirmDel('mag','${store.id}','${escapedName}')">
       <i class="ti ti-trash"></i>
@@ -558,4 +568,69 @@ function confirmDeleteEnseigne(nom, storeCount) {
   deleteEnseigne(nom);
   save(['enseignes']);
   renderEnseignes();
+}
+
+// ─────────────────────────────────────────────
+// ASSIGNATION RAYONS ↔ MAGASIN
+// ─────────────────────────────────────────────
+// Un magasin ne peut auditer que les rayons qui lui ont été
+// explicitement assignés (Magasin.rayons, voir getRayonsForMagasin/
+// setMagasinRayons/toggleMagasinRayon, rayons.js) — voir le typedef
+// Magasin pour le rappel du comportement strict (aucun fallback).
+
+/**
+ * Ouvre la modale d'assignation de rayons pour un magasin, avec une
+ * case à cocher par rayon connu (getKnownRayons, rayons.js),
+ * pré-cochées selon l'assignation actuelle (getRayonsForMagasin).
+ * @param {string} storeId
+ * @returns {void}
+ */
+function openAssignRayonsModal(storeId) {
+  /** @type {Magasin | undefined} */
+  const store = DB.magasins.find(m => m.id === storeId);
+  if (!store) return;
+
+  sv('ar-store-id', storeId);
+  el('m-assign-rayons-ttl').innerHTML = `<i class="ti ti-category" style="color:var(--primary)"></i> Rayons assignés — ${store.nom}`;
+
+  /** @type {string[]} */
+  const assigned = getRayonsForMagasin(storeId);
+  el('ar-rayon-cbs').innerHTML = getKnownRayons().map(rayon => `
+    <label class="cb-item">
+      <input type="checkbox" class="ar-rayon-cb" value="${_escapeHtmlAttr(rayon)}" ${assigned.includes(rayon) ? 'checked' : ''}>
+      ${rayon}
+    </label>`).join('') || `<div class="tsm tm" style="padding:12px;text-align:center">Aucun rayon n'existe encore — créez-en depuis la page Grilles.</div>`;
+
+  openModal('m-assign-rayons');
+}
+
+/**
+ * Coche toutes les cases de rayon dans la modale d'assignation
+ * ouverte (voir openAssignRayonsModal) — n'enregistre rien tant que
+ * "Enregistrer" n'est pas cliqué (voir saveAssignRayons), pour
+ * rester annulable.
+ * @returns {void}
+ */
+function assignAllRayonsToStore() {
+  document.querySelectorAll('.ar-rayon-cb').forEach(cb => { cb.checked = true; });
+}
+
+/**
+ * Enregistre l'assignation de rayons telle que cochée dans la
+ * modale (remplace intégralement Magasin.rayons — voir
+ * setMagasinRayons, rayons.js).
+ * @returns {void}
+ */
+function saveAssignRayons() {
+  /** @type {string} */
+  const storeId = v('ar-store-id');
+  if (!storeId) return;
+
+  /** @type {string[]} */
+  const checkedRayons = [...document.querySelectorAll('.ar-rayon-cb:checked')].map(cb => cb.value);
+  setMagasinRayons(storeId, checkedRayons);
+
+  save();
+  closeModal('m-assign-rayons');
+  renderMag();
 }

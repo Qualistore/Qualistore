@@ -499,7 +499,17 @@ function _onMagasinCheckboxChanged(groupId) {
  * @param {boolean} [includeEmptyOption] - Si true, conserve/ajoute une première option vide ("Tous les rayons" ou "Sélectionner…", déjà présente dans le HTML) sans la supprimer ; si false, le select ne contient que des rayons.
  * @returns {void}
  */
-function populateRayonSelect(selectElement, includeEmptyOption) {
+/**
+ * Peuple un élément `<select>` avec des rayons FSQS, en préservant
+ * la valeur courante si elle reste valide. Remplace toute liste
+ * d'`<option>` de rayons codée en dur dans le HTML — le nom d'un
+ * rayon n'est jamais fixe, voir rayons.js.
+ * @param {HTMLSelectElement | null} selectElement
+ * @param {boolean} [includeEmptyOption] - Si true, conserve/ajoute une première option vide ("Tous les rayons" ou "Sélectionner…", déjà présente dans le HTML) sans la supprimer ; si false, le select ne contient que des rayons.
+ * @param {string[]} [rayonsOverride] - Liste explicite de rayons à utiliser au lieu de getKnownRayons() (tous les rayons existants) — voir openAuditModal/_onAuditMagChanged (audits.js), qui filtre selon les rayons assignés au magasin choisi (getRayonsForMagasin, rayons.js). Omis = comportement historique inchangé (tous les rayons connus).
+ * @returns {void}
+ */
+function populateRayonSelect(selectElement, includeEmptyOption, rayonsOverride) {
   if (!selectElement) return;
   /** @type {string} */
   const currentValue = selectElement.value;
@@ -507,7 +517,7 @@ function populateRayonSelect(selectElement, includeEmptyOption) {
   const keepFrom = includeEmptyOption ? 1 : 0;
   while (selectElement.options.length > keepFrom) selectElement.remove(keepFrom);
 
-  getKnownRayons().forEach(rayon => {
+  (rayonsOverride || getKnownRayons()).forEach(rayon => {
     const option = document.createElement('option');
     option.value       = rayon;
     option.textContent = rayon;
