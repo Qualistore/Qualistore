@@ -64,6 +64,14 @@ const RAYONS_LIST = RAYONS_BASE_SEED;
  *    reçu de point personnalisé (il n'utilise alors que le
  *    référentiel commun GRILLE_BASE_COMMUNE).
  *
+ * ⚠️ CORRIGÉ : un rayon explicitement supprimé (deleteRayonEverywhere)
+ * est exclu même s'il appartient à RAYONS_BASE_SEED — voir
+ * DB.deletedRayons. Sans cette exclusion, supprimer un rayon
+ * "historique" (ex : 'Boucherie') n'avait aucun effet visible : le
+ * seed le réinjectait systématiquement à chaque appel de cette
+ * fonction, donnant l'impression que la suppression "ne prenait pas"
+ * ou que le rayon "réapparaissait".
+ *
  * C'est la fonction à utiliser PARTOUT où l'application a besoin de
  * lister les rayons FSQS existants (sélecteurs, dashboard, filtres)
  * — ne jamais réintroduire une liste fixe en dur ailleurs dans le
@@ -78,9 +86,15 @@ function getKnownRayons() {
   (DB.audits || []).forEach(audit => { if (audit.rayon) known.add(audit.rayon); });
   (DB.drafts || []).forEach(draft => { if (draft.rayon) known.add(draft.rayon); });
 
+  /** @type {Set<string>} */
+  const deleted = new Set(DB.deletedRayons || []);
+  deleted.forEach(rayon => known.delete(rayon));
+
   /** @type {string[]} */
   const extras = [...known].filter(r => !RAYONS_BASE_SEED.includes(r)).sort((a, b) => a.localeCompare(b, 'fr'));
-  return [...RAYONS_BASE_SEED, ...extras];
+  /** @type {string[]} */
+  const seedSurvivants = RAYONS_BASE_SEED.filter(r => !deleted.has(r));
+  return [...seedSurvivants, ...extras];
 }
 
 // ─────────────────────────────────────────────
@@ -179,6 +193,11 @@ function _buildRayonCard(rayon, rayonAudits) {
  * préparer un rayon avant la première saisie/import. Si le rayon
  * existe déjà (correspondance exacte), ne fait rien (pas de doublon,
  * pas d'écrasement).
+ *
+ * ⚠️ CORRIGÉ : retire aussi le rayon de DB.deletedRayons s'il y
+ * figurait (voir deleteRayonEverywhere) — recréer volontairement un
+ * rayon précédemment supprimé doit fonctionner normalement, y
+ * compris pour un rayon du seed historique (RAYONS_BASE_SEED).
  * @param {string} rayonName
  * @returns {boolean} true si le rayon a été créé, false s'il existait déjà ou si le nom est vide.
  */
@@ -188,6 +207,7 @@ function createRayon(rayonName) {
   if (!trimmed) return false;
   if (getKnownRayons().includes(trimmed)) return false;
 
+  if (DB.deletedRayons) DB.deletedRayons = DB.deletedRayons.filter(r => r !== trimmed);
   if (!DB.grilleCustom) DB.grilleCustom = {};
   DB.grilleCustom[trimmed] = DB.grilleCustom[trimmed] || [];
   return true;
@@ -225,6 +245,7 @@ function renameRayon(oldName, newName) {
   }
   (DB.audits || []).forEach(audit => { if (audit.rayon === oldName) audit.rayon = trimmedNew; });
   (DB.drafts || []).forEach(draft => { if (draft.rayon === oldName) draft.rayon = trimmedNew; });
+  if (DB.deletedRayons) DB.deletedRayons = DB.deletedRayons.filter(r => r !== trimmedNew);
 
   return { ok: true };
 }
@@ -251,10 +272,22 @@ function renameRayon(oldName, newName) {
  * Les appels Supabase sont best-effort (erreurs réseau silencieuses,
  * comme le reste de la synchronisation — voir _pushToSupabase) ; la
  * suppression locale, elle, est immédiate et inconditionnelle.
+ * ⚠️ CORRIGÉ (2e cause) : enregistre aussi le rayon dans
+ * DB.deletedRayons, persisté côté Supabase (voir _pushToSupabase) et
+ * consulté par getKnownRayons() pour EXCLURE ce rayon même s'il fait
+ * partie de RAYONS_BASE_SEED (les 7 rayons historiques toujours
+ * proposés par défaut). Sans cette exclusion, supprimer un rayon du
+ * seed (ex : 'Boucherie') n'avait aucun effet visible : getKnownRayons()
+ * le réinjectait systématiquement à l'appel suivant — c'était la
+ * cause la plus probable d'un rayon supprimé qui "réapparaît",
+ * indépendamment de tout problème de synchronisation réseau.
  * @param {string} rayonName
  * @returns {void}
  */
 function deleteRayonEverywhere(rayonName) {
+  if (!DB.deletedRayons) DB.deletedRayons = [];
+  if (!DB.deletedRayons.includes(rayonName)) DB.deletedRayons.push(rayonName);
+
   if (DB.grilleCustom) delete DB.grilleCustom[rayonName];
   sbDeleteWhere('grille_custom', 'rayon', rayonName).catch(() => {});
 

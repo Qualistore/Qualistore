@@ -252,7 +252,7 @@ function qaPrev() {
 function buildQaQuestions() {
   qaCurrentZone = 0;
   el('qa-zone-tabs').innerHTML = _qaGrille.map((z, i) => `
-    <button onclick="switchQaZone(${i})" id="qa-tab-${i}" style="padding:5px 10px;border-radius:6px;border:1px solid #ddd6fe;background:${i === 0 ? '#7c3aed' : '#f5f3ff'};color:${i === 0 ? '#fff' : '#6d28d9'};font-size:12px;cursor:pointer;font-weight:500">
+    <button onclick="switchQaZone(${i})" id="qa-tab-${i}" class="qatab${i === 0 ? ' active' : ''}">
       ${z.emoji} ${z.label.split(' – ')[1] || z.label}
     </button>`).join('');
   renderQaZone(0);
@@ -268,8 +268,7 @@ function buildQaQuestions() {
 function switchQaZone(idx) {
   qaCurrentZone = idx;
   document.querySelectorAll('[id^=qa-tab-]').forEach((b, i) => {
-    b.style.background = i === idx ? '#7c3aed' : '#f5f3ff';
-    b.style.color = i === idx ? '#fff' : '#6d28d9';
+    b.classList.toggle('active', i === idx);
   });
   renderQaZone(idx);
 }

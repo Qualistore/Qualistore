@@ -1,11 +1,16 @@
 :root {
   --primary:#1a4fa0;--primary-light:#e8f0fc;--primary-mid:#3b7dd8;
-  --danger:#e53935;--danger-light:#fdecea;
-  --warning:#f59e0b;--warning-light:#fff8e1;
-  --success:#16a34a;--success-light:#dcfce7;
-  --orange:#ea580c;--orange-light:#fff0e6;
+  --danger:#e53935;--danger-light:#fdecea;--danger-dark:#b91c1c;
+  --warning:#f59e0b;--warning-light:#fff8e1;--warning-dark:#92400e;
+  --success:#16a34a;--success-light:#dcfce7;--success-dark:#15803d;
+  --orange:#ea580c;--orange-light:#fff0e6;--orange-dark:#9a3412;
   --bg:#f3f5f9;--surface:#fff;--border:#e2e6ef;
   --text:#1a1f36;--text2:#5a6070;--text3:#9aa0b0;
+  /* Qualimètre : violet distinct du bleu FSQS (--primary), pour
+     différencier les deux modules en un coup d'œil. Même teinte
+     exacte qu'avant (#7c3aed) — uniquement centralisée ici au lieu
+     d'être répétée en hex dans plus de 25 endroits du HTML. */
+  --qual:#7c3aed;--qual-light:#f5f3ff;--qual-dark:#5b21b6;--qual-border:#ddd6fe;
   --sidebar-w:240px;--radius:10px;--radius-lg:14px;
   --shadow:0 1px 4px rgba(0,0,0,.08),0 0 1px rgba(0,0,0,.06);
 }
@@ -98,7 +103,7 @@ tbody tr:hover td{background:#f8faff}
 .form-control:focus{outline:none;border-color:var(--primary-mid);box-shadow:0 0 0 3px rgba(59,125,216,.12)}
 .form-hint{font-size:11px;color:var(--text3);margin-top:4px}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.form-err{background:var(--danger-light);color:#b91c1c;border-radius:7px;padding:9px 14px;font-size:13px;margin-bottom:12px;display:none}
+.form-err{background:var(--danger-light);color:var(--danger-dark);border-radius:7px;padding:9px 14px;font-size:13px;margin-bottom:12px;display:none}
 .form-err.show{display:block}
 
 /* MODAL */
@@ -112,6 +117,30 @@ tbody tr:hover td{background:#f8faff}
 .modal-foot{padding:14px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;background:var(--bg);border-radius:0 0 var(--radius-lg) var(--radius-lg)}
 .btn-x{background:none;border:none;cursor:pointer;font-size:20px;color:var(--text2);padding:4px 6px;border-radius:4px;line-height:1}
 .btn-x:hover{background:var(--bg)}
+
+/* Onglets de format (modale Import) — remplace l'ancien style 100%
+   inline + bascule JS de style.background/color, pour rester
+   cohérent avec le reste des composants (transition, focus). */
+.imp-tab{flex:1;padding:10px;font-size:13px;font-weight:500;background:var(--surface);color:var(--text);border:none;border-left:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s,color .15s}
+.imp-tab:first-child{border-left:none}
+.imp-tab.active{background:var(--primary);color:#fff}
+
+/* Onglets de navigation entre zones (modale d'audit FSQS) — voir
+   _buildAuditZoneTabs/switchAuditZone, audits.js. */
+.atab{padding:5px 10px;border-radius:6px;border:1px solid var(--primary-light);background:var(--surface);color:var(--primary);font-size:12px;cursor:pointer;font-weight:500;transition:background .15s,color .15s}
+.atab.active{background:var(--primary);color:#fff}
+
+/* Sélecteur FSQS / Qualimètre (dashboard) — chaque module garde sa
+   couleur de marque (bleu FSQS, violet Qualimètre) une fois actif. */
+.dash-tab{padding:7px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;background:transparent;color:var(--text2);transition:background .15s,color .15s}
+.dash-tab-fsqs.active{background:var(--primary);color:#fff}
+.dash-tab-qual.active{background:var(--qual);color:#fff}
+
+/* Onglets de navigation entre zones (modale d'audit Qualimètre) —
+   voir switchQaZone, audit-qualimetre.js. Pendant violet de .atab
+   (audit FSQS, bleu) pour garder la distinction des deux modules. */
+.qatab{padding:5px 10px;border-radius:6px;border:1px solid var(--qual-border);background:var(--qual-light);color:var(--qual-dark);font-size:12px;cursor:pointer;font-weight:500;transition:background .15s,color .15s}
+.qatab.active{background:var(--qual);color:#fff}
 
 /* MISC */
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}

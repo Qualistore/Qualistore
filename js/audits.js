@@ -501,9 +501,7 @@ function _buildAuditZoneTabs() {
   if (!tabsContainer) return;
 
   tabsContainer.innerHTML = _auditZoneKeys.map((zone, index) => `
-    <button id="atab-${index}"
-      onclick="switchAuditZone('${zone}')"
-      style="padding:5px 10px;border-radius:6px;border:1px solid var(--primary-light);background:${index === 0 ? 'var(--primary)' : 'var(--surface)'};color:${index === 0 ? '#fff' : 'var(--primary)'};font-size:12px;cursor:pointer;font-weight:500">
+    <button id="atab-${index}" class="atab${index === 0 ? ' active' : ''}" onclick="switchAuditZone('${zone}')">
       ${zone}
     </button>`).join('');
 }
@@ -529,8 +527,7 @@ function switchAuditZone(zone) {
   _auditZoneKeys.forEach((z, i) => {
     const btn = el('atab-' + i);
     if (!btn) return;
-    btn.style.background = z === zone ? 'var(--primary)' : 'var(--surface)';
-    btn.style.color      = z === zone ? '#fff' : 'var(--primary)';
+    btn.classList.toggle('active', z === zone);
   });
 
   // Rendre les questions de la zone, groupées par Thème (point.cat)
@@ -605,7 +602,7 @@ function navAuditZone(direction) {
   /** @type {number} */
   const currentIndex = _auditZoneKeys.findIndex((_, i) => {
     const btn = el('atab-' + i);
-    return btn && btn.style.color === 'rgb(255, 255, 255)';
+    return btn && btn.classList.contains('active');
   });
   /** @type {number} */
   const newIndex = Math.max(0, Math.min(_auditZoneKeys.length - 1, (currentIndex === -1 ? 0 : currentIndex) + direction));

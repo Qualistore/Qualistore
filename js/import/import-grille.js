@@ -316,8 +316,7 @@ function switchImportTab(tab) {
   ['csv', 'xlsx', 'pdf'].forEach(t => {
     const btn = el('tab-' + t);
     if (!btn) return;
-    btn.style.background = t === tab ? 'var(--primary)' : 'var(--surface)';
-    btn.style.color      = t === tab ? '#fff' : 'var(--text)';
+    btn.classList.toggle('active', t === tab);
   });
 
   el('imp-format-info').innerHTML   = IMPORT_FORMAT_INFO[tab];

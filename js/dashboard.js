@@ -529,14 +529,8 @@ function switchDashTab(tab) {
   const fsqsPane = el('dash-fsqs');
   const qualPane = el('dash-qual');
 
-  if (fsqsBtn) {
-    fsqsBtn.style.background = isFsqs ? 'var(--primary)' : 'transparent';
-    fsqsBtn.style.color      = isFsqs ? '#fff' : 'var(--text2)';
-  }
-  if (qualBtn) {
-    qualBtn.style.background = !isFsqs ? '#7c3aed' : 'transparent';
-    qualBtn.style.color      = !isFsqs ? '#fff' : 'var(--text2)';
-  }
+  if (fsqsBtn) fsqsBtn.classList.toggle('active', isFsqs);
+  if (qualBtn) qualBtn.classList.toggle('active', !isFsqs);
   if (fsqsPane) fsqsPane.style.display = isFsqs ? '' : 'none';
   if (qualPane) qualPane.style.display = !isFsqs ? '' : 'none';
 }

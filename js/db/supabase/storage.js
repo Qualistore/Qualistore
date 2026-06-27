@@ -245,6 +245,7 @@ function _buildDefaultDB() {
     alertes:           [],
     drafts:            [],
     grilleCustom:      {},
+    deletedRayons:     [],
     qualimetreCustom:  {},
     qualimetreGlobal:  {},
     qualimetreZoneLabels: {},
@@ -322,6 +323,7 @@ async function loadDB() {
       alertes:  alertes  || [],
       drafts:   drafts   || [],
       grilleCustom:     _parseGrilleCustom(grilleRows),
+      deletedRayons:    _parseDeletedRayons(grilleRows),
       qualimetreCustom: _parseQualimetreCustom(qualRows),
       qualimetreGlobal: _parseQualimetreGlobal(qualRows),
       qualimetreZoneLabels: _parseQualimetreZoneLabels(qualRows),
@@ -355,14 +357,34 @@ async function loadDB() {
 
 /**
  * Transforme les lignes brutes de la table `grille_custom` en
- * dictionnaire indexé par rayon.
+ * dictionnaire indexé par rayon, en excluant la ligne réservée
+ * '__deleted_rayons__' (DB.deletedRayons, voir _parseDeletedRayons)
+ * — pas un rayon réel.
  * @param {SupabaseRow[] | null | undefined} rows
  * @returns {GrilleCustomMap}
  */
 function _parseGrilleCustom(rows) {
   const result = {};
-  (rows || []).forEach(row => { result[row.rayon] = row.data; });
+  (rows || [])
+    .filter(row => row.rayon !== '__deleted_rayons__')
+    .forEach(row => { result[row.rayon] = row.data; });
   return result;
+}
+
+/**
+ * Extrait la liste des rayons explicitement supprimés (ligne
+ * réservée '__deleted_rayons__' de la table `grille_custom`, voir
+ * deleteRayonEverywhere/getKnownRayons, rayons.js) — réutilise cette
+ * table existante plutôt que d'introduire une nouvelle table
+ * Supabase, sur le même principe que '__global__'/'__zone_labels__'
+ * pour qualimetre_custom.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {string[]}
+ */
+function _parseDeletedRayons(rows) {
+  /** @type {SupabaseRow | undefined} */
+  const deletedRow = (rows || []).find(row => row.rayon === '__deleted_rayons__');
+  return deletedRow && Array.isArray(deletedRow.data) ? deletedRow.data : [];
 }
 
 /**
@@ -462,9 +484,12 @@ async function _pushToSupabase(tables) {
     if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
     if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
 
-    if (pushAll || tables.includes('grilleCustom')) {
+    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons')) {
       /** @type {SupabaseRow[]} */
       const rows = Object.entries(DB.grilleCustom).map(([rayon, data]) => ({ id: rayon, rayon, data }));
+      if (DB.deletedRayons && DB.deletedRayons.length) {
+        rows.push({ id: '__deleted_rayons__', rayon: '__deleted_rayons__', data: DB.deletedRayons });
+      }
       if (rows.length) operations.push(sbUpsert('grille_custom', rows));
     }
 

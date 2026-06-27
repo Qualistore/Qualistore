@@ -70,10 +70,10 @@
         <!-- Sélecteur de vue -->
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
           <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">
-            <button id="dash-tab-fsqs" onclick="switchDashTab('fsqs')" style="padding:7px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;background:var(--primary);color:#fff">
+            <button id="dash-tab-fsqs" class="dash-tab dash-tab-fsqs active" onclick="switchDashTab('fsqs')">
               <i class="ti ti-clipboard-check" style="font-size:14px"></i> FSQS
             </button>
-            <button id="dash-tab-qual" onclick="switchDashTab('qual')" style="padding:7px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;background:transparent;color:var(--text2)">
+            <button id="dash-tab-qual" class="dash-tab dash-tab-qual" onclick="switchDashTab('qual')">
               <i class="ti ti-rosette" style="font-size:14px"></i> Qualimètre
             </button>
           </div>
@@ -97,7 +97,7 @@
           </div>
           <div class="card mt-4">
             <div class="card-hdr">
-              <div class="card-title"><i class="ti ti-bell-ringing" style="color:#b91c1c"></i> Alertes terrain récentes</div>
+              <div class="card-title"><i class="ti ti-bell-ringing" style="color:var(--danger-dark)"></i> Alertes terrain récentes</div>
               <span class="tsm tm" id="d-alert-cnt"></span>
             </div>
             <div class="card-body" id="d-alerts-list">
@@ -109,23 +109,23 @@
         <!-- STATS QUALIMÈTRE -->
         <div id="dash-qual" style="display:none">
           <div class="stats-grid">
-            <div class="stat-card" style="border-left:4px solid #7c3aed"><div class="stat-lbl"><i class="ti ti-rosette" style="color:#7c3aed"></i> Audits Qualimètre</div><div class="stat-val" style="color:#7c3aed" id="dq-audits">0</div><div class="stat-sub">Total</div></div>
-            <div class="stat-card" style="border-left:4px solid #f59e0b"><div class="stat-lbl"><i class="ti ti-alert-circle" style="color:#f59e0b"></i> Points NC</div><div class="stat-val" style="color:#f59e0b" id="dq-nc">0</div><div class="stat-sub">Non conformes</div></div>
-            <div class="stat-card" style="border-left:4px solid #16a34a"><div class="stat-lbl"><i class="ti ti-circle-check" style="color:#16a34a"></i> Score moyen</div><div class="stat-val" style="color:#16a34a" id="dq-score">–</div><div class="stat-sub">Tous magasins</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--qual)"><div class="stat-lbl"><i class="ti ti-rosette" style="color:var(--qual)"></i> Audits Qualimètre</div><div class="stat-val" style="color:var(--qual)" id="dq-audits">0</div><div class="stat-sub">Total</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--warning)"><div class="stat-lbl"><i class="ti ti-alert-circle" style="color:var(--warning)"></i> Points NC</div><div class="stat-val" style="color:var(--warning)" id="dq-nc">0</div><div class="stat-sub">Non conformes</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--success)"><div class="stat-lbl"><i class="ti ti-circle-check" style="color:var(--success)"></i> Score moyen</div><div class="stat-val" style="color:var(--success)" id="dq-score">–</div><div class="stat-sub">Tous magasins</div></div>
             <div class="stat-card" style="border-left:4px solid var(--primary)"><div class="stat-lbl"><i class="ti ti-building-store" style="color:var(--primary)"></i> Magasins audités</div><div class="stat-val" style="color:var(--primary)" id="dq-mags">0</div><div class="stat-sub">Actifs</div></div>
           </div>
           <div class="grid-2 mb-6">
             <div class="card">
-              <div class="card-hdr"><div class="card-title"><i class="ti ti-building-store" style="color:#7c3aed"></i> Score par magasin</div></div>
+              <div class="card-hdr"><div class="card-title"><i class="ti ti-building-store" style="color:var(--qual)"></i> Score par magasin</div></div>
               <div class="card-body" id="dq-mag"></div>
             </div>
             <div class="card">
-              <div class="card-hdr"><div class="card-title"><i class="ti ti-map-pin" style="color:#7c3aed"></i> Top zones NC</div></div>
+              <div class="card-hdr"><div class="card-title"><i class="ti ti-map-pin" style="color:var(--qual)"></i> Top zones NC</div></div>
               <div class="card-body" id="dq-zones"></div>
             </div>
           </div>
           <div class="card">
-            <div class="card-hdr"><div class="card-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Derniers audits Qualimètre</div><button class="btn btn-secondary btn-sm" onclick="navigate('audit-qualimetre')">Voir tout</button></div>
+            <div class="card-hdr"><div class="card-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Derniers audits Qualimètre</div><button class="btn btn-secondary btn-sm" onclick="navigate('audit-qualimetre')">Voir tout</button></div>
             <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th></th></tr></thead><tbody id="dq-last"></tbody></table></div>
           </div>
         </div>
@@ -275,7 +275,7 @@
       <!-- RAPPORT QUALIMÈTRE -->
       <div class="page" id="page-rapport-qualimetre">
         <div class="card mb-4">
-          <div class="card-hdr"><div class="card-title"><i class="ti ti-gauge" style="color:#7c3aed"></i> Rapport Qualimètre – Sélection des audits</div></div>
+          <div class="card-hdr"><div class="card-title"><i class="ti ti-gauge" style="color:var(--qual)"></i> Rapport Qualimètre – Sélection des audits</div></div>
           <div class="card-body">
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
               <select class="form-control" style="width:auto" id="rq-mag" onchange="renderRapportQualimetre()"><option value="">Tous les magasins</option></select>
@@ -287,8 +287,8 @@
             </div>
             <div id="rq-audit-list" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);padding:8px 12px"></div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
-              <button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="genRapportQualimetre()"><i class="ti ti-eye"></i> Générer l'aperçu</button>
-              <button class="btn btn-primary" id="rq-print-btn" onclick="exportPDF('rq-body','rapport-qualimetre')" style="display:none;background:#7c3aed;border-color:#7c3aed"><i class="ti ti-file-download"></i> Exporter en PDF</button>
+              <button class="btn btn-primary" style="background:var(--qual);border-color:var(--qual)" onclick="genRapportQualimetre()"><i class="ti ti-eye"></i> Générer l'aperçu</button>
+              <button class="btn btn-primary" id="rq-print-btn" onclick="exportPDF('rq-body','rapport-qualimetre')" style="display:none;background:var(--qual);border-color:var(--qual)"><i class="ti ti-file-download"></i> Exporter en PDF</button>
               <button class="btn btn-danger btn-sm" id="rq-del-btn" onclick="deleteSelectedQualAudits()" style="display:none"><i class="ti ti-trash"></i> Supprimer la sélection</button>
               <button id="rq-annexes-btn" class="btn btn-secondary" onclick="exportAnnexesQualimetre()" style="display:none">
               <i class="ti ti-photo"></i> Annexes photos PDF
@@ -337,7 +337,7 @@
       <div class="page" id="page-grille-qualimetre">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
           <div>
-            <div style="font-size:18px;font-weight:700;color:#1a1f36"><i class="ti ti-adjustments" style="color:#7c3aed"></i> Grille Qualimètre</div>
+            <div style="font-size:18px;font-weight:700;color:var(--text)"><i class="ti ti-adjustments" style="color:var(--qual)"></i> Grille Qualimètre</div>
             <div style="font-size:12px;color:var(--text2);margin-top:2px">Gérez les points de contrôle par zone — global ou par magasin</div>
           </div>
           <div style="display:flex;gap:8px">
@@ -373,13 +373,13 @@
             <select class="form-control" style="width:auto" id="flt-qaud-mag" onchange="renderQualAudits()"><option value="">Tous les magasins</option></select>
             <span class="tsm tm" id="qaud-hist-cnt" style="align-self:center"></span>
           </div>
-          <button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()">
+          <button class="btn btn-primary" style="background:var(--qual);border-color:var(--qual)" onclick="openQualAuditModal()">
             <i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre
           </button>
         </div>
         <div class="card">
           <div class="card-hdr">
-            <div class="card-title"><i class="ti ti-gauge" style="color:#7c3aed"></i> Historique des audits Qualimètre</div>
+            <div class="card-title"><i class="ti ti-gauge" style="color:var(--qual)"></i> Historique des audits Qualimètre</div>
           </div>
           <div class="tbl-wrap"><table>
             <thead><tr><th>Magasin</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th>Statut</th><th></th></tr></thead>
@@ -396,11 +396,11 @@
             <p style="font-size:13px;color:var(--text2);margin-bottom:16px">
               Cet onglet vous permet de <strong>sauvegarder toutes les données</strong> de l'application (audits, NC, actions, magasins, utilisateurs…) dans un fichier JSON, et de les <strong>restaurer</strong> en cas de problème.
             </p>
-            <div style="background:var(--warning-light);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;font-size:13px;color:#92400e">
+            <div style="background:var(--warning-light);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;font-size:13px;color:var(--warning-dark)">
               <i class="ti ti-alert-triangle"></i> <strong>Comment faire une sauvegarde ?</strong><br>
               Cliquez sur <em>Exporter les données</em> régulièrement (hebdomadaire recommandé). Conservez le fichier JSON dans un endroit sûr (cloud, disque dur…).<br><br>
               <strong>Comment restaurer ?</strong><br>
-              En cas de perte de données, cliquez sur <em>Importer une sauvegarde</em>, sélectionnez votre fichier JSON. <span style="color:#b91c1c;font-weight:600">Attention : l'import écrase toutes les données actuelles.</span>
+              En cas de perte de données, cliquez sur <em>Importer une sauvegarde</em>, sélectionnez votre fichier JSON. <span style="color:var(--danger-dark);font-weight:600">Attention : l'import écrase toutes les données actuelles.</span>
             </div>
             <div style="display:flex;gap:12px;flex-wrap:wrap">
               <button class="btn btn-primary" onclick="exportBackup()"><i class="ti ti-download"></i> Exporter les données</button>
@@ -624,7 +624,7 @@
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" id="a-prev" onclick="auditPrev()" style="display:none"><i class="ti ti-arrow-left"></i> Retour</button>
-      <button class="btn btn-warning" id="a-pause" onclick="pauseAudit()" style="display:none;background:#f59e0b;border-color:#f59e0b;color:#fff"><i class="ti ti-player-pause"></i> Pause</button>
+      <button class="btn btn-warning" id="a-pause" onclick="pauseAudit()" style="display:none;background:var(--warning);border-color:var(--warning);color:#fff"><i class="ti ti-player-pause"></i> Pause</button>
       <button class="btn btn-primary" id="a-next" onclick="auditNext()">Continuer <i class="ti ti-arrow-right"></i></button>
     </div>
   </div>
@@ -634,7 +634,7 @@
 <div class="modal-ov" id="m-alert">
   <div class="modal">
     <div class="modal-hdr">
-      <div class="modal-title" style="color:#b91c1c"><i class="ti ti-bell-ringing"></i> Nouvelle alerte terrain</div>
+      <div class="modal-title" style="color:var(--danger-dark)"><i class="ti ti-bell-ringing"></i> Nouvelle alerte terrain</div>
       <button class="btn-x" onclick="closeModal('m-alert')">&times;</button>
     </div>
     <div class="modal-body">
@@ -774,18 +774,18 @@
     <div class="modal-body">
       <!-- Format tabs -->
       <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-        <button class="imp-tab active" id="tab-csv" onclick="switchImportTab('csv')" style="flex:1;padding:10px;font-size:13px;font-weight:500;background:var(--primary);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px"><i class="ti ti-file-text"></i> CSV / TSV</button>
-        <button class="imp-tab" id="tab-xlsx" onclick="switchImportTab('xlsx')" style="flex:1;padding:10px;font-size:13px;font-weight:500;background:var(--surface);color:var(--text);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;border-left:1px solid var(--border)"><i class="ti ti-file-spreadsheet"></i> Excel (.xlsx)</button>
-        <button class="imp-tab" id="tab-pdf" onclick="switchImportTab('pdf')" style="flex:1;padding:10px;font-size:13px;font-weight:500;background:var(--surface);color:var(--text);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;border-left:1px solid var(--border)"><i class="ti ti-file-type-pdf"></i> PDF</button>
+        <button class="imp-tab active" id="tab-csv" onclick="switchImportTab('csv')"><i class="ti ti-file-text"></i> CSV / TSV</button>
+        <button class="imp-tab" id="tab-xlsx" onclick="switchImportTab('xlsx')"><i class="ti ti-file-spreadsheet"></i> Excel (.xlsx)</button>
+        <button class="imp-tab" id="tab-pdf" onclick="switchImportTab('pdf')"><i class="ti ti-file-type-pdf"></i> PDF</button>
       </div>
 
       <!-- Format info -->
       <div style="background:var(--bg);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.9" id="imp-format-info">
         <strong style="color:var(--text);font-size:13px">Format CSV / TSV</strong><br>
         Les colonnes sont détectées automatiquement quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
-        Séparateur auto-détecté : <code style="background:#fff;padding:1px 5px;border-radius:4px">;</code> ou <code style="background:#fff;padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
+        Séparateur auto-détecté : <code style="background:var(--surface);padding:1px 5px;border-radius:4px">;</code> ou <code style="background:var(--surface);padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
         Le mapping détecté est affiché et modifiable avant import.<br>
-        <span style="color:#15803d">Exemple : <code style="background:#fff;padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
+        <span style="color:var(--success-dark)">Exemple : <code style="background:var(--surface);padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
       </div>
 
       <!-- Rayon(s) cible(s) (FSQS uniquement) -->
@@ -836,8 +836,8 @@
         <div id="imp-mapping-block"></div>
 
         <!-- Barre d'action groupée : visible uniquement si au moins une ligne est sélectionnée -->
-        <div id="imp-bulk-bar" style="display:none;margin-bottom:8px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:var(--radius);display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-          <span id="imp-bulk-count" class="tsm" style="font-weight:600;color:#5b21b6"></span>
+        <div id="imp-bulk-bar" style="display:none;margin-bottom:8px;padding:10px 12px;background:var(--qual-light);border:1px solid var(--qual-border);border-radius:var(--radius);display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+          <span id="imp-bulk-count" class="tsm" style="font-weight:600;color:var(--qual-dark)"></span>
           <span class="tsm tm">Assigner à :</span>
           <div id="imp-bulk-rayon-cbs" style="display:flex;flex-wrap:wrap;gap:6px;max-width:280px;max-height:60px;overflow-y:auto"></div>
           <input type="text" id="imp-bulk-zone" placeholder="Zone (optionnel)" list="ctrl-zone-suggestions" class="form-control" style="width:160px;font-size:12px;padding:4px 8px">
@@ -851,8 +851,8 @@
               <th style="padding:8px 6px;text-align:center;border-bottom:1px solid var(--border)"><input type="checkbox" onchange="toggleSelectAllPreviewRows(this.checked)" aria-label="Tout sélectionner"></th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Rayon(s)</th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Zone</th>
-              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Catégorie</th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Intitulé</th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Méthode de contrôle</th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Criticité</th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">Poids</th>
               <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)"></th>
@@ -864,7 +864,7 @@
       </div>
 
       <!-- PDF special note -->
-      <div id="pdf-note" style="display:none;margin-top:12px;background:var(--warning-light);border-radius:var(--radius);padding:12px 14px;font-size:12px;color:#92400e">
+      <div id="pdf-note" style="display:none;margin-top:12px;background:var(--warning-light);border-radius:var(--radius);padding:12px 14px;font-size:12px;color:var(--warning-dark)">
         <i class="ti ti-info-circle"></i> <strong>Import PDF :</strong> le texte est extrait automatiquement, puis les colonnes sont détectées comme pour un fichier CSV. Pour de meilleurs résultats, le PDF doit être un tableau avec des colonnes identifiables (zone, point de contrôle, criticité…). Les PDF scannés (images) ne sont pas pris en charge.
       </div>
     </div>
@@ -891,27 +891,27 @@
 <div class="modal-ov" id="m-qual-audit">
   <div class="modal modal-lg">
     <div class="modal-hdr">
-      <div class="modal-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Nouvel audit Qualimètre</div>
+      <div class="modal-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Nouvel audit Qualimètre</div>
       <div style="display:flex;align-items:center;gap:8px">
-        <a id="btn-ref-affichage" href="assets/referentiel-affichage.pdf" target="_blank" style="display:none" class="btn btn-sm" style="background:#fbbf24;border-color:#f59e0b;color:#78350f;font-size:12px;padding:4px 10px"><i class="ti ti-file-text"></i> Référentiel affichage</a>
+        <a id="btn-ref-affichage" href="assets/referentiel-affichage.pdf" target="_blank" style="display:none" class="btn btn-sm" style="background:#fbbf24;border-color:var(--warning);color:var(--warning-dark);font-size:12px;padding:4px 10px"><i class="ti ti-file-text"></i> Référentiel affichage</a>
         <button class="btn-x" onclick="qaStep===2?pauseQualAudit():closeModal('m-qual-audit')">&times;</button>
       </div>
     </div>
     <div class="modal-body">
       <!-- Étape 0 : Accueil -->
       <div id="qa-s0" style="text-align:center;padding:20px 0">
-        <i class="ti ti-rosette" style="font-size:56px;color:#7c3aed;display:block;margin-bottom:14px"></i>
+        <i class="ti ti-rosette" style="font-size:56px;color:var(--qual);display:block;margin-bottom:14px"></i>
         <div style="font-size:18px;font-weight:700;margin-bottom:12px">Audit Qualimètre</div>
         <div class="tm tsm" style="margin-bottom:20px">Parcours client – Œil du client</div>
-        <div style="background:#f5f3ff;border-radius:10px;padding:16px 20px;text-align:left;font-size:13px;color:#4b5563;max-width:480px;margin:0 auto">
-          <div style="font-weight:700;margin-bottom:10px;color:#7c3aed">Comment faire ?</div>
+        <div style="background:var(--qual-light);border-radius:10px;padding:16px 20px;text-align:left;font-size:13px;color:#4b5563;max-width:480px;margin:0 auto">
+          <div style="font-weight:700;margin-bottom:10px;color:var(--qual)">Comment faire ?</div>
           <ol style="padding-left:18px;margin:0;line-height:1.8">
             <li>Munis-toi du <strong>catalogue promo en cours</strong> (disponible à l'accueil).</li>
             <li>Suis le <strong>parcours client naturel</strong>.</li>
             <li>Si tu as un doute, n'hésite pas à demander à un collègue, mais note ce que tu <strong>vois à l'instant T</strong>.</li>
             <li><strong>Important :</strong> Si tu vois un danger ou une anomalie grave, préviens immédiatement le responsable de zone.</li>
           </ol>
-          <div style="margin-top:12px;font-style:italic;color:#6d28d9">Merci pour ton aide dans l'amélioration du magasin !</div>
+          <div style="margin-top:12px;font-style:italic;color:var(--qual-dark)">Merci pour ton aide dans l'amélioration du magasin !</div>
         </div>
       </div>
       <!-- Étape 1 : Infos -->
@@ -928,7 +928,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div style="font-size:15px;font-weight:600" id="qa-zone-title"></div>
           <div style="display:flex;align-items:center;gap:12px">
-            <div style="font-size:22px;font-weight:700;color:#7c3aed" id="qa-score-live">–</div>
+            <div style="font-size:22px;font-weight:700;color:var(--qual)" id="qa-score-live">–</div>
             <div class="tsm tm" id="qa-progress"></div>
           </div>
         </div>
@@ -940,14 +940,14 @@
         <i class="ti ti-circle-check" style="font-size:60px;color:var(--success);display:block;margin-bottom:14px"></i>
         <div style="font-size:18px;font-weight:700;margin-bottom:6px">Audit enregistré !</div>
         <div class="tm" id="qa-recap"></div>
-        <div id="qa-score-fin" style="width:90px;height:90px;border-radius:50%;border:7px solid #7c3aed;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#7c3aed;margin:16px auto"></div>
+        <div id="qa-score-fin" style="width:90px;height:90px;border-radius:50%;border:7px solid var(--qual);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:var(--qual);margin:16px auto"></div>
         <div id="qa-nc-msg" style="font-size:13px;color:var(--danger);margin-top:8px"></div>
       </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" id="qa-prev" onclick="qaPrev()" style="display:none"><i class="ti ti-arrow-left"></i> Retour</button>
-      <button class="btn btn-warning" id="qa-pause" onclick="pauseQualAudit()" style="display:none;background:#f59e0b;border-color:#f59e0b;color:#fff"><i class="ti ti-player-pause"></i> Pause</button>
-      <button class="btn btn-primary" id="qa-next" style="background:#7c3aed;border-color:#7c3aed">Démarrer <i class="ti ti-arrow-right"></i></button>
+      <button class="btn btn-warning" id="qa-pause" onclick="pauseQualAudit()" style="display:none;background:var(--warning);border-color:var(--warning);color:#fff"><i class="ti ti-player-pause"></i> Pause</button>
+      <button class="btn btn-primary" id="qa-next" style="background:var(--qual);border-color:var(--qual)">Démarrer <i class="ti ti-arrow-right"></i></button>
     </div>
   </div>
 </div>
@@ -956,7 +956,7 @@
 <div class="modal-ov" id="m-gq-ctrl">
   <div class="modal">
     <div class="modal-hdr">
-      <div class="modal-title" id="m-gq-ctrl-ttl"><i class="ti ti-gauge" style="color:#7c3aed"></i> Point Qualimètre</div>
+      <div class="modal-title" id="m-gq-ctrl-ttl"><i class="ti ti-gauge" style="color:var(--qual)"></i> Point Qualimètre</div>
       <button class="btn-x" onclick="closeModal('m-gq-ctrl')">&times;</button>
     </div>
     <div class="modal-body">
@@ -1020,7 +1020,7 @@
 <div class="modal-ov" id="m-gq-import">
   <div class="modal modal-lg">
     <div class="modal-hdr">
-      <div class="modal-title"><i class="ti ti-upload" style="color:#7c3aed"></i> Importer une grille Qualimètre</div>
+      <div class="modal-title"><i class="ti ti-upload" style="color:var(--qual)"></i> Importer une grille Qualimètre</div>
       <button class="btn-x" onclick="closeModal('m-gq-import')">&times;</button>
     </div>
     <div class="modal-body">
@@ -1063,7 +1063,7 @@
 <div class="modal-ov" id="m-qual-audit-detail">
   <div class="modal modal-lg">
     <div class="modal-hdr">
-      <div class="modal-title"><i class="ti ti-rosette" style="color:#7c3aed"></i> Détail audit Qualimètre</div>
+      <div class="modal-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Détail audit Qualimètre</div>
       <button class="btn-x" onclick="closeModal('m-qual-audit-detail')">&times;</button>
     </div>
     <div class="modal-body" id="qa-detail-body"></div>
