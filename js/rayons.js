@@ -552,19 +552,29 @@ function unclassifyGrilleZone(rayon, zone) {
 // délibéré : l'admin assigne manuellement (un par un ou "tout
 // assigner" en une fois), après quoi les utilisateurs liés à ce
 // magasin peuvent auditer les rayons assignés.
+//
+// ⚠️ CORRIGÉ : l'assignation est stockée dans DB.magasinRayons
+// (Record<storeId, string[]>), PAS sur Magasin.rayons comme avant —
+// la table Supabase `magasins` n'a aucune colonne `rayons` (seules
+// id/nom/ville/enseigne/adr/statut/did existent), donc tout ce qui
+// était écrit sur l'objet Magasin était silencieusement perdu au
+// rechargement (jamais sauvegardé). DB.magasinRayons est persisté en
+// réutilisant la table `grille_custom` (ligne réservée
+// '__magasin_rayons__{storeId}', voir storage.js), sur le même
+// principe que DB.enseignes/DB.deletedRayons/DB.manualRayons.
 
 /**
- * Liste les rayons assignés à un magasin (Magasin.rayons), triés
- * alphabétiquement. Tableau vide si le magasin n'existe pas ou n'a
- * aucun rayon assigné — jamais de fallback vers getKnownRayons().
+ * Liste les rayons assignés à un magasin (DB.magasinRayons), triés
+ * alphabétiquement. Tableau vide si le magasin n'a aucun rayon
+ * assigné — jamais de fallback vers getKnownRayons().
  * @param {string} storeId - Référence vers Magasin.id.
  * @returns {string[]}
  */
 function getRayonsForMagasin(storeId) {
-  /** @type {Magasin | undefined} */
-  const store = DB.magasins.find(m => m.id === storeId);
-  if (!store || !store.rayons) return [];
-  return [...store.rayons].sort((a, b) => a.localeCompare(b, 'fr'));
+  /** @type {string[] | undefined} */
+  const rayons = DB.magasinRayons?.[storeId];
+  if (!rayons) return [];
+  return [...rayons].sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
 /**
@@ -572,19 +582,17 @@ function getRayonsForMagasin(storeId) {
  * (pas un ajout incrémental — la liste fournie devient la nouvelle
  * liste complète). Ne filtre pas sur getKnownRayons() : un rayon
  * assigné qui serait ensuite supprimé (deleteRayonEverywhere) reste
- * dans Magasin.rayons jusqu'à réaffectation manuelle, exactement
- * comme Magasin.enseigne pour une enseigne supprimée (voir
- * deleteEnseigne, magasins.js) — cohérence délibérée entre les deux
- * mécanismes d'assignation "douce".
+ * assigné jusqu'à réaffectation manuelle, exactement comme
+ * Magasin.enseigne pour une enseigne supprimée (voir deleteEnseigne,
+ * magasins.js) — cohérence délibérée entre les deux mécanismes
+ * d'assignation "douce".
  * @param {string} storeId
  * @param {string[]} rayons
  * @returns {void}
  */
 function setMagasinRayons(storeId, rayons) {
-  /** @type {Magasin | undefined} */
-  const store = DB.magasins.find(m => m.id === storeId);
-  if (!store) return;
-  store.rayons = [...new Set(rayons)];
+  if (!DB.magasinRayons) DB.magasinRayons = {};
+  DB.magasinRayons[storeId] = [...new Set(rayons)];
 }
 
 /**
@@ -596,13 +604,11 @@ function setMagasinRayons(storeId, rayons) {
  * @returns {void}
  */
 function toggleMagasinRayon(storeId, rayon, isAssigned) {
-  /** @type {Magasin | undefined} */
-  const store = DB.magasins.find(m => m.id === storeId);
-  if (!store) return;
-  if (!store.rayons) store.rayons = [];
+  if (!DB.magasinRayons) DB.magasinRayons = {};
+  if (!DB.magasinRayons[storeId]) DB.magasinRayons[storeId] = [];
   if (isAssigned) {
-    if (!store.rayons.includes(rayon)) store.rayons.push(rayon);
+    if (!DB.magasinRayons[storeId].includes(rayon)) DB.magasinRayons[storeId].push(rayon);
   } else {
-    store.rayons = store.rayons.filter(r => r !== rayon);
+    DB.magasinRayons[storeId] = DB.magasinRayons[storeId].filter(r => r !== rayon);
   }
 }

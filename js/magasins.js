@@ -18,7 +18,6 @@
  * @property {string} [adr] - Adresse, chaîne vide si non renseignée.
  * @property {string} statut - Valeur observée : 'actif'. D'autres valeurs probables (ex : 'inactif') non confirmées dans ce fichier.
  * @property {string | null} [did] - Référence vers User.id du directeur assigné (rôle 'directeur'), ou null/absent si non assigné.
- * @property {string[]} [rayons] - Rayons FSQS assignés à ce magasin (voir getRayonsForMagasin, rayons.js) — détermine quels rayons sont proposables à l'audit pour ce magasin. ⚠️ STRICT : absent ou vide = AUCUN rayon auditable pour ce magasin (pas de fallback "tous les rayons"), même pour les magasins créés avant l'introduction de ce champ — voir openCreateAssignRayonsModal pour l'assignation manuelle (ou en masse).
  */
 
 /**
@@ -593,9 +592,10 @@ function confirmDeleteEnseigne(nom, storeCount) {
 // ASSIGNATION RAYONS ↔ MAGASIN
 // ─────────────────────────────────────────────
 // Un magasin ne peut auditer que les rayons qui lui ont été
-// explicitement assignés (Magasin.rayons, voir getRayonsForMagasin/
-// setMagasinRayons/toggleMagasinRayon, rayons.js) — voir le typedef
-// Magasin pour le rappel du comportement strict (aucun fallback).
+// explicitement assignés (DB.magasinRayons, voir getRayonsForMagasin/
+// setMagasinRayons/toggleMagasinRayon, rayons.js) — comportement
+// strict, aucun fallback "tous les rayons" pour un magasin sans
+// assignation.
 
 /**
  * Ouvre la modale d'assignation de rayons pour un magasin, avec une
@@ -636,7 +636,7 @@ function assignAllRayonsToStore() {
 
 /**
  * Enregistre l'assignation de rayons telle que cochée dans la
- * modale (remplace intégralement Magasin.rayons — voir
+ * modale (remplace intégralement DB.magasinRayons[storeId] — voir
  * setMagasinRayons, rayons.js).
  * @returns {void}
  */

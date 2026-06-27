@@ -141,11 +141,16 @@
  */
 
 /**
- * Dictionnaire de configuration "qualimètre" globale (appliquée à
- * tous les magasins sans personnalisation propre). CONFIRMÉ par
- * grille-qualimetre.js : indexé directement par QMZone.id, chaque
- * valeur étant un tableau de GrillePoint.
- * @typedef {Record<string, GrillePoint[]>} QualimetreGlobalMap
+ * Dictionnaire de configuration "qualimètre" globale, indexé par nom
+ * d'enseigne PUIS par QMZone.id. ⚠️ CHANGÉ : était indexé directement
+ * par QMZone.id (Record<zoneId, GrillePoint[]>), une seule grille
+ * partagée par toute la base — devenu Record<enseigne, Record<zoneId,
+ * GrillePoint[]>>, chaque enseigne ayant sa propre grille globale
+ * indépendante (même principe que GrilleCustomMap, FSQS). Un magasin
+ * sans enseigne renseignée n'a accès à aucune grille globale (voir
+ * getQualimetrePoints, grille-qualimetre.js) — uniquement à sa grille
+ * personnalisée propre si elle existe (DB.qualimetreCustom).
+ * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreGlobalMap
  */
 
 /**
@@ -255,6 +260,7 @@ function _buildDefaultDB() {
     grilleCustomByStore: {},
     deletedRayons:     [],
     manualRayons:      [],
+    magasinRayons:     {},
     qualimetreCustom:  {},
     qualimetreGlobal:  {},
     qualimetreZoneLabels: {},
@@ -335,6 +341,7 @@ async function loadDB() {
       grilleCustomByStore: _parseGrilleCustomByStore(grilleRows),
       deletedRayons:    _parseDeletedRayons(grilleRows),
       manualRayons:     _parseManualRayons(grilleRows),
+      magasinRayons:    _parseMagasinRayons(grilleRows),
       enseignes:        _parseEnseignes(grilleRows),
       qualimetreCustom: _parseQualimetreCustom(qualRows),
       qualimetreGlobal: _parseQualimetreGlobal(qualRows),
@@ -481,6 +488,29 @@ function _parseManualRayons(rows) {
 }
 
 /**
+ * Extrait l'assignation rayon ↔ magasin (ligne réservée
+ * '__magasin_rayons__' de la table `grille_custom`, voir
+ * getRayonsForMagasin/setMagasinRayons/toggleMagasinRayon, rayons.js).
+ *
+ * ⚠️ CORRIGÉ : cette assignation a longtemps été écrite sur
+ * Magasin.rayons (donc poussée vers la table `magasins`), qui n'a
+ * AUCUNE colonne `rayons` (seules id/nom/ville/enseigne/adr/statut/did
+ * existent côté Supabase) — l'assignation était donc silencieusement
+ * perdue à chaque rechargement. Réutilise la table `grille_custom`
+ * existante, sur le même principe que '__enseignes__'/
+ * '__deleted_rayons__'/'__manual_rayons__' (une seule ligne, le
+ * dictionnaire complet Record<storeId, string[]> en data — pas une
+ * ligne par magasin, pour rester simple).
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {Record<string, string[]>}
+ */
+function _parseMagasinRayons(rows) {
+  /** @type {SupabaseRow | undefined} */
+  const row = (rows || []).find(r => r.rayon === '__magasin_rayons__');
+  return row && row.data && typeof row.data === 'object' ? row.data : {};
+}
+
+/**
  * Transforme les lignes brutes de la table `qualimetre_custom` en
  * dictionnaire indexé par identifiant de magasin (mid), en excluant
  * les lignes réservées '__global__' (DB.qualimetreGlobal, voir
@@ -577,7 +607,7 @@ async function _pushToSupabase(tables) {
     if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
     if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
 
-    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore') || tables.includes('enseignes') || tables.includes('manualRayons')) {
+    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore') || tables.includes('enseignes') || tables.includes('manualRayons') || tables.includes('magasinRayons')) {
       /** @type {SupabaseRow[]} */
       const rows = [];
       // Grilles communes par enseigne (DB.grilleCustom, désormais à
@@ -604,6 +634,16 @@ async function _pushToSupabase(tables) {
       // 'enseignes' explicitement listée), peu importe sa longueur.
       if (pushAll || tables.includes('enseignes')) {
         rows.push({ id: '__enseignes__', rayon: '__enseignes__', data: DB.enseignes || [] });
+      }
+      // Assignation rayon ↔ magasin (DB.magasinRayons) — voir
+      // _parseMagasinRayons pour l'explication complète de pourquoi
+      // ce n'est pas une colonne sur la table `magasins`. Toujours
+      // réécrite (même règle que '__enseignes__' ci-dessus) : un
+      // dictionnaire qui retombe à {} après une désassignation
+      // complète doit pouvoir être propagé, pas seulement quand il
+      // contient encore des données.
+      if (pushAll || tables.includes('magasinRayons')) {
+        rows.push({ id: '__magasin_rayons__', rayon: '__magasin_rayons__', data: DB.magasinRayons || {} });
       }
       // Grilles spécifiques à un magasin (DB.grilleCustomByStore) —
       // réutilise la même table grille_custom, une ligne par
