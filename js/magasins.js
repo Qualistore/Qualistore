@@ -459,18 +459,36 @@ function renameEnseigne(oldName, newName) {
 }
 
 /**
- * Supprime une enseigne de DB.enseignes (action "douce" : les
- * magasins qui l'avaient renseignée ne sont PAS supprimés ni
- * modifiés — leur champ Magasin.enseigne garde l'ancien nom, ce qui
- * la fait simplement réapparaître via getKnownEnseignes() tant qu'au
- * moins un magasin la référence encore). Pour vraiment faire
- * disparaître une enseigne, il faut d'abord réaffecter tous ses
- * magasins à une autre enseigne ou à aucune.
+ * Supprime une enseigne PARTOUT où elle est référencée : retire son
+ * nom de DB.enseignes, réaffecte tous les magasins qui la
+ * référençaient à "Sans enseigne" (Magasin.enseigne devient ''), et
+ * supprime sa grille commune (DB.grilleCustom[nom], locale ET
+ * Supabase).
+ *
+ * ⚠️ CORRIGÉ : l'ancienne version ne retirait le nom QUE de
+ * DB.enseignes — si au moins un magasin référençait encore cette
+ * enseigne, getKnownEnseignes() (qui inclut aussi les valeurs
+ * Magasin.enseigne réellement utilisées) la réinjectait
+ * systématiquement, donnant l'impression que la suppression "ne
+ * marchait pas". Action destructive et irréversible pour la grille
+ * commune de cette enseigne — l'appelant DOIT obtenir une
+ * confirmation explicite avant d'appeler cette fonction (voir
+ * confirmDeleteEnseigne).
  * @param {string} nom
  * @returns {void}
  */
 function deleteEnseigne(nom) {
   if (DB.enseignes) DB.enseignes = DB.enseignes.filter(e => e !== nom);
+  DB.magasins.forEach(m => { if (m.enseigne === nom) m.enseigne = ''; });
+
+  if (DB.grilleCustom && Object.prototype.hasOwnProperty.call(DB.grilleCustom, nom)) {
+    /** @type {string[]} */
+    const rayons = Object.keys(DB.grilleCustom[nom]);
+    delete DB.grilleCustom[nom];
+    rayons.forEach(rayon => {
+      sbDeleteWhere('grille_custom', 'rayon', `__common__${nom}__${rayon}`).catch(() => {});
+    });
+  }
 }
 
 /**
@@ -550,10 +568,11 @@ function openRenameEnseignePrompt(currentName) {
 }
 
 /**
- * Supprime une enseigne après confirmation. Les magasins qui la
- * référençaient ne sont pas modifiés (voir deleteEnseigne) ; le
- * message de confirmation le précise si au moins un magasin est
- * concerné, pour éviter toute surprise.
+ * Supprime une enseigne après confirmation : les magasins qui la
+ * référençaient repassent à "Sans enseigne" et sa grille commune est
+ * supprimée (voir deleteEnseigne) — le message de confirmation le
+ * précise si au moins un magasin est concerné, pour éviter toute
+ * surprise.
  * @param {string} nom
  * @param {number} storeCount - Nombre de magasins référençant actuellement cette enseigne (déjà calculé par renderEnseignes, évite un recalcul).
  * @returns {void}
@@ -561,12 +580,12 @@ function openRenameEnseignePrompt(currentName) {
 function confirmDeleteEnseigne(nom, storeCount) {
   /** @type {string} */
   const warning = storeCount
-    ? `Supprimer l'enseigne « ${nom} » ? ${storeCount} magasin(s) la référencent encore et garderont ce nom jusqu'à réaffectation manuelle.`
-    : `Supprimer l'enseigne « ${nom} » ?`;
+    ? `Supprimer l'enseigne « ${nom} » ? ${storeCount} magasin(s) la référencent encore et repasseront à « Sans enseigne ». Sa grille commune sera définitivement supprimée. Cette action est irréversible.`
+    : `Supprimer l'enseigne « ${nom} » et sa grille commune ? Cette action est irréversible.`;
   if (!confirm(warning)) return;
 
   deleteEnseigne(nom);
-  save(['enseignes']);
+  save(['enseignes', 'magasins', 'grilleCustom']);
   renderEnseignes();
 }
 
