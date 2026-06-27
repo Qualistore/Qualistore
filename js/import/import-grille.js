@@ -81,12 +81,13 @@
  * @property {string[]} targetRayons - Rayon(s) FSQS où cette ligne sera réellement importée (cible 'grille' uniquement) — initialisé à _importDefaultRayons (rayon(s) choisis par l'utilisateur AVANT l'import, voir le sélecteur au-dessus de la zone de dépose). Modifiable individuellement (voir _onPreviewFieldChanged) ou en masse pour les lignes sélectionnées (voir applyBulkRayonZoneAssignment). Une ligne avec targetRayons vide n'est PAS importée même si `valid` est true — voir confirmImport.
  * @property {string} zone - Sous-partie du rayon (GrillePoint.zone, voir config.js) attribuée à cette ligne pour l'import FSQS — devient l'onglet dans l'audit (voir buildAuditQuestions, audits.js). Initialisé depuis `zoneRaw` (libellé détecté dans le document — colonne "Zone" ou ligne-titre de section), avec résolution à la casse canonique d'une zone déjà existante dans un des rayons cibles si trouvée. Chaîne vide acceptée ("Non classé" à l'affichage). Sans effet sur la cible 'qualimetre'.
  * @property {boolean} selected - Coché dans l'aperçu (case à gauche de chaque ligne) — détermine quelles lignes sont affectées par une assignation groupée (voir applyBulkRayonZoneAssignment), pas par l'import lui-même.
- * @property {string} cat
+ * @property {string} cat - Thème (sous-groupe à l'intérieur de la zone, voir GrillePoint.cat, config.js) — détecté depuis la colonne "Thème"/"Catégorie" du document, conservé et importé tel quel, mais ⚠️ CHANGÉ : plus affiché comme colonne éditable dans l'aperçu (#imp-preview-tb) depuis que ce concept a été jugé redondant avec le classement rayon → zone. Reste utilisé en interne pour grouper les points par sous-section dans la grille (_buildCategorySection, grille.js) et dans l'audit (switchAuditZone, audits.js).
  * @property {string} q - Intitulé, trim() appliqué.
+ * @property {string} prec - Méthode de contrôle (RENOMMÉ depuis l'ancien concept "Catégorie" affiché par erreur dans l'aperçu — voir GrillePoint.prec, config.js). Initialisé depuis NormalizedImportRow.methode (typiquement une colonne "Précisions" du document). Affiché dans l'aperçu juste après Intitulé, et dans la modale d'audit juste sous l'intitulé (voir _buildAuditQuestion, audits.js).
  * @property {GrilleCriticite} crit - Toujours normalisé (fallback 'Majeure' si non reconnu).
  * @property {number} p - Poids, calculé depuis IMPORT_DEFAULT_POIDS si absent/invalide.
  * @property {boolean} valid - Dépend de la cible d'import active au moment du parsing (voir _showImportPreview) ; les lignes invalides sont affichées dans l'aperçu mais exclues de l'import.
- * @property {string} extra - Contenu des colonnes du document non reconnues comme un concept métier connu (méthode, commentaire, ou toute colonne non mappée), concaténé pour ne perdre aucune information. Chaîne vide si rien à signaler. Voir import-normalize.js.
+ * @property {string} extra - Contenu des colonnes du document non reconnues comme un concept métier connu (commentaire, ou toute colonne non mappée), concaténé pour ne perdre aucune information. Chaîne vide si rien à signaler. Voir import-normalize.js.
  */
 
 /**
@@ -1025,6 +1026,7 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
       selected:     false,
       cat:          row.cat || 'Général',
       q:            row.q.trim(),
+      prec:         row.methode || '',
       crit:         normalizedCrit,
       p:            poids,
       valid:        isValid,
@@ -1275,13 +1277,13 @@ function _buildPreviewRow(row, index, isDuplicate) {
     </td>
     <td style="padding:2px 6px;border-bottom:1px solid var(--border);min-width:140px">${rayonsField}</td>
     <td style="padding:2px 6px;border-bottom:1px solid var(--border);min-width:120px">${zoneField}</td>
-    <td style="padding:2px 6px;border-bottom:1px solid var(--border)">
-      <input type="text" value="${_escapeHtmlAttr(row.cat)}" style="${fieldStyle}" ${focusHint}
-        oninput="_onPreviewFieldChanged(${index},'cat',this.value)" placeholder="Catégorie...">
-    </td>
     <td style="padding:2px 6px;border-bottom:1px solid var(--border);max-width:220px">
       <input type="text" value="${_escapeHtmlAttr(row.q)}" style="${fieldStyle}${row.q.trim() ? '' : ';color:var(--danger)'}" ${focusHint}
         oninput="_onPreviewFieldChanged(${index},'q',this.value)" placeholder="Intitulé requis...">${duplicateBadge}${extraIcon}
+    </td>
+    <td style="padding:2px 6px;border-bottom:1px solid var(--border);max-width:180px">
+      <input type="text" value="${_escapeHtmlAttr(row.prec)}" style="${fieldStyle}" ${focusHint}
+        oninput="_onPreviewFieldChanged(${index},'prec',this.value)" placeholder="Méthode de contrôle...">
     </td>
     <td style="padding:2px 6px;border-bottom:1px solid var(--border)">
       <select style="${fieldStyle}" ${focusHint} onchange="_onPreviewFieldChanged(${index},'crit',this.value)">${critOptions}</select>
@@ -1306,7 +1308,7 @@ function _buildPreviewRow(row, index, isDuplicate) {
  * jour les compteurs globaux (imp-stats, imp-confirm-btn) puisqu'une
  * édition peut faire basculer une ligne entre valide et invalide.
  * @param {number} index - Index dans _importRows.
- * @param {'targetRayons'|'zone'|'cat'|'q'|'crit'|'p'} field
+ * @param {'targetRayons'|'zone'|'q'|'prec'|'crit'|'p'} field
  * @param {string} value - Valeur brute du champ HTML (toujours une chaîne, même pour un `<input type="number">`). Pour 'targetRayons', plusieurs rayons séparés par virgule.
  * @returns {void}
  */
@@ -1818,7 +1820,7 @@ function _importIntoGrille(rows) {
       if (!DB.grilleCustom[rayon]) DB.grilleCustom[rayon] = [];
       /** @type {GrillePoint} */
       DB.grilleCustom[rayon].push({
-        id: 'imp-' + uid(), zone: row.zone || '', cat: row.cat, q: row.q, p: row.p, c: row.crit,
+        id: 'imp-' + uid(), zone: row.zone || '', cat: row.cat, q: row.q, prec: row.prec || '', p: row.p, c: row.crit,
       });
     });
   });

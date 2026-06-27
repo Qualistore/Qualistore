@@ -52,6 +52,7 @@
  * @property {string} q
  * @property {string} crit
  * @property {string} poids
+ * @property {string} methode - Méthode de contrôle (RENOMMÉ depuis l'ancien "Méthode de vérification", routé depuis mapping.methode — typiquement une colonne "Précisions" du document). Affiché sous l'intitulé dans la modale d'audit (voir GrillePoint.prec, config.js).
  * @property {string} extra - Texte libre concatenant `En-tête: valeur` pour chaque colonne non mappée et non vide sur cette ligne ; chaîne vide si rien à signaler. Jamais perdu, jamais auto-injecté dans un champ métier.
  */
 
@@ -110,19 +111,20 @@ function _normalizeOneRow(row, mapping, unmappedHeaders) {
   const cat = mapping.categorie && row[mapping.categorie] ? String(row[mapping.categorie]) : 'Général';
   /** @type {string} */
   const poids = mapping.poids ? String(row[mapping.poids] || '') : '';
+  /** @type {string} */
+  const methode = mapping.methode ? String(row[mapping.methode] || '') : '';
 
-  // 'methode' et 'commentaire' n'ont pas de champ dédié dans
-  // NormalizedImportRow (le format de sortie à 5 champs fixes) :
-  // pour ne rien perdre sans modifier ce format existant, leur
-  // contenu rejoint le champ `extra` au même titre que les colonnes
-  // non mappées, plutôt que d'être placé dans `cat` ou `q` (qui ont
-  // un autre sens métier).
+  // ⚠️ CHANGÉ : 'methode' a désormais son propre champ dédié
+  // (NormalizedImportRow.methode), routé vers GrillePoint.prec —
+  // affiché sous l'intitulé dans la modale d'audit (voir
+  // _buildAuditQuestion, audits.js) comme "Méthode de contrôle".
+  // Auparavant son contenu rejoignait `extra` (texte libre non
+  // structuré) au même titre qu'une colonne non mappée, ce qui ne
+  // permettait pas de l'afficher à l'endroit attendu. 'commentaire'
+  // n'a toujours pas de champ dédié (pas demandé) et rejoint `extra`.
   /** @type {string[]} */
   const extraParts = [];
 
-  if (mapping.methode && row[mapping.methode]) {
-    extraParts.push(`Méthode: ${row[mapping.methode]}`);
-  }
   if (mapping.commentaire && row[mapping.commentaire]) {
     extraParts.push(`Commentaire: ${row[mapping.commentaire]}`);
   }
@@ -138,6 +140,7 @@ function _normalizeOneRow(row, mapping, unmappedHeaders) {
     q,
     crit,
     poids,
+    methode,
     extra: extraParts.join(IMPORT_NORMALIZE_EXTRA_SEPARATOR),
   };
 }

@@ -514,6 +514,16 @@ function _buildAuditZoneTabs() {
  * @param {string} zone - Clé de _auditZones (préfixe de catégorie).
  * @returns {void}
  */
+/**
+ * Affiche les questions d'une zone donnée, groupées par Thème
+ * (point.cat — sous-groupe à l'intérieur de la zone, voir le
+ * typedef GrillePoint, config.js), avec un en-tête de section par
+ * thème, sur le même principe que _buildCategorySection (page
+ * Grille, grille.js). Hiérarchie complète : Rayon → Zone (onglets,
+ * voir buildAuditQuestions) → Thème (sections ci-dessous) → Points.
+ * @param {string} zone
+ * @returns {void}
+ */
 function switchAuditZone(zone) {
   // Mettre à jour les styles des onglets
   _auditZoneKeys.forEach((z, i) => {
@@ -523,8 +533,13 @@ function switchAuditZone(zone) {
     btn.style.color      = z === zone ? '#fff' : 'var(--primary)';
   });
 
-  // Rendre les questions de la zone
-  el('a-qs').innerHTML = _auditZones[zone].map(point => _buildAuditQuestion(point)).join('');
+  // Rendre les questions de la zone, groupées par Thème (point.cat)
+  /** @type {string[]} */
+  const themes = [...new Set(_auditZones[zone].map(point => point.cat || 'Général'))];
+  el('a-qs').innerHTML = themes.map(theme => `
+    <div style="padding:8px 4px;font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">${theme}</div>
+    ${_auditZones[zone].filter(p => (p.cat || 'Général') === theme).map(point => _buildAuditQuestion(point)).join('')}
+  `).join('');
 
   // Restaurer les réponses déjà saisies
   _auditZones[zone].forEach(point => {
