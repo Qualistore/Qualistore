@@ -65,6 +65,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 /* CARDS */
 .card{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow)}
+
+/* Carte de rayon cliquable (page Grilles, vue cartes) — voir
+   _buildRayonCard, grille.js. */
+.rayon-card{transition:transform .15s,box-shadow .15s}
+.rayon-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
 .card-hdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .card-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
 .card-body{padding:20px}

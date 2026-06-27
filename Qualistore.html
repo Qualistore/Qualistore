@@ -333,22 +333,36 @@
       <div class="page" id="page-grille">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <select class="form-control" style="width:200px" id="grille-mag-sel" onchange="showGrille()">
+            <select class="form-control" style="width:220px" id="grille-mag-sel" onchange="showGrilleCardsView()">
               <option value="">Grille commune (tous magasins)</option>
             </select>
-            <select class="form-control" style="width:200px" id="grille-ray-sel" onchange="showGrille()"></select>
-            <button class="btn btn-secondary btn-sm" id="btn-rename-rayon" onclick="openRenameRayonPrompt()" style="display:none" aria-label="Renommer le rayon" title="Renommer le rayon"><i class="ti ti-pencil"></i></button>
-            <button class="btn btn-secondary btn-sm" id="btn-delete-rayon" onclick="confirmDeleteRayon()" style="display:none" aria-label="Supprimer le rayon" title="Supprimer le rayon"><i class="ti ti-trash"></i></button>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary btn-sm" onclick="openCreateRayonPrompt()"><i class="ti ti-plus"></i> Nouveau rayon</button>
             <button class="btn btn-secondary btn-sm" onclick="openImportModal()"><i class="ti ti-upload"></i> Importer</button>
-            <button class="btn btn-secondary btn-sm" id="btn-clear-ctrl-points" onclick="confirmClearGrillePoints()" style="display:none;color:var(--danger)"><i class="ti ti-eraser"></i> Vider les points</button>
-            <button class="btn btn-danger" id="btn-add-ctrl" onclick="openCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
           </div>
         </div>
-        <div class="tsm tm" id="grille-scope-label" style="margin-bottom:8px"></div>
-        <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-list-check"></i> Grille – <span id="grille-ttl">Boucherie</span></div><div style="display:flex;gap:6px;align-items:center" id="grille-hdr-btns"></div></div><div id="grille-body"></div></div>
+        <div class="tsm tm" id="grille-scope-label" style="margin-bottom:16px"></div>
+
+        <!-- Vue cartes : une carte par rayon -->
+        <div id="grille-cards-view">
+          <div id="grille-cards-grid" class="grid-3"></div>
+          <div class="tsm tm" id="grille-cards-empty" style="display:none;text-align:center;padding:40px 20px">Aucun rayon pour l'instant. Importez une grille ou créez un rayon pour commencer.</div>
+        </div>
+
+        <!-- Vue détail : points de contrôle d'un rayon -->
+        <div id="grille-detail-view" style="display:none">
+          <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+            <button class="btn btn-secondary btn-sm" onclick="showGrilleCardsView()"><i class="ti ti-arrow-left"></i> Retour aux rayons</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" id="btn-rename-rayon" onclick="openRenameRayonPrompt()" style="display:none" aria-label="Renommer le rayon" title="Renommer le rayon"><i class="ti ti-pencil"></i> Renommer</button>
+              <button class="btn btn-secondary btn-sm" id="btn-delete-rayon" onclick="confirmDeleteRayon()" style="display:none" aria-label="Supprimer le rayon" title="Supprimer le rayon"><i class="ti ti-trash"></i> Supprimer le rayon</button>
+              <button class="btn btn-secondary btn-sm" id="btn-clear-ctrl-points" onclick="confirmClearGrillePoints()" style="display:none;color:var(--danger)"><i class="ti ti-eraser"></i> Vider les points</button>
+              <button class="btn btn-danger" id="btn-add-ctrl" onclick="openCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
+            </div>
+          </div>
+          <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-list-check"></i> Grille – <span id="grille-ttl">Boucherie</span></div><div style="display:flex;gap:6px;align-items:center" id="grille-hdr-btns"></div></div><div id="grille-body"></div></div>
+        </div>
       </div>
 
 <!-- GRILLE QUALIMÈTRE -->

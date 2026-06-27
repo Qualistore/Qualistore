@@ -82,6 +82,9 @@ let _ctrlRayonCurrent = 'Boucherie';
 /** @type {string} Magasin actif lors de l'ouverture du modal (pour l'édition) — chaîne vide = grille commune (DB.grilleCustom), sinon référence vers Magasin.id (DB.grilleCustomByStore). Toujours réécrite par openCtrlModal() avant utilisation réelle. */
 let _ctrlStoreCurrent = '';
 
+/** @type {string} Rayon actuellement affiché dans la vue détail de la page Grilles (voir showRayonDetail) — chaîne vide si la vue cartes est affichée (aucun rayon "actif" dans ce cas). Remplace l'ancien select #grille-ray-sel, retiré au profit de la vue en cartes — voir showGrilleCardsView. */
+let _currentGrilleRayon = '';
+
 // ─────────────────────────────────────────────
 // 3. SERVICE DONNÉES
 // ─────────────────────────────────────────────
@@ -126,82 +129,102 @@ function getGrille(rayon, storeId) {
 // ─────────────────────────────────────────────
 
 /**
- * Affiche la grille d'un rayon, regroupée par catégorie. Peuple
- * d'abord le sélecteur de rayon (voir populateRayonSelect, ui.js —
- * source dynamique, plus aucune liste fixe) avant de déterminer le
- * rayon à afficher.
+ * Affiche la vue "cartes" de la page Grilles : une carte par rayon
+ * connu (getKnownRayons), avec le nombre de points de contrôle dans
+ * le scope actuellement sélectionné (grille commune ou magasin
+ * précis — voir #grille-mag-sel). Cliquer sur une carte ouvre la vue
+ * détail de ce rayon (voir showRayonDetail).
  *
- * NOTE : un `<select>` HTML sans option vide adopte automatiquement
- * sa première option comme valeur dès qu'il est peuplé — c'est donc
- * select.value qui porte naturellement "le premier rayon connu" une
- * fois populateRayonSelect() passé. Le fallback explicite sur
- * getKnownRayons()[0] ne joue un rôle que si #grille-ray-sel est
- * absent du DOM (ne devrait pas arriver en usage normal, mais évite
- * un crash silencieux si la page est restructurée).
- * @param {string} [rayon] - Rayon à afficher ; si omis, utilise la valeur du select tel que peuplé, sinon le premier rayon connu, sinon affiche un état vide si aucun rayon n'existe encore.
+ * ⚠️ CHANGÉ : remplace l'ancien select #grille-ray-sel (toujours un
+ * rayon affiché par défaut) — la page Grilles s'ouvre désormais sur
+ * cette vue d'ensemble, plus lisible pour visualiser/comparer le
+ * contenu de tous les rayons d'un coup d'œil. Réinitialise
+ * _currentGrilleRayon (aucun rayon "actif" tant qu'on est sur cette
+ * vue).
  * @returns {void}
  */
-/**
- * Affiche la grille d'un rayon pour un magasin donné (ou la grille
- * commune si aucun magasin n'est sélectionné), regroupée par zone
- * puis par catégorie. Peuple d'abord les sélecteurs de magasin et de
- * rayon avant de déterminer quoi afficher.
- *
- * ⚠️ CHANGÉ : la grille de points de contrôle peut désormais être
- * spécifique à un magasin (voir getGrille, DB.grilleCustomByStore) —
- * #grille-mag-sel permet de choisir "Grille commune (tous magasins)"
- * (valeur vide, comportement historique : DB.grilleCustom[rayon]) ou
- * un magasin précis (DB.grilleCustomByStore[storeId][rayon], avec
- * retombée automatique sur la grille commune si ce magasin n'a pas
- * encore de surcharge propre pour ce rayon — voir getGrille).
- *
- * NOTE : un `<select>` HTML sans option vide adopte automatiquement
- * sa première option comme valeur dès qu'il est peuplé — c'est donc
- * select.value qui porte naturellement "le premier rayon connu" une
- * fois populateRayonSelect() passé. Le fallback explicite sur
- * getKnownRayons()[0] ne joue un rôle que si #grille-ray-sel est
- * absent du DOM (ne devrait pas arriver en usage normal, mais évite
- * un crash silencieux si la page est restructurée).
- * @param {string} [rayon] - Rayon à afficher ; si omis, utilise la valeur du select tel que peuplé, sinon le premier rayon connu, sinon affiche un état vide si aucun rayon n'existe encore.
- * @returns {void}
- */
-function showGrille(rayon) {
+function showGrilleCardsView() {
+  _currentGrilleRayon = '';
+
   /** @type {HTMLSelectElement | null} */
   const magSelect = el('grille-mag-sel');
   populateMagSelect(magSelect);
   /** @type {string} */
   const storeId = magSelect ? magSelect.value : '';
 
-  /** @type {HTMLSelectElement | null} */
-  const select = el('grille-ray-sel');
-  populateRayonSelect(select, false);
+  _updateGrilleScopeLabel(storeId);
+
+  el('grille-detail-view').style.display = 'none';
+  el('grille-cards-view').style.display  = '';
+
+  /** @type {string[]} */
+  const rayons = getKnownRayons();
+
+  if (!rayons.length) {
+    el('grille-cards-grid').innerHTML   = '';
+    el('grille-cards-empty').style.display = '';
+    return;
+  }
+
+  el('grille-cards-empty').style.display = 'none';
+  el('grille-cards-grid').innerHTML = rayons
+    .map(rayon => _buildRayonCard(rayon, storeId))
+    .join('');
+}
+
+/**
+ * Construit la carte HTML d'un rayon pour la vue cartes — affiche le
+ * nombre de points de contrôle dans le scope actuel (voir getGrille)
+ * et le nombre de zones distinctes. Cliquer sur la carte ouvre la
+ * vue détail (showRayonDetail).
+ * @param {string} rayon
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune.
+ * @returns {string}
+ */
+function _buildRayonCard(rayon, storeId) {
+  /** @type {GrillePoint[]} */
+  const points = getGrille(rayon, storeId);
+  /** @type {number} */
+  const zoneCount = getZonesForRayon(rayon, storeId).length;
+
+  return `<div class="card rayon-card" onclick="showRayonDetail('${_escapeHtmlAttr(rayon)}')" style="cursor:pointer">
+    <div class="card-body" style="text-align:center;padding:24px 16px">
+      <i class="ti ti-category" style="font-size:28px;color:var(--primary);margin-bottom:10px;display:block"></i>
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px">${rayon}</div>
+      <div style="font-size:24px;font-weight:700;color:${points.length ? 'var(--text)' : 'var(--text3)'}">${points.length}</div>
+      <div class="tsm tm">point(s) de contrôle</div>
+      ${zoneCount ? `<div class="tsm tm" style="margin-top:6px">${zoneCount} zone(s)</div>` : ''}
+    </div>
+  </div>`;
+}
+
+/**
+ * Affiche la vue détail d'un rayon (liste des zones/catégories/
+ * points de contrôle, regroupée — voir _buildZoneSection), dans le
+ * scope actuellement sélectionné (#grille-mag-sel). Remplace
+ * l'ancien comportement par défaut de showGrille — désormais
+ * atteinte uniquement en cliquant une carte depuis
+ * showGrilleCardsView (ou via les actions create/rename/delete qui y
+ * retournent après leur action).
+ * @param {string} [rayon] - Rayon à afficher ; si omis, retombe sur _currentGrilleRayon (rayon déjà actif — utile pour rafraîchir la vue après une action sans changer de rayon).
+ * @returns {void}
+ */
+function showRayonDetail(rayon) {
+  /** @type {string} */
+  const resolvedRayon = rayon || _currentGrilleRayon;
+  if (!resolvedRayon) { showGrilleCardsView(); return; }
+  _currentGrilleRayon = resolvedRayon;
 
   /** @type {string} */
-  const resolvedRayon = rayon || (select ? select.value : '') || getKnownRayons()[0] || '';
+  const storeId = el('grille-mag-sel') ? el('grille-mag-sel').value : '';
 
-  if (select && resolvedRayon) select.value = resolvedRayon;
-
-  if (el('grille-scope-label')) {
-    /** @type {Magasin | undefined} */
-    const store = storeId ? DB.magasins.find(m => m.id === storeId) : undefined;
-    el('grille-scope-label').innerHTML = storeId
-      ? `<i class="ti ti-building-store"></i> Grille spécifique à <strong>${store ? store.nom : storeId}</strong> — les points non personnalisés pour ce magasin reprennent la grille commune.`
-      : `<i class="ti ti-world"></i> Grille commune, partagée par tous les magasins sans personnalisation propre.`;
-  }
+  el('grille-cards-view').style.display  = 'none';
+  el('grille-detail-view').style.display = '';
 
   /** @type {boolean} */
   const isAdmin = CU && CU.role === 'admin';
-  if (el('btn-rename-rayon')) el('btn-rename-rayon').style.display = resolvedRayon && isAdmin ? '' : 'none';
-  if (el('btn-delete-rayon')) el('btn-delete-rayon').style.display = resolvedRayon && isAdmin ? '' : 'none';
-
-  if (!resolvedRayon) {
-    el('grille-ttl').textContent = '—';
-    el('grille-body').innerHTML  = `<div class="tsm tm" style="padding:24px;text-align:center">Aucun rayon pour l'instant. Importez une grille ou créez un rayon pour commencer.</div>`;
-    const addButton = el('btn-add-ctrl');
-    if (addButton) addButton.style.display = 'none';
-    if (el('btn-clear-ctrl-points')) el('btn-clear-ctrl-points').style.display = 'none';
-    return;
-  }
+  if (el('btn-rename-rayon')) el('btn-rename-rayon').style.display = isAdmin ? '' : 'none';
+  if (el('btn-delete-rayon')) el('btn-delete-rayon').style.display = isAdmin ? '' : 'none';
 
   el('grille-ttl').textContent = resolvedRayon;
 
@@ -209,7 +232,7 @@ function showGrille(rayon) {
   if (addButton) addButton.style.display = isAdmin ? '' : 'none';
 
   /** @type {GrillePoint[]} */
-  const allPoints  = getGrille(resolvedRayon, storeId);
+  const allPoints = getGrille(resolvedRayon, storeId);
 
   if (el('btn-clear-ctrl-points')) {
     el('btn-clear-ctrl-points').style.display = (isAdmin && allPoints.length > 0) ? '' : 'none';
@@ -230,6 +253,33 @@ function showGrille(rayon) {
   el('grille-body').innerHTML = zones
     .map(zone => _buildZoneSection(zone, allPoints.filter(p => ((p.zone && p.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) === zone), resolvedRayon, storeId, isAdmin))
     .join('');
+}
+
+/**
+ * Met à jour le libellé indiquant le scope actuel (grille commune ou
+ * magasin précis) — affiché au-dessus des deux vues (cartes et
+ * détail) de la page Grilles.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune.
+ * @returns {void}
+ */
+function _updateGrilleScopeLabel(storeId) {
+  if (!el('grille-scope-label')) return;
+  /** @type {Magasin | undefined} */
+  const store = storeId ? DB.magasins.find(m => m.id === storeId) : undefined;
+  el('grille-scope-label').innerHTML = storeId
+    ? `<i class="ti ti-building-store"></i> Grille spécifique à <strong>${store ? store.nom : storeId}</strong> — les points non personnalisés pour ce magasin reprennent la grille commune.`
+    : `<i class="ti ti-world"></i> Grille commune, partagée par tous les magasins sans personnalisation propre.`;
+}
+
+/**
+ * Point d'entrée de la page Grilles (voir _getPageRenderer, ui.js) —
+ * affiche toujours la vue cartes à l'arrivée sur la page, jamais
+ * directement la vue détail d'un rayon précédemment consulté (sortir
+ * de la page puis y revenir réinitialise sur la vue d'ensemble).
+ * @returns {void}
+ */
+function showGrille() {
+  showGrilleCardsView();
 }
 
 // ─────────────────────────────────────────────
@@ -358,13 +408,13 @@ function _buildCtrlRayonCheckboxes() {
  * décider où écrire). Peuple d'abord les cases à cocher de rayon
  * (voir _buildCtrlRayonCheckboxes) depuis getKnownRayons() — plus
  * aucune liste fixe.
- * @param {string} [rayon] - Rayon d'origine ; retombe sur le select de rayon affiché, puis le premier rayon connu (getKnownRayons).
+ * @param {string} [rayon] - Rayon d'origine ; retombe sur _currentGrilleRayon (rayon affiché dans la vue détail), puis le premier rayon connu (getKnownRayons).
  * @param {string} [pointId] - Référence vers GrillePoint.id à éditer ; absent/falsy pour une création.
  * @param {string} [storeId] - Magasin d'origine du point édité (DB.grilleCustomByStore) ; absent/vide = grille commune (DB.grilleCustom). Retombe sur le select de magasin affiché si omis.
  * @returns {void}
  */
 function openCtrlModal(rayon, pointId, storeId) {
-  _ctrlRayonCurrent = rayon || (el('grille-ray-sel') ? el('grille-ray-sel').value : '') || getKnownRayons()[0] || '';
+  _ctrlRayonCurrent = rayon || _currentGrilleRayon || getKnownRayons()[0] || '';
   _ctrlStoreCurrent = storeId !== undefined ? storeId : (el('grille-mag-sel') ? el('grille-mag-sel').value : '');
   /** @type {boolean} */
   const isEdit = !!pointId;
@@ -583,7 +633,7 @@ function saveCtrl() {
 
   save();
   closeModal('m-ctrl');
-  showGrille(el('grille-ray-sel').value || _ctrlRayonCurrent);
+  showRayonDetail(_ctrlRayonCurrent);
 }
 
 // ─────────────────────────────────────────────
@@ -615,7 +665,7 @@ function delCtrl(rayon, pointId, storeId) {
     DB.grilleCustom[rayon] = (DB.grilleCustom[rayon] || []).filter(p => p.id !== pointId);
   }
   save();
-  showGrille(rayon);
+  showRayonDetail(rayon);
 }
 
 // ─────────────────────────────────────────────
@@ -644,7 +694,7 @@ function openCreateRayonPrompt() {
   }
 
   save();
-  showGrille(name.trim());
+  showRayonDetail(name.trim());
 }
 
 /**
@@ -656,7 +706,7 @@ function openCreateRayonPrompt() {
  */
 function openRenameRayonPrompt() {
   /** @type {string} */
-  const currentRayon = el('grille-ray-sel') ? el('grille-ray-sel').value : '';
+  const currentRayon = _currentGrilleRayon;
   if (!currentRayon) return;
 
   /** @type {string | null} */
@@ -671,7 +721,7 @@ function openRenameRayonPrompt() {
   }
 
   save();
-  showGrille(newName.trim());
+  showRayonDetail(newName.trim());
 }
 
 /**
@@ -704,7 +754,7 @@ function openRenameGrilleZonePrompt(rayon, zone, storeId) {
   }
 
   save();
-  showGrille(rayon);
+  showRayonDetail(rayon);
 }
 
 /**
@@ -717,7 +767,7 @@ function openRenameGrilleZonePrompt(rayon, zone, storeId) {
  */
 function confirmDeleteRayon() {
   /** @type {string} */
-  const currentRayon = el('grille-ray-sel') ? el('grille-ray-sel').value : '';
+  const currentRayon = _currentGrilleRayon;
   if (!currentRayon) return;
 
   /** @type {number} */
@@ -732,7 +782,7 @@ function confirmDeleteRayon() {
 
   deleteRayonEverywhere(currentRayon);
   save();
-  showGrille();
+  showGrilleCardsView();
 }
 
 /**
@@ -760,7 +810,7 @@ function confirmDeleteRayon() {
  */
 function confirmClearGrillePoints() {
   /** @type {string} */
-  const currentRayon = el('grille-ray-sel') ? el('grille-ray-sel').value : '';
+  const currentRayon = _currentGrilleRayon;
   if (!currentRayon) return;
 
   /** @type {string} */
@@ -784,5 +834,5 @@ function confirmClearGrillePoints() {
     DB.grilleCustom[currentRayon] = [];
   }
   save();
-  showGrille(currentRayon);
+  showRayonDetail(currentRayon);
 }
