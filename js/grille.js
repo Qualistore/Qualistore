@@ -247,7 +247,7 @@ function _buildRayonCard(rayon, storeId, enseigne) {
   /** @type {GrillePoint[]} */
   const points = getGrille(rayon, storeId, enseigneArg);
   /** @type {number} */
-  const zoneCount = getZonesForRayon(rayon, storeId).length;
+  const zoneCount = getZonesForRayon(rayon, storeId, enseigneArg).length;
 
   return `<div class="card rayon-card" onclick="showRayonDetail('${_escapeHtmlAttr(rayon)}')" style="cursor:pointer">
     <div class="card-body" style="text-align:center;padding:24px 16px">
@@ -310,7 +310,7 @@ function showRayonDetail(rayon) {
   }
 
   /** @type {string[]} */
-  const zones = getZonesForRayon(resolvedRayon, storeId);
+  const zones = getZonesForRayon(resolvedRayon, storeId, enseigneArg);
 
   el('grille-body').innerHTML = zones
     .map(zone => _buildZoneSection(zone, allPoints.filter(p => ((p.zone && p.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) === zone), resolvedRayon, storeId, isAdmin))
