@@ -79,7 +79,8 @@
  * @typedef {Object} ImportParsedRow
  * @property {string} zoneRaw - Valeur de zone telle qu'écrite dans le document, jamais altérée (RENOMMÉ depuis rayonRaw). Utilisée par _importIntoQualimetre comme source de vérité pour la résolution de zone Qualimètre, indépendamment de `zone` (qui peut avoir été ajustée à la casse canonique pour la cible 'grille', voir _showImportPreview).
  * @property {string[]} targetRayons - Rayon(s) FSQS où cette ligne sera réellement importée (cible 'grille' uniquement) — initialisé à _importDefaultRayons (rayon(s) choisis par l'utilisateur AVANT l'import, voir le sélecteur au-dessus de la zone de dépose). Modifiable individuellement (voir _onPreviewFieldChanged) ou en masse pour les lignes sélectionnées (voir applyBulkRayonZoneAssignment). Une ligne avec targetRayons vide n'est PAS importée même si `valid` est true — voir confirmImport.
- * @property {string[]} targetStores - Magasin(s) FSQS où cette ligne sera réellement importée (cible 'grille' uniquement) — initialisé à _importDefaultStores. Vide = import vers la grille commune (DB.grilleCustom[rayon], partagée par tous les magasins sans surcharge propre) ; un ou plusieurs magasins = import vers DB.grilleCustomByStore[storeId][rayon] pour chacun (voir getGrille, grille.js, et _importIntoGrille). Contrairement à targetRayons, une ligne avec targetStores vide est tout à fait valide à l'import — ce n'est pas une condition d'exclusion.
+ * @property {string[]} targetStores - Magasin(s) individuels où cette ligne sera importée en plus (grille personnalisée DB.grilleCustomByStore[storeId][rayon]) — vide par défaut, rempli uniquement via assignation manuelle ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). N'est jamais initialisé depuis l'enseigne choisie avant import (voir targetEnseigne, qui gère ce cas séparément).
+ * @property {string} targetEnseigne - Enseigne FSQS dont la grille COMMUNE recevra cette ligne (DB.grilleCustom[enseigne][rayon], héritée par tous les magasins de cette enseigne) — initialisé à _importDefaultEnseigne (sélecteur au-dessus de la zone de dépose). Chaîne vide = aucune grille commune ciblée pour cette ligne (elle n'est alors importée que dans les magasins listés dans targetStores, s'il y en a).
  * @property {string} zone - Sous-partie du rayon (GrillePoint.zone, voir config.js) attribuée à cette ligne pour l'import FSQS — devient l'onglet dans l'audit (voir buildAuditQuestions, audits.js). Initialisé depuis `zoneRaw` (libellé détecté dans le document — colonne "Zone" ou ligne-titre de section), avec résolution à la casse canonique d'une zone déjà existante dans un des rayons cibles si trouvée. Chaîne vide acceptée ("Non classé" à l'affichage). Sans effet sur la cible 'qualimetre'.
  * @property {boolean} selected - Coché dans l'aperçu (case à gauche de chaque ligne) — détermine quelles lignes sont affectées par une assignation groupée (voir applyBulkRayonZoneAssignment), pas par l'import lui-même.
  * @property {string} cat - Thème (sous-groupe à l'intérieur de la zone, voir GrillePoint.cat, config.js) — détecté depuis la colonne "Thème"/"Catégorie" du document, conservé et importé tel quel, mais ⚠️ CHANGÉ : plus affiché comme colonne éditable dans l'aperçu (#imp-preview-tb) depuis que ce concept a été jugé redondant avec le classement rayon → zone. Reste utilisé en interne pour grouper les points par sous-section dans la grille (_buildCategorySection, grille.js) et dans l'audit (switchAuditZone, audits.js).
@@ -241,8 +242,8 @@ let _importDefaultCrit = 'Majeure';
 /** @type {string[]} Rayon(s) FSQS choisis par l'utilisateur AVANT l'import (sélecteur au-dessus de la zone de dépose, voir _onImportDefaultRayonsChanged) — appliqué comme targetRayons par défaut à toutes les lignes de l'aperçu (cible 'grille' uniquement). Un rayon n'est jamais déduit du document : c'est toujours un choix explicite de l'utilisateur, modifiable ensuite ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). */
 let _importDefaultRayons = [];
 
-/** @type {string[]} Magasin(s) FSQS choisis par l'utilisateur AVANT l'import (sélecteur groupé par enseigne, voir _onImportDefaultStoresChanged), cible 'grille' uniquement. Vide = import vers la grille commune (DB.grilleCustom, partagée par tous les magasins sans surcharge propre) ; un ou plusieurs magasins cochés = import vers DB.grilleCustomByStore[storeId][rayon] pour CHACUN des magasins choisis (un point distinct créé par magasin, jamais de référence partagée — voir _importIntoGrille). */
-let _importDefaultStores = [];
+/** @type {string} Enseigne FSQS choisie par l'utilisateur AVANT l'import (single-select, voir _onImportDefaultEnseigneChanged), cible 'grille' uniquement. Vide = AUCUNE grille commune accessible (voir getGrille, grille.js — pas de grille commune sans enseigne) ; une ligne sans enseigne choisie est alors importée nulle part tant qu'aucun rayon cible n'a de magasin assigné individuellement. Une enseigne choisie = import vers DB.grilleCustom[enseigne][rayon], la grille commune de CETTE enseigne, héritée par tous ses magasins sans surcharge propre. */
+let _importDefaultEnseigne = '';
 
 // ─────────────────────────────────────────────
 // 3. MODAL D'IMPORT
@@ -266,7 +267,7 @@ function openImportModal(target) {
   _currentImportTab    = 'csv';
   _importDefaultCrit   = 'Majeure';
   _importDefaultRayons = [];
-  _importDefaultStores = [];
+  _importDefaultEnseigne = '';
 
   el('imp-file-input').value   = '';
   el('imp-warnings').textContent = '';
@@ -326,21 +327,17 @@ function _onImportDefaultRayonsChanged() {
  * @returns {void}
  */
 /**
- * Met à jour _importDefaultStores avec TOUS les magasins de
- * l'enseigne choisie dans #imp-default-enseigne-sel (single-select —
- * import par enseigne, pas par magasin individuel). À l'import, ces
- * magasins héritent de la grille comme base (DB.grilleCustomByStore),
- * sans jamais inclure les points créés via le formulaire manuel
- * (ceux-là restent des cas particuliers propres à chaque magasin,
- * voir saveCtrl, grille.js — non touchés par l'import).
+ * Met à jour _importDefaultEnseigne avec l'enseigne choisie dans
+ * #imp-default-enseigne-sel (single-select). À l'import, cette
+ * enseigne reçoit la grille comme base commune
+ * (DB.grilleCustom[enseigne]), héritée par tous ses magasins, sans
+ * jamais inclure les points créés via le formulaire manuel (ceux-là
+ * restent des cas particuliers propres à chaque magasin, voir
+ * saveCtrl, grille.js — non touchés par l'import).
  * @returns {void}
  */
 function _onImportDefaultEnseigneChanged() {
-  /** @type {string} */
-  const enseigne = v('imp-default-enseigne-sel');
-  _importDefaultStores = enseigne
-    ? DB.magasins.filter(m => m.enseigne === enseigne).map(m => m.id)
-    : [];
+  _importDefaultEnseigne = v('imp-default-enseigne-sel');
 }
 
 // ─────────────────────────────────────────────
@@ -1064,7 +1061,8 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
     const parsedRow = {
       zoneRaw:      row.zone,
       targetRayons: isQualimetreTarget ? [] : [..._importDefaultRayons],
-      targetStores: isQualimetreTarget ? [] : [..._importDefaultStores],
+      targetStores: [],
+      targetEnseigne: isQualimetreTarget ? '' : _importDefaultEnseigne,
       zone:         isQualimetreTarget ? '' : resolvedZone,
       selected:     false,
       cat:          row.cat || 'Général',
@@ -1549,16 +1547,23 @@ function _refreshImportPreviewCounters() {
   const isGrilleTarget = _importTarget !== 'qualimetre';
 
   /** @type {number} */
-  const importableCount = _importRows.filter(r => r.valid && (!isGrilleTarget || r.targetRayons.length > 0)).length;
-  /** @type {number} */
   const noTitleCount = _importRows.filter(r => !r.valid).length;
   /** @type {number} */
   const noRayonCount = isGrilleTarget ? _importRows.filter(r => r.valid && r.targetRayons.length === 0).length : 0;
+  /** @type {number} */
+  const noDestCount = isGrilleTarget
+    ? _importRows.filter(r => r.valid && r.targetRayons.length > 0 && !r.targetEnseigne && r.targetStores.length === 0).length
+    : 0;
+  /** @type {number} */
+  const importableCount = _importRows.filter(r =>
+    r.valid && (!isGrilleTarget || (r.targetRayons.length > 0 && (r.targetEnseigne || r.targetStores.length > 0)))
+  ).length;
 
   /** @type {string} */
   let statsText = `${importableCount} à importer`;
   if (noTitleCount) statsText += ` · ${noTitleCount} sans intitulé (ignorée${noTitleCount > 1 ? 's' : ''})`;
   if (noRayonCount) statsText += ` · ${noRayonCount} sans rayon cible (ignorée${noRayonCount > 1 ? 's' : ''})`;
+  if (noDestCount) statsText += ` · ${noDestCount} sans enseigne ni magasin (ignorée${noDestCount > 1 ? 's' : ''})`;
 
   el('imp-stats').textContent = statsText;
   el('imp-confirm-btn').disabled      = importableCount === 0;
@@ -1587,7 +1592,9 @@ function confirmImport() {
   /** @type {boolean} */
   const isGrilleTarget = _importTarget !== 'qualimetre';
   /** @type {ImportParsedRow[]} */
-  const validRows = _importRows.filter(r => r.valid && (!isGrilleTarget || r.targetRayons.length > 0));
+  const validRows = _importRows.filter(r =>
+    r.valid && (!isGrilleTarget || (r.targetRayons.length > 0 && (r.targetEnseigne || r.targetStores.length > 0)))
+  );
 
   if (_importTarget === 'qualimetre') {
     _importIntoQualimetre(validRows);
@@ -1871,23 +1878,41 @@ function _importIntoQualimetre(rows) {
  * @param {ImportParsedRow[]} rows
  * @returns {void}
  */
+/**
+ * Importe les lignes validées dans DB.grilleCustom (grille commune
+ * par enseigne) et/ou DB.grilleCustomByStore (magasins individuels).
+ *
+ * ⚠️ CHANGÉ : DB.grilleCustom est désormais indexé par enseigne — une
+ * ligne avec targetEnseigne non vide crée un point dans
+ * DB.grilleCustom[enseigne][rayon] (la grille commune de cette
+ * enseigne, héritée par tous ses magasins sans surcharge propre).
+ * Une ligne peut EN PLUS (ou à la place) cibler des magasins
+ * individuels via targetStores (DB.grilleCustomByStore), pour les cas
+ * particuliers propres à un seul magasin. Si ni targetEnseigne ni
+ * targetStores ne sont renseignés pour un rayon donné, rien n'est
+ * importé pour ce rayon sur cette ligne (pas de grille commune sans
+ * enseigne, par choix délibéré — voir getGrille, grille.js).
+ * @param {ImportParsedRow[]} rows
+ * @returns {void}
+ */
 function _importIntoGrille(rows) {
   rows.forEach(row => {
     row.targetRayons.forEach(rayon => {
       /** @type {Omit<GrillePoint, 'id'>} */
       const pointTemplate = { zone: row.zone || '', cat: row.cat, q: row.q, prec: row.prec || '', p: row.p, c: row.crit };
 
-      if (row.targetStores.length) {
-        row.targetStores.forEach(storeId => {
-          if (!DB.grilleCustomByStore) DB.grilleCustomByStore = {};
-          if (!DB.grilleCustomByStore[storeId]) DB.grilleCustomByStore[storeId] = {};
-          if (!DB.grilleCustomByStore[storeId][rayon]) DB.grilleCustomByStore[storeId][rayon] = [];
-          DB.grilleCustomByStore[storeId][rayon].push({ id: 'imp-' + uid(), ...pointTemplate });
-        });
-      } else {
-        if (!DB.grilleCustom[rayon]) DB.grilleCustom[rayon] = [];
-        DB.grilleCustom[rayon].push({ id: 'imp-' + uid(), ...pointTemplate });
+      if (row.targetEnseigne) {
+        if (!DB.grilleCustom[row.targetEnseigne]) DB.grilleCustom[row.targetEnseigne] = {};
+        if (!DB.grilleCustom[row.targetEnseigne][rayon]) DB.grilleCustom[row.targetEnseigne][rayon] = [];
+        DB.grilleCustom[row.targetEnseigne][rayon].push({ id: 'imp-' + uid(), ...pointTemplate });
       }
+
+      row.targetStores.forEach(storeId => {
+        if (!DB.grilleCustomByStore) DB.grilleCustomByStore = {};
+        if (!DB.grilleCustomByStore[storeId]) DB.grilleCustomByStore[storeId] = {};
+        if (!DB.grilleCustomByStore[storeId][rayon]) DB.grilleCustomByStore[storeId][rayon] = [];
+        DB.grilleCustomByStore[storeId][rayon].push({ id: 'imp-' + uid(), ...pointTemplate });
+      });
     });
   });
 

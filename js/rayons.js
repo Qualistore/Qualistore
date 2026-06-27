@@ -82,9 +82,22 @@ function getKnownRayons() {
   /** @type {Set<string>} */
   const known = new Set(RAYONS_BASE_SEED);
 
-  Object.keys(DB.grilleCustom || {}).forEach(rayon => known.add(rayon));
+  // ⚠️ CORRIGÉ : DB.grilleCustom est désormais indexé par enseigne
+  // PUIS par rayon (Record<enseigne, Record<rayon, GrillePoint[]>>) —
+  // Object.keys(DB.grilleCustom) donnerait des noms d'ENSEIGNE, pas
+  // de rayon. Il faut itérer sur les valeurs de chaque enseigne.
+  Object.values(DB.grilleCustom || {}).forEach(rayonsMap => {
+    Object.keys(rayonsMap || {}).forEach(rayon => known.add(rayon));
+  });
+  // DB.grilleCustomByStore reste indexé par storeId puis rayon —
+  // un rayon présent seulement comme grille personnalisée d'un
+  // magasin (jamais dans une grille commune) doit aussi être connu.
+  Object.values(DB.grilleCustomByStore || {}).forEach(rayonsMap => {
+    Object.keys(rayonsMap || {}).forEach(rayon => known.add(rayon));
+  });
   (DB.audits || []).forEach(audit => { if (audit.rayon) known.add(audit.rayon); });
   (DB.drafts || []).forEach(draft => { if (draft.rayon) known.add(draft.rayon); });
+  (DB.manualRayons || []).forEach(rayon => known.add(rayon));
 
   /** @type {Set<string>} */
   const deleted = new Set(DB.deletedRayons || []);
@@ -201,6 +214,25 @@ function _buildRayonCard(rayon, rayonAudits) {
  * @param {string} rayonName
  * @returns {boolean} true si le rayon a été créé, false s'il existait déjà ou si le nom est vide.
  */
+/**
+ * Crée un rayon "connu" (apparaît dans getKnownRayons()) sans aucun
+ * point de contrôle — utile pour préparer un rayon avant la
+ * première saisie/import. Si le rayon existe déjà (correspondance
+ * exacte), ne fait rien (pas de doublon, pas d'écrasement).
+ *
+ * ⚠️ CHANGÉ : ne crée plus d'entrée vide dans DB.grilleCustom (qui
+ * exigerait une enseigne, désormais — voir le typedef GrilleCustomMap,
+ * storage.js). Le rayon est enregistré dans DB.manualRayons, un
+ * registre dédié aux rayons créés sans données associées encore,
+ * consulté par getKnownRayons().
+ *
+ * ⚠️ CORRIGÉ : retire aussi le rayon de DB.deletedRayons s'il y
+ * figurait (voir deleteRayonEverywhere) — recréer volontairement un
+ * rayon précédemment supprimé doit fonctionner normalement, y
+ * compris pour un rayon du seed historique (RAYONS_BASE_SEED).
+ * @param {string} rayonName
+ * @returns {boolean} true si le rayon a été créé, false s'il existait déjà ou si le nom est vide.
+ */
 function createRayon(rayonName) {
   /** @type {string} */
   const trimmed = (rayonName || '').trim();
@@ -208,8 +240,8 @@ function createRayon(rayonName) {
   if (getKnownRayons().includes(trimmed)) return false;
 
   if (DB.deletedRayons) DB.deletedRayons = DB.deletedRayons.filter(r => r !== trimmed);
-  if (!DB.grilleCustom) DB.grilleCustom = {};
-  DB.grilleCustom[trimmed] = DB.grilleCustom[trimmed] || [];
+  if (!DB.manualRayons) DB.manualRayons = [];
+  DB.manualRayons.push(trimmed);
   return true;
 }
 
@@ -239,10 +271,25 @@ function renameRayon(oldName, newName) {
     return { ok: false, error: `Le rayon « ${trimmedNew} » existe déjà.` };
   }
 
-  if (DB.grilleCustom && Object.prototype.hasOwnProperty.call(DB.grilleCustom, oldName)) {
-    DB.grilleCustom[trimmedNew] = DB.grilleCustom[oldName];
-    delete DB.grilleCustom[oldName];
-  }
+  // ⚠️ CORRIGÉ : DB.grilleCustom est désormais indexé par enseigne
+  // PUIS rayon — il faut migrer la clé `oldName` dans CHAQUE
+  // enseigne qui la possède, pas une seule fois au premier niveau.
+  Object.values(DB.grilleCustom || {}).forEach(rayonsMap => {
+    if (Object.prototype.hasOwnProperty.call(rayonsMap, oldName)) {
+      rayonsMap[trimmedNew] = rayonsMap[oldName];
+      delete rayonsMap[oldName];
+    }
+  });
+  // DB.grilleCustomByStore reste indexé par storeId puis rayon — même
+  // migration nécessaire pour chaque magasin ayant une grille propre
+  // sous ce rayon.
+  Object.values(DB.grilleCustomByStore || {}).forEach(rayonsMap => {
+    if (Object.prototype.hasOwnProperty.call(rayonsMap, oldName)) {
+      rayonsMap[trimmedNew] = rayonsMap[oldName];
+      delete rayonsMap[oldName];
+    }
+  });
+  if (DB.manualRayons) DB.manualRayons = DB.manualRayons.map(r => r === oldName ? trimmedNew : r);
   (DB.audits || []).forEach(audit => { if (audit.rayon === oldName) audit.rayon = trimmedNew; });
   (DB.drafts || []).forEach(draft => { if (draft.rayon === oldName) draft.rayon = trimmedNew; });
   if (DB.deletedRayons) DB.deletedRayons = DB.deletedRayons.filter(r => r !== trimmedNew);
@@ -288,8 +335,28 @@ function deleteRayonEverywhere(rayonName) {
   if (!DB.deletedRayons) DB.deletedRayons = [];
   if (!DB.deletedRayons.includes(rayonName)) DB.deletedRayons.push(rayonName);
 
-  if (DB.grilleCustom) delete DB.grilleCustom[rayonName];
-  sbDeleteWhere('grille_custom', 'rayon', rayonName).catch(() => {});
+  // ⚠️ CORRIGÉ : DB.grilleCustom est désormais indexé par enseigne
+  // PUIS rayon — il faut supprimer la clé `rayonName` dans CHAQUE
+  // enseigne qui la possède (locale ET côté Supabase, avec le bon
+  // préfixe '__common__{enseigne}__{rayon}', voir _pushToSupabase/
+  // _parseGrilleCustom, storage.js), pas un seul `delete` au premier
+  // niveau (qui supprimait par erreur une ENSEIGNE entière).
+  Object.keys(DB.grilleCustom || {}).forEach(enseigne => {
+    if (Object.prototype.hasOwnProperty.call(DB.grilleCustom[enseigne], rayonName)) {
+      delete DB.grilleCustom[enseigne][rayonName];
+      sbDeleteWhere('grille_custom', 'rayon', `__common__${enseigne}__${rayonName}`).catch(() => {});
+    }
+  });
+  // DB.grilleCustomByStore reste indexé par storeId puis rayon — même
+  // nettoyage nécessaire pour chaque magasin ayant une grille propre
+  // sous ce rayon.
+  Object.keys(DB.grilleCustomByStore || {}).forEach(storeId => {
+    if (Object.prototype.hasOwnProperty.call(DB.grilleCustomByStore[storeId], rayonName)) {
+      delete DB.grilleCustomByStore[storeId][rayonName];
+      sbDeleteWhere('grille_custom', 'rayon', `__store__${storeId}__${rayonName}`).catch(() => {});
+    }
+  });
+  if (DB.manualRayons) DB.manualRayons = DB.manualRayons.filter(r => r !== rayonName);
 
   /** @type {string[]} */
   const removedAuditIds = DB.audits.filter(a => a.rayon === rayonName).map(a => a.id);
@@ -351,10 +418,27 @@ const IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE = 'Non classé';
  * @param {string} [storeId] - Référence vers Magasin.id ; omis ou vide = grille commune uniquement.
  * @returns {string[]} Zones triées alphabétiquement, "Non classé" toujours en dernier si présent.
  */
-function getZonesForRayon(rayon, storeId) {
+/**
+ * Liste les zones existantes pour un rayon donné, déduites des
+ * points de ce rayon (aucune liste fixe).
+ *
+ * ⚠️ CHANGÉ : la grille commune (DB.grilleCustom) est désormais
+ * indexée par enseigne — fallback vers DB.grilleCustom[enseigne][rayon]
+ * (au lieu de l'ancien DB.grilleCustom[rayon]), avec la même
+ * résolution storeId → enseigne que getGrille (grille.js).
+ * @param {string} rayon
+ * @param {string} [storeId] - Référence vers Magasin.id ; omis ou sans surcharge propre pour ce rayon = retombe sur la grille commune de son enseigne.
+ * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent, ex : page Grilles avec enseigne choisie directement) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
+ * @returns {string[]} Zones triées alphabétiquement, "Non classé" toujours en dernier si présent.
+ */
+function getZonesForRayon(rayon, storeId, enseigne) {
   /** @type {GrillePoint[]} */
   let points = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : [];
-  if (!points.length) points = DB.grilleCustom[rayon] || [];
+  if (!points.length) {
+    /** @type {string} */
+    const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
+    points = resolvedEnseigne ? (DB.grilleCustom[resolvedEnseigne]?.[rayon] || []) : [];
+  }
 
   /** @type {Set<string>} */
   const zones = new Set();
@@ -392,17 +476,33 @@ function getZonesForRayon(rayon, storeId) {
  * @param {string} [storeId] - Magasin concerné (DB.grilleCustomByStore) ; absent/vide = grille commune (DB.grilleCustom).
  * @returns {{ok: boolean, error?: string}}
  */
-function renameGrilleZone(rayon, oldZone, newZone, storeId) {
+/**
+ * Renomme une zone à l'intérieur d'UN SEUL rayon (n'affecte jamais
+ * les zones de même nom dans d'autres rayons — voir la note
+ * d'en-tête de cette section).
+ * @param {string} rayon
+ * @param {string} oldZone
+ * @param {string} newZone
+ * @param {string} [storeId] - Référence vers Magasin.id ; si fourni et a une grille propre pour ce rayon, le renommage s'applique là. Sinon, retombe sur la grille commune de l'enseigne.
+ * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
+ * @returns {{ok: boolean, error?: string}}
+ */
+function renameGrilleZone(rayon, oldZone, newZone, storeId, enseigne) {
   /** @type {string} */
   const trimmed = (newZone || '').trim();
   if (!trimmed) return { ok: false, error: 'Le nouveau nom de zone ne peut pas être vide.' };
   if (trimmed === oldZone) return { ok: false, error: 'Le nouveau nom est identique à l\'actuel.' };
-  if (getZonesForRayon(rayon, storeId).some(z => z.toLowerCase() === trimmed.toLowerCase() && z !== oldZone)) {
+  if (getZonesForRayon(rayon, storeId, enseigne).some(z => z.toLowerCase() === trimmed.toLowerCase() && z !== oldZone)) {
     return { ok: false, error: `La zone « ${trimmed} » existe déjà dans ce rayon.` };
   }
 
   /** @type {GrillePoint[]} */
-  const points = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : (DB.grilleCustom[rayon] || []);
+  let points = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : [];
+  if (!points.length) {
+    /** @type {string} */
+    const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
+    points = resolvedEnseigne ? (DB.grilleCustom[resolvedEnseigne]?.[rayon] || []) : [];
+  }
   points.forEach(point => {
     if ((point.zone || '') === oldZone) point.zone = trimmed;
   });

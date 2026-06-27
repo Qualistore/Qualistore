@@ -333,8 +333,11 @@
       <div class="page" id="page-grille">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <select class="form-control" style="width:220px" id="grille-mag-sel" onchange="showGrilleCardsView()">
-              <option value="">Grille commune (tous magasins)</option>
+            <select class="form-control" style="width:200px" id="grille-enseigne-sel" onchange="_onGrilleEnseigneChanged()">
+              <option value="">Sélectionner une enseigne...</option>
+            </select>
+            <select class="form-control" style="width:200px" id="grille-mag-sel" onchange="showGrilleCardsView()">
+              <option value="">Grille commune de l'enseigne</option>
             </select>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">

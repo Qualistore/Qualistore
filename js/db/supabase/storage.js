@@ -120,9 +120,15 @@
 
 /**
  * Dictionnaire de configuration de grille d'audit FSQS personnalisée,
- * indexé par nom de rayon (ex : 'Boucherie'). CONFIRMÉ par grille.js
- * (getGrille, saveCtrl) : chaque valeur est un tableau de GrillePoint.
- * @typedef {Record<string, GrillePoint[]>} GrilleCustomMap
+ * indexé par nom d'enseigne (ex : 'Carrefour') puis par nom de rayon
+ * (ex : 'Boucherie'). ⚠️ CHANGÉ : était indexé directement par rayon
+ * (Record<rayon, GrillePoint[]>), partagé par toute la base — devenu
+ * Record<enseigne, Record<rayon, GrillePoint[]>>, chaque enseigne
+ * ayant sa propre grille commune indépendante. Un magasin sans
+ * enseigne renseignée n'a accès à aucune grille commune (voir
+ * getGrille, grille.js) — uniquement à sa grille personnalisée
+ * propre si elle existe (DB.grilleCustomByStore).
+ * @typedef {Record<string, Record<string, GrillePoint[]>>} GrilleCustomMap
  */
 
 /**
@@ -248,6 +254,7 @@ function _buildDefaultDB() {
     grilleCustom:      {},
     grilleCustomByStore: {},
     deletedRayons:     [],
+    manualRayons:      [],
     qualimetreCustom:  {},
     qualimetreGlobal:  {},
     qualimetreZoneLabels: {},
@@ -327,6 +334,7 @@ async function loadDB() {
       grilleCustom:     _parseGrilleCustom(grilleRows),
       grilleCustomByStore: _parseGrilleCustomByStore(grilleRows),
       deletedRayons:    _parseDeletedRayons(grilleRows),
+      manualRayons:     _parseManualRayons(grilleRows),
       enseignes:        _parseEnseignes(grilleRows),
       qualimetreCustom: _parseQualimetreCustom(qualRows),
       qualimetreGlobal: _parseQualimetreGlobal(qualRows),
@@ -361,27 +369,35 @@ async function loadDB() {
 
 /**
  * Transforme les lignes brutes de la table `grille_custom` en
- * dictionnaire indexé par rayon, en excluant la ligne réservée
- * '__deleted_rayons__' (DB.deletedRayons, voir _parseDeletedRayons)
- * — pas un rayon réel.
- * @param {SupabaseRow[] | null | undefined} rows
- * @returns {GrilleCustomMap}
- */
-/**
- * Transforme les lignes brutes de la table `grille_custom` en
- * dictionnaire indexé par rayon, en excluant la ligne réservée
- * '__deleted_rayons__' (DB.deletedRayons, voir _parseDeletedRayons)
- * et toute ligne préfixée '__store__' (DB.grilleCustomByStore, voir
- * _parseGrilleCustomByStore) — ni l'une ni l'autre n'est un rayon
- * réel de la grille commune.
+ * dictionnaire à deux niveaux enseigne → rayon (voir le typedef
+ * GrilleCustomMap). Lit les lignes préfixées '__common__{enseigne}__{rayon}'
+ * (voir _pushToSupabase) ; ignore '__deleted_rayons__', '__enseignes__'
+ * et les lignes préfixées '__store__' (DB.grilleCustomByStore, voir
+ * _parseGrilleCustomByStore) — aucune des trois n'est une grille
+ * commune réelle.
  * @param {SupabaseRow[] | null | undefined} rows
  * @returns {GrilleCustomMap}
  */
 function _parseGrilleCustom(rows) {
+  /** @type {GrilleCustomMap} */
   const result = {};
   (rows || [])
-    .filter(row => row.rayon !== '__deleted_rayons__' && row.rayon !== '__enseignes__' && !row.rayon.startsWith('__store__'))
-    .forEach(row => { result[row.rayon] = row.data; });
+    .filter(row => row.rayon.startsWith('__common__'))
+    .forEach(row => {
+      // Format : '__common__{enseigne}__{rayon}' — découpe sur les
+      // deux premières occurrences du séparateur seulement (un nom
+      // d'enseigne ou de rayon pourrait en théorie contenir '__').
+      /** @type {string[]} */
+      const parts = row.rayon.split('__');
+      // parts[0]='', parts[1]='common', parts[2]=enseigne, reste=rayon
+      /** @type {string} */
+      const enseigne = parts[2];
+      /** @type {string} */
+      const rayon = parts.slice(3).join('__');
+      if (!enseigne || !rayon) return;
+      if (!result[enseigne]) result[enseigne] = {};
+      result[enseigne][rayon] = row.data;
+    });
   return result;
 }
 
@@ -449,6 +465,19 @@ function _parseDeletedRayons(rows) {
   /** @type {SupabaseRow | undefined} */
   const deletedRow = (rows || []).find(row => row.rayon === '__deleted_rayons__');
   return deletedRow && Array.isArray(deletedRow.data) ? deletedRow.data : [];
+}
+
+/**
+ * Extrait la liste des rayons créés manuellement sans grille
+ * associée encore (ligne réservée '__manual_rayons__' de la table
+ * `grille_custom`, voir createRayon, rayons.js).
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {string[]}
+ */
+function _parseManualRayons(rows) {
+  /** @type {SupabaseRow | undefined} */
+  const manualRow = (rows || []).find(row => row.rayon === '__manual_rayons__');
+  return manualRow && Array.isArray(manualRow.data) ? manualRow.data : [];
 }
 
 /**
@@ -548,11 +577,22 @@ async function _pushToSupabase(tables) {
     if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
     if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
 
-    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore') || tables.includes('enseignes')) {
+    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore') || tables.includes('enseignes') || tables.includes('manualRayons')) {
       /** @type {SupabaseRow[]} */
-      const rows = Object.entries(DB.grilleCustom).map(([rayon, data]) => ({ id: rayon, rayon, data }));
+      const rows = [];
+      // Grilles communes par enseigne (DB.grilleCustom, désormais à
+      // deux niveaux enseigne → rayon, voir le typedef GrilleCustomMap)
+      // — id préfixé '__common__{enseigne}__{rayon}', voir _parseGrilleCustom.
+      Object.entries(DB.grilleCustom).forEach(([enseigne, rayons]) => {
+        Object.entries(rayons).forEach(([rayon, data]) => {
+          rows.push({ id: `__common__${enseigne}__${rayon}`, rayon: `__common__${enseigne}__${rayon}`, data });
+        });
+      });
       if (DB.deletedRayons && DB.deletedRayons.length) {
         rows.push({ id: '__deleted_rayons__', rayon: '__deleted_rayons__', data: DB.deletedRayons });
+      }
+      if (DB.manualRayons && DB.manualRayons.length) {
+        rows.push({ id: '__manual_rayons__', rayon: '__manual_rayons__', data: DB.manualRayons });
       }
       if (DB.enseignes && DB.enseignes.length) {
         rows.push({ id: '__enseignes__', rayon: '__enseignes__', data: DB.enseignes });
@@ -560,9 +600,8 @@ async function _pushToSupabase(tables) {
       // Grilles spécifiques à un magasin (DB.grilleCustomByStore) —
       // réutilise la même table grille_custom, une ligne par
       // (magasin, rayon), id préfixé '__store__{storeId}__{rayon}'
-      // pour ne jamais collisionner avec un nom de rayon réel ni avec
-      // les autres lignes réservées (__deleted_rayons__, __enseignes__)
-      // — voir _parseGrilleCustomByStore.
+      // pour ne jamais collisionner avec les autres formats de ligne
+      // de cette table — voir _parseGrilleCustomByStore.
       Object.entries(DB.grilleCustomByStore || {}).forEach(([storeId, rayons]) => {
         Object.entries(rayons).forEach(([rayon, data]) => {
           rows.push({ id: `__store__${storeId}__${rayon}`, rayon: `__store__${storeId}__${rayon}`, data });

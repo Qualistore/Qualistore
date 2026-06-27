@@ -82,6 +82,9 @@ let _ctrlRayonCurrent = 'Boucherie';
 /** @type {string} Magasin actif lors de l'ouverture du modal (pour l'édition) — chaîne vide = grille commune (DB.grilleCustom), sinon référence vers Magasin.id (DB.grilleCustomByStore). Toujours réécrite par openCtrlModal() avant utilisation réelle. */
 let _ctrlStoreCurrent = '';
 
+/** @type {string} Enseigne active lors de l'ouverture du modal (pour la grille commune, quand _ctrlStoreCurrent est vide) — toujours réécrite par openCtrlModal() avant utilisation réelle. Vide ou '__sans_enseigne__' = pas de grille commune accessible (voir getGrille). */
+let _ctrlEnseigneCurrent = '';
+
 /** @type {string} Rayon actuellement affiché dans la vue détail de la page Grilles (voir showRayonDetail) — chaîne vide si la vue cartes est affichée (aucun rayon "actif" dans ce cas). Remplace l'ancien select #grille-ray-sel, retiré au profit de la vue en cartes — voir showGrilleCardsView. */
 let _currentGrilleRayon = '';
 
@@ -92,36 +95,44 @@ let _currentGrilleRayon = '';
 /**
  * Retourne la grille de points de contrôle d'un rayon.
  *
- * ⚠️ CHANGÉ : la grille peut désormais être spécifique à un magasin
- * (DB.grilleCustomByStore[storeId][rayon]) plutôt que strictement
- * partagée entre tous les magasins. Résolution magasin → global,
- * exactement comme getQualimetrePoints (grille-qualimetre.js) :
- * - si storeId est fourni ET que ce magasin a au moins un point
- *   personnalisé pour ce rayon, on retourne UNIQUEMENT ces points
- *   (pas de fusion avec la grille globale — un magasin avec sa
- *   propre grille n'hérite plus de la grille commune pour ce rayon).
- * - sinon (storeId absent, ou magasin sans surcharge pour ce rayon),
- *   on retombe sur DB.grilleCustom[rayon] (grille "globale" — c'est
- *   l'ancien DB.grilleCustom, inchangé pour la compatibilité avec
- *   les grilles déjà créées avant ce changement, qui deviennent
- *   ainsi la base par défaut pour tous les magasins qui n'ont pas
- *   encore de surcharge propre).
+ * ⚠️ CHANGÉ : la grille commune (DB.grilleCustom) est désormais
+ * propre à chaque ENSEIGNE — plus une grille unique partagée par
+ * toute la base. Résolution à trois niveaux :
+ * 1. Si storeId est fourni ET que ce magasin a au moins un point
+ *    personnalisé pour ce rayon (DB.grilleCustomByStore[storeId][rayon]),
+ *    on retourne UNIQUEMENT ces points (pas de fusion avec la grille
+ *    commune de l'enseigne).
+ * 2. Sinon, si le magasin a une enseigne renseignée, on retombe sur
+ *    la grille commune de CETTE enseigne (DB.grilleCustom[enseigne][rayon]).
+ * 3. Un magasin SANS enseigne renseignée n'a accès à aucune grille
+ *    commune — uniquement à sa grille personnalisée (cas 1) si elle
+ *    existe, sinon tableau vide. Choix délibéré : pas de filet de
+ *    secours implicite vers une grille "par défaut" non rattachée à
+ *    une enseigne précise.
+ *
+ * Pour la page Grilles (édition, pas un magasin précis mais une
+ * enseigne choisie directement), voir le paramètre enseigne.
  *
  * Plus aucune fusion avec GRILLE_BASE_COMMUNE (référentiel commun de
  * 48 points codés en dur dans config.js, retiré précédemment) — tout
  * point de contrôle FSQS provient exclusivement de DB.grilleCustom
  * et/ou DB.grilleCustomByStore, import ou saisie manuelle.
  * @param {string} rayon
- * @param {string} [storeId] - Référence vers Magasin.id ; omis ou vide = grille globale uniquement.
+ * @param {string} [storeId] - Référence vers Magasin.id ; omis ou vide = pas de grille personnalisée à considérer (cas 1 sauté).
+ * @param {string} [enseigne] - Enseigne explicite à utiliser pour la grille commune (cas 2) ; si omis et storeId fourni, déduite de Magasin.enseigne. Permet à la page Grilles (édition par enseigne choisie directement, sans magasin précis) de fonctionner sans storeId.
  * @returns {GrillePoint[]}
  */
-function getGrille(rayon, storeId) {
+function getGrille(rayon, storeId, enseigne) {
   if (storeId) {
     /** @type {GrillePoint[]} */
     const storePoints = DB.grilleCustomByStore?.[storeId]?.[rayon] || [];
     if (storePoints.length) return storePoints;
   }
-  return DB.grilleCustom[rayon] || [];
+
+  /** @type {string} */
+  const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
+  if (!resolvedEnseigne) return [];
+  return DB.grilleCustom[resolvedEnseigne]?.[rayon] || [];
 }
 
 // ─────────────────────────────────────────────
@@ -143,16 +154,57 @@ function getGrille(rayon, storeId) {
  * vue).
  * @returns {void}
  */
+/**
+ * Repeuple #grille-mag-sel selon l'enseigne choisie dans
+ * #grille-enseigne-sel — ne propose que les magasins de cette
+ * enseigne (ou les magasins sans enseigne si "Sans enseigne" est
+ * choisi). Déclenchée par le `onchange` de #grille-enseigne-sel.
+ * @returns {void}
+ */
+function _onGrilleEnseigneChanged() {
+  /** @type {string} */
+  const enseigne = el('grille-enseigne-sel') ? el('grille-enseigne-sel').value : '';
+  /** @type {HTMLSelectElement | null} */
+  const magSelect = el('grille-mag-sel');
+  if (magSelect) {
+    /** @type {Magasin[]} */
+    const stores = enseigne === '__sans_enseigne__'
+      ? DB.magasins.filter(m => !m.enseigne)
+      : DB.magasins.filter(m => m.enseigne === enseigne);
+    magSelect.innerHTML = '<option value="">Grille commune de l\'enseigne</option>' +
+      stores.map(m => `<option value="${m.id}">${_escapeHtmlAttr(m.nom)}</option>`).join('');
+  }
+  showGrilleCardsView();
+}
+
+/**
+ * Affiche la vue "cartes" de la page Grilles : une carte par rayon
+ * connu (getKnownRayons), avec le nombre de points de contrôle dans
+ * le scope actuellement sélectionné (enseigne + magasin optionnel —
+ * voir #grille-enseigne-sel/#grille-mag-sel). Cliquer sur une carte
+ * ouvre la vue détail de ce rayon (voir showRayonDetail).
+ *
+ * ⚠️ CHANGÉ : la grille commune (DB.grilleCustom) est désormais
+ * propre à chaque enseigne — il faut choisir une enseigne pour voir
+ * une grille commune. Réinitialise _currentGrilleRayon (aucun rayon
+ * "actif" tant qu'on est sur cette vue).
+ * @returns {void}
+ */
 function showGrilleCardsView() {
   _currentGrilleRayon = '';
 
-  /** @type {HTMLSelectElement | null} */
-  const magSelect = el('grille-mag-sel');
-  populateMagSelect(magSelect);
-  /** @type {string} */
-  const storeId = magSelect ? magSelect.value : '';
+  if (el('grille-enseigne-sel') && !el('grille-enseigne-sel').options.length) {
+    el('grille-enseigne-sel').innerHTML = '<option value="">Sélectionner une enseigne...</option>' +
+      getKnownEnseignes().map(e => `<option value="${_escapeHtmlAttr(e)}">${e}</option>`).join('') +
+      '<option value="__sans_enseigne__">— Sans enseigne —</option>';
+  }
 
-  _updateGrilleScopeLabel(storeId);
+  /** @type {string} */
+  const enseigne = el('grille-enseigne-sel') ? el('grille-enseigne-sel').value : '';
+  /** @type {string} */
+  const storeId  = el('grille-mag-sel') ? el('grille-mag-sel').value : '';
+
+  _updateGrilleScopeLabel(enseigne, storeId);
 
   el('grille-detail-view').style.display = 'none';
   el('grille-cards-view').style.display  = '';
@@ -168,7 +220,7 @@ function showGrilleCardsView() {
 
   el('grille-cards-empty').style.display = 'none';
   el('grille-cards-grid').innerHTML = rayons
-    .map(rayon => _buildRayonCard(rayon, storeId))
+    .map(rayon => _buildRayonCard(rayon, storeId, enseigne))
     .join('');
 }
 
@@ -178,18 +230,21 @@ function showGrilleCardsView() {
  * et le nombre de zones distinctes. Cliquer sur la carte ouvre la
  * vue détail (showRayonDetail).
  * @param {string} rayon
- * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune de l'enseigne.
+ * @param {string} enseigne - Enseigne sélectionnée (ou '__sans_enseigne__') ; ignorée si storeId est fourni (déduite du magasin dans ce cas par getGrille).
  * @returns {string}
  */
-function _buildRayonCard(rayon, storeId) {
+function _buildRayonCard(rayon, storeId, enseigne) {
+  /** @type {string} */
+  const enseigneArg = enseigne === '__sans_enseigne__' ? '' : enseigne;
   /** @type {GrillePoint[]} */
-  const points = getGrille(rayon, storeId);
+  const points = getGrille(rayon, storeId, enseigneArg);
   /** @type {number} */
   const zoneCount = getZonesForRayon(rayon, storeId).length;
 
   return `<div class="card rayon-card" onclick="showRayonDetail('${_escapeHtmlAttr(rayon)}')" style="cursor:pointer">
     <div class="card-body" style="text-align:center;padding:24px 16px">
-      <i class="ti ti-category" style="font-size:28px;color:var(--primary);margin-bottom:10px;display:block"></i>
+      <i class="ti ti-list-check" style="font-size:28px;color:var(--primary);margin-bottom:10px;display:block"></i>
       <div style="font-size:15px;font-weight:600;margin-bottom:8px">${rayon}</div>
       <div style="font-size:24px;font-weight:700;color:${points.length ? 'var(--text)' : 'var(--text3)'}">${points.length}</div>
       <div class="tsm tm">point(s) de contrôle</div>
@@ -201,11 +256,7 @@ function _buildRayonCard(rayon, storeId) {
 /**
  * Affiche la vue détail d'un rayon (liste des zones/catégories/
  * points de contrôle, regroupée — voir _buildZoneSection), dans le
- * scope actuellement sélectionné (#grille-mag-sel). Remplace
- * l'ancien comportement par défaut de showGrille — désormais
- * atteinte uniquement en cliquant une carte depuis
- * showGrilleCardsView (ou via les actions create/rename/delete qui y
- * retournent après leur action).
+ * scope actuellement sélectionné (enseigne + magasin optionnel).
  * @param {string} [rayon] - Rayon à afficher ; si omis, retombe sur _currentGrilleRayon (rayon déjà actif — utile pour rafraîchir la vue après une action sans changer de rayon).
  * @returns {void}
  */
@@ -215,6 +266,10 @@ function showRayonDetail(rayon) {
   if (!resolvedRayon) { showGrilleCardsView(); return; }
   _currentGrilleRayon = resolvedRayon;
 
+  /** @type {string} */
+  const enseigne = el('grille-enseigne-sel') ? el('grille-enseigne-sel').value : '';
+  /** @type {string} */
+  const enseigneArg = enseigne === '__sans_enseigne__' ? '' : enseigne;
   /** @type {string} */
   const storeId = el('grille-mag-sel') ? el('grille-mag-sel').value : '';
 
@@ -232,7 +287,7 @@ function showRayonDetail(rayon) {
   if (addButton) addButton.style.display = isAdmin ? '' : 'none';
 
   /** @type {GrillePoint[]} */
-  const allPoints = getGrille(resolvedRayon, storeId);
+  const allPoints = getGrille(resolvedRayon, storeId, enseigneArg);
 
   if (el('btn-clear-ctrl-points')) {
     el('btn-clear-ctrl-points').style.display = (isAdmin && allPoints.length > 0) ? '' : 'none';
@@ -256,19 +311,33 @@ function showRayonDetail(rayon) {
 }
 
 /**
- * Met à jour le libellé indiquant le scope actuel (grille commune ou
- * magasin précis) — affiché au-dessus des deux vues (cartes et
- * détail) de la page Grilles.
- * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune.
+ * Met à jour le libellé indiquant le scope actuel (enseigne + magasin
+ * éventuel) — affiché au-dessus des deux vues (cartes et détail) de
+ * la page Grilles.
+ * @param {string} enseigne - Enseigne sélectionnée (ou '__sans_enseigne__', ou chaîne vide si aucune sélection).
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune de l'enseigne.
  * @returns {void}
  */
-function _updateGrilleScopeLabel(storeId) {
+function _updateGrilleScopeLabel(enseigne, storeId) {
   if (!el('grille-scope-label')) return;
+
+  if (!enseigne) {
+    el('grille-scope-label').innerHTML = `<i class="ti ti-alert-triangle" style="color:var(--warning)"></i> Sélectionnez une enseigne pour voir/éditer sa grille commune.`;
+    return;
+  }
+
   /** @type {Magasin | undefined} */
   const store = storeId ? DB.magasins.find(m => m.id === storeId) : undefined;
-  el('grille-scope-label').innerHTML = storeId
-    ? `<i class="ti ti-building-store"></i> Grille spécifique à <strong>${store ? store.nom : storeId}</strong> — les points non personnalisés pour ce magasin reprennent la grille commune.`
-    : `<i class="ti ti-world"></i> Grille commune, partagée par tous les magasins sans personnalisation propre.`;
+  if (store) {
+    el('grille-scope-label').innerHTML = `<i class="ti ti-building-store"></i> Grille spécifique à <strong>${store.nom}</strong> — les points non personnalisés pour ce magasin reprennent la grille commune de son enseigne.`;
+    return;
+  }
+
+  /** @type {string} */
+  const enseigneLabel = enseigne === '__sans_enseigne__' ? 'Sans enseigne' : enseigne;
+  el('grille-scope-label').innerHTML = enseigne === '__sans_enseigne__'
+    ? `<i class="ti ti-alert-triangle" style="color:var(--warning)"></i> Les magasins sans enseigne n'ont pas de grille commune — choisissez un magasin pour éditer sa grille propre.`
+    : `<i class="ti ti-world"></i> Grille commune de l'enseigne <strong>${enseigneLabel}</strong>, héritée par tous ses magasins sans personnalisation propre.`;
 }
 
 /**
@@ -416,6 +485,7 @@ function _buildCtrlRayonCheckboxes() {
 function openCtrlModal(rayon, pointId, storeId) {
   _ctrlRayonCurrent = rayon || _currentGrilleRayon || getKnownRayons()[0] || '';
   _ctrlStoreCurrent = storeId !== undefined ? storeId : (el('grille-mag-sel') ? el('grille-mag-sel').value : '');
+  _ctrlEnseigneCurrent = el('grille-enseigne-sel') ? el('grille-enseigne-sel').value : '';
   /** @type {boolean} */
   const isEdit = !!pointId;
 
@@ -427,7 +497,7 @@ function openCtrlModal(rayon, pointId, storeId) {
   sv('ctrl-id', pointId || '');
 
   _buildCtrlRayonCheckboxes();
-  _buildCtrlZoneSuggestions(_ctrlRayonCurrent, _ctrlStoreCurrent);
+  _buildCtrlZoneSuggestions(_ctrlRayonCurrent, _ctrlStoreCurrent, _ctrlEnseigneCurrent);
 
   // Cocher le rayon courant par défaut
   document.querySelectorAll('.ctrl-ray-cb').forEach(cb => {
@@ -499,13 +569,14 @@ function _resetCtrlForm() {
  * donné — voir getZonesForRayon.
  * @param {string} rayon
  * @param {string} [storeId]
+ * @param {string} [enseigne]
  * @returns {void}
  */
-function _buildCtrlZoneSuggestions(rayon, storeId) {
+function _buildCtrlZoneSuggestions(rayon, storeId, enseigne) {
   /** @type {HTMLDataListElement | null} */
   const datalist = el('ctrl-zone-suggestions');
   if (!datalist) return;
-  datalist.innerHTML = getZonesForRayon(rayon, storeId)
+  datalist.innerHTML = getZonesForRayon(rayon, storeId, enseigne)
     .filter(zone => zone !== IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE)
     .map(zone => `<option value="${_escapeHtmlAttr(zone)}">`)
     .join('');
@@ -598,6 +669,14 @@ function saveCtrl() {
 
   /** @type {boolean} */
   const isStoreScoped = !!_ctrlStoreCurrent;
+  /** @type {string} */
+  const enseigne = _ctrlEnseigneCurrent === '__sans_enseigne__' ? '' : _ctrlEnseigneCurrent;
+
+  if (!isStoreScoped && !enseigne) {
+    errorEl.textContent = 'Sélectionnez une enseigne (ou un magasin précis) avant d\'ajouter un point — il n\'existe pas de grille commune sans enseigne.';
+    errorEl.classList.add('show');
+    return;
+  }
 
   selectedRayons.forEach(rayon => {
     /** @type {GrillePoint[]} */
@@ -608,8 +687,9 @@ function saveCtrl() {
       if (!DB.grilleCustomByStore[_ctrlStoreCurrent][rayon]) DB.grilleCustomByStore[_ctrlStoreCurrent][rayon] = [];
       target = DB.grilleCustomByStore[_ctrlStoreCurrent][rayon];
     } else {
-      if (!DB.grilleCustom[rayon]) DB.grilleCustom[rayon] = [];
-      target = DB.grilleCustom[rayon];
+      if (!DB.grilleCustom[enseigne]) DB.grilleCustom[enseigne] = {};
+      if (!DB.grilleCustom[enseigne][rayon]) DB.grilleCustom[enseigne][rayon] = [];
+      target = DB.grilleCustom[enseigne][rayon];
     }
 
     if (existingId && rayon === _ctrlRayonCurrent) {
@@ -641,18 +721,10 @@ function saveCtrl() {
 // ─────────────────────────────────────────────
 
 /**
- * Supprime un point de contrôle personnalisé d'un rayon, après
- * confirmation. Sans effet sur les points du référentiel de base
- * (non supprimables par cette fonction).
- * @param {string} rayon
- * @param {string} pointId - Référence vers GrillePoint.id.
- * @returns {void}
- */
-/**
  * Supprime un point de contrôle personnalisé, après confirmation.
  * @param {string} rayon
  * @param {string} pointId - Référence vers GrillePoint.id.
- * @param {string} [storeId] - Magasin d'origine du point (DB.grilleCustomByStore) ; absent/vide = grille commune (DB.grilleCustom).
+ * @param {string} [storeId] - Magasin d'origine du point (DB.grilleCustomByStore) ; absent/vide = grille commune de l'enseigne actuellement sélectionnée (#grille-enseigne-sel).
  * @returns {void}
  */
 function delCtrl(rayon, pointId, storeId) {
@@ -662,7 +734,13 @@ function delCtrl(rayon, pointId, storeId) {
       DB.grilleCustomByStore[storeId][rayon] = DB.grilleCustomByStore[storeId][rayon].filter(p => p.id !== pointId);
     }
   } else {
-    DB.grilleCustom[rayon] = (DB.grilleCustom[rayon] || []).filter(p => p.id !== pointId);
+    /** @type {string} */
+    const enseigneSel = el('grille-enseigne-sel') ? el('grille-enseigne-sel').value : '';
+    /** @type {string} */
+    const enseigne = enseigneSel === '__sans_enseigne__' ? '' : enseigneSel;
+    if (enseigne && DB.grilleCustom?.[enseigne]?.[rayon]) {
+      DB.grilleCustom[enseigne][rayon] = DB.grilleCustom[enseigne][rayon].filter(p => p.id !== pointId);
+    }
   }
   save();
   showRayonDetail(rayon);
@@ -746,8 +824,13 @@ function openRenameGrilleZonePrompt(rayon, zone, storeId) {
   const newName = prompt('Nouveau nom de la zone :', zone);
   if (newName === null) return;
 
+  /** @type {string} */
+  const enseigneSel = el('grille-enseigne-sel') ? el('grille-enseigne-sel').value : '';
+  /** @type {string} */
+  const enseigne = enseigneSel === '__sans_enseigne__' ? '' : enseigneSel;
+
   /** @type {{ok: boolean, error?: string}} */
-  const result = renameGrilleZone(rayon, zone, newName, storeId);
+  const result = renameGrilleZone(rayon, zone, newName, storeId, enseigne);
   if (!result.ok) {
     if (result.error) alert(result.error);
     return;
@@ -815,8 +898,14 @@ function confirmClearGrillePoints() {
 
   /** @type {string} */
   const storeId = el('grille-mag-sel') ? el('grille-mag-sel').value : '';
+  /** @type {string} */
+  const enseigneSel = el('grille-enseigne-sel') ? el('grille-enseigne-sel').value : '';
+  /** @type {string} */
+  const enseigne = enseigneSel === '__sans_enseigne__' ? '' : enseigneSel;
   /** @type {GrillePoint[]} */
-  const currentPoints = storeId ? (DB.grilleCustomByStore?.[storeId]?.[currentRayon] || []) : (DB.grilleCustom[currentRayon] || []);
+  const currentPoints = storeId
+    ? (DB.grilleCustomByStore?.[storeId]?.[currentRayon] || [])
+    : (DB.grilleCustom?.[enseigne]?.[currentRayon] || []);
   /** @type {number} */
   const pointCount = currentPoints.length;
   if (!pointCount) return;
@@ -824,14 +913,14 @@ function confirmClearGrillePoints() {
   /** @type {Magasin | undefined} */
   const store = storeId ? DB.magasins.find(m => m.id === storeId) : undefined;
   /** @type {string} */
-  const scopeLabel = store ? ` (magasin « ${store.nom} » uniquement)` : ' (grille commune)';
+  const scopeLabel = store ? ` (magasin « ${store.nom} » uniquement)` : ` (grille commune de l'enseigne « ${enseigne} »)`;
 
   if (!confirm(`Supprimer les ${pointCount} point(s) de contrôle du rayon « ${currentRayon} »${scopeLabel} ? Le rayon et ses audits déjà réalisés sont conservés. Cette action est irréversible.`)) return;
 
   if (storeId) {
     DB.grilleCustomByStore[storeId][currentRayon] = [];
-  } else {
-    DB.grilleCustom[currentRayon] = [];
+  } else if (enseigne && DB.grilleCustom[enseigne]) {
+    DB.grilleCustom[enseigne][currentRayon] = [];
   }
   save();
   showRayonDetail(currentRayon);
