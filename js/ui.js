@@ -90,7 +90,7 @@ const PAGE_METADATA = {
   nc:                  ['Non-conformités',        'Suivi des écarts'],
   actions:             ['Actions correctives',    'Plan d\'actions'],
   magasins:            ['Magasins',               'Gestion du parc'],
-  rayons:              ['Rayons',                 'Performances'],
+  'stats-audits':      ['Statistiques d\'audit',  'Par magasin et par rayon'],
   rapports:            ['Rapport FSQS',           'Audits & non-conformités FSQS'],
   utilisateurs:        ['Utilisateurs',           'Gestion des accès'],
   enseignes:           ['Enseignes',              'Regroupement des magasins'],
@@ -552,6 +552,7 @@ function buildSidebar() {
     hasPerm('ac')    && { id: 'actions',             icon: 'ti-tool',            label: 'Actions correctives' },
     !isCollaborateur && { id: 'audit-qualimetre',    icon: 'ti-rosette',         label: 'Audit Qualimètre', style: 'color:var(--qual-pale)' },
     { section: 'Analyse' },
+    hasPerm('aud-r') && { id: 'stats-audits',        icon: 'ti-chart-bar',       label: 'Statistiques d\'audit' },
     hasPerm('rap')   && { id: 'rapports',            icon: 'ti-file-analytics',  label: 'Rapport FSQS' },
     hasPerm('rap')   && { id: 'rapport-qualimetre',  icon: 'ti-gauge',           label: 'Rapport Qualimètre', style: 'color:var(--qual-pale)' },
     hasPerm('nc')    && { id: 'nc',                  icon: 'ti-alert-triangle',  label: 'Non-conformités', badge: 'nc-bdg' },
@@ -561,7 +562,6 @@ function buildSidebar() {
     hasPerm('grille') && { id: 'grille',             icon: 'ti-list-check',      label: 'Grilles' },
     hasPerm('grille') && { id: 'grille-qualimetre',  icon: 'ti-adjustments',     label: 'Grille Qualimètre', style: 'color:var(--qual-pale)' },
     hasPerm('mag')    && { id: 'magasins',           icon: 'ti-building-store',  label: 'Magasins' },
-    hasPerm('mag')    && { id: 'rayons',             icon: 'ti-category',        label: 'Rayons' },
     CU && CU.role === 'admin' && { id: 'backup',     icon: 'ti-database-export', label: 'Sauvegarde' },
   ].filter(Boolean);
 
@@ -702,7 +702,7 @@ function _getPageRenderer(pageId) {
     nc:                  renderNC,
     actions:             renderActions,
     magasins:            renderMag,
-    rayons:              renderRay,
+    'stats-audits':      renderStatsAudits,
     rapports:            renderRap,
     'rapport-qualimetre': renderRapportQualimetre,
     utilisateurs:        renderUsers,

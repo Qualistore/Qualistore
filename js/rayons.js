@@ -111,45 +111,165 @@ function getKnownRayons() {
 }
 
 // ─────────────────────────────────────────────
-// 2. RENDU DE LA PAGE
+// 2. STATISTIQUES D'AUDIT (cartes magasin → cartes rayon)
 // ─────────────────────────────────────────────
+// Page "Statistiques d'audit" (section Analyse) — remplace l'ancienne
+// page "Rayons" qui affichait des cartes par rayon, devenue redondante
+// avec la page Grilles (cartes par rayon également, mais pour
+// l'édition de la grille, pas pour les statistiques). Architecture en
+// deux vues : cartes magasin (filtrable par enseigne, admin
+// uniquement — les autres rôles voient déjà uniquement leurs magasins
+// assignés via visibleMids()), puis clic sur une carte → cartes
+// rayon pour ce magasin précis.
+
+/** @type {string} Magasin actuellement affiché dans la vue rayons (#sa-rayon-view) — chaîne vide si la vue magasins est affichée. */
+let _statsAuditsCurrentStore = '';
 
 /**
- * Affiche la grille de cartes de performance par rayon, filtrée par
- * magasins visibles et par le sélecteur de magasin de la page.
+ * Point d'entrée de la page Statistiques d'audit (voir
+ * _getPageRenderer, ui.js) — affiche toujours la vue magasins à
+ * l'arrivée sur la page.
  * @returns {void}
  */
-function renderRay() {
-  /** @type {string[]} */
-  const storeIds = visibleMids();
-  populateMagSelect(el('flt-ray-mag'));
-  /** @type {string} */
-  const filterMid = el('flt-ray-mag') ? el('flt-ray-mag').value : '';
-
-  /** @type {Audit[]} */
-  const filteredAudits = DB.audits.filter(audit => {
-    if (!storeIds.includes(audit.mid)) return false;
-    if (filterMid && audit.mid !== filterMid) return false;
-    return true;
-  });
-
-  el('ray-grid').innerHTML = getKnownRayons().map(rayon =>
-    _buildRayonCard(rayon, filteredAudits.filter(a => a.rayon === rayon))
-  ).join('');
+function renderStatsAudits() {
+  showStatsAuditsStoreView();
 }
 
-// ─────────────────────────────────────────────
-// 3. HELPERS DE RENDU
-// ─────────────────────────────────────────────
+/**
+ * Affiche la vue "cartes" par magasin : une carte par magasin visible
+ * (voir visibleMids, ui.js — déjà restreint aux magasins assignés
+ * pour les rôles non-admin), avec son nombre d'audits et sa note
+ * moyenne. Le sélecteur d'enseigne n'est affiché que pour les admins
+ * (les autres rôles n'ont pas besoin de filtrer, ils ne voient déjà
+ * que leurs magasins assignés).
+ * @returns {void}
+ */
+function showStatsAuditsStoreView() {
+  _statsAuditsCurrentStore = '';
+
+  /** @type {boolean} */
+  const isAdmin = CU && CU.role === 'admin';
+  /** @type {HTMLSelectElement | null} */
+  const enseigneSelect = el('sa-enseigne-sel');
+  if (enseigneSelect) {
+    enseigneSelect.style.display = isAdmin ? '' : 'none';
+    if (isAdmin) {
+      /** @type {string} */
+      const currentValue = enseigneSelect.value;
+      enseigneSelect.innerHTML = '<option value="">Toutes les enseignes</option>' +
+        getKnownEnseignes().map(e => `<option value="${_escapeHtmlAttr(e)}">${e}</option>`).join('');
+      if (currentValue && [...enseigneSelect.options].some(o => o.value === currentValue)) {
+        enseigneSelect.value = currentValue;
+      }
+    }
+  }
+
+  /** @type {string} */
+  const filterEnseigne = (isAdmin && enseigneSelect) ? enseigneSelect.value : '';
+  /** @type {string[]} */
+  const storeIds = visibleMids();
+  /** @type {Magasin[]} */
+  const stores = DB.magasins
+    .filter(m => storeIds.includes(m.id))
+    .filter(m => !filterEnseigne || m.enseigne === filterEnseigne);
+
+  el('sa-rayon-view').style.display = 'none';
+  el('sa-store-view').style.display = '';
+
+  if (!stores.length) {
+    el('sa-store-grid').innerHTML = '';
+    el('sa-store-empty').style.display = '';
+    return;
+  }
+
+  el('sa-store-empty').style.display = 'none';
+  el('sa-store-grid').innerHTML = stores.map(store => _buildStoreStatsCard(store)).join('');
+}
 
 /**
- * Construit la carte de performance d'un rayon (score moyen,
- * nombre d'audits, date du dernier audit).
- * @param {string} rayon
- * @param {Audit[]} rayonAudits - Audits déjà filtrés pour ce rayon.
+ * Construit la carte de statistiques d'un magasin (nombre d'audits,
+ * note moyenne, tous rayons confondus). Cliquer sur la carte ouvre
+ * la vue détail par rayon de ce magasin (voir showStatsAuditsRayonView).
+ * @param {Magasin} store
  * @returns {string}
  */
-function _buildRayonCard(rayon, rayonAudits) {
+function _buildStoreStatsCard(store) {
+  /** @type {Audit[]} */
+  const storeAudits = DB.audits.filter(a => a.mid === store.id);
+  /** @type {number | null} */
+  const avgScore = magScore(store.id);
+
+  return `<div class="card" onclick="showStatsAuditsRayonView('${store.id}')" style="cursor:pointer">
+    <div class="card-hdr">
+      <div style="display:flex;align-items:center;gap:10px">
+        <i class="ti ti-building-store" style="color:var(--primary);font-size:18px"></i>
+        <div class="card-title">${store.nom}</div>
+      </div>
+      ${avgScore !== null ? `<span class="score-badge ${scCls(avgScore)}">${avgScore}%</span>` : ''}
+    </div>
+    <div class="card-body">
+      <div class="tsm tm" style="margin-bottom:10px">${store.enseigne || 'Sans enseigne'}${store.ville ? ' · ' + store.ville : ''}</div>
+      <div style="display:flex;justify-content:space-around;margin-bottom:14px">
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:700;color:var(--primary)">${storeAudits.length}</div>
+          <div class="tsm tm">Audits</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:700;color:${avgScore !== null ? sc(avgScore) : 'var(--text3)'}">
+            ${avgScore !== null ? avgScore + '%' : '–'}
+          </div>
+          <div class="tsm tm">Note moy.</div>
+        </div>
+      </div>
+      ${avgScore !== null ? pbar(avgScore) : ''}
+    </div>
+  </div>`;
+}
+
+/**
+ * Affiche la vue détail par rayon d'un magasin précis : une carte
+ * par rayon ayant au moins un audit dans ce magasin, avec son nombre
+ * d'audits et sa note moyenne pour ce magasin uniquement.
+ * @param {string} storeId - Référence vers Magasin.id.
+ * @returns {void}
+ */
+function showStatsAuditsRayonView(storeId) {
+  _statsAuditsCurrentStore = storeId;
+
+  /** @type {Magasin | undefined} */
+  const store = DB.magasins.find(m => m.id === storeId);
+  if (!store) return;
+
+  el('sa-store-view').style.display = 'none';
+  el('sa-rayon-view').style.display = '';
+  el('sa-rayon-ttl').innerHTML = `<i class="ti ti-building-store"></i> ${store.nom}`;
+
+  /** @type {Audit[]} */
+  const storeAudits = DB.audits.filter(a => a.mid === storeId);
+  /** @type {string[]} */
+  const rayonsAudites = [...new Set(storeAudits.map(a => a.rayon))].sort((a, b) => a.localeCompare(b, 'fr'));
+
+  if (!rayonsAudites.length) {
+    el('sa-rayon-grid').innerHTML = '';
+    el('sa-rayon-empty').style.display = '';
+    return;
+  }
+
+  el('sa-rayon-empty').style.display = 'none';
+  el('sa-rayon-grid').innerHTML = rayonsAudites
+    .map(rayon => _buildRayonStatsCard(rayon, storeAudits.filter(a => a.rayon === rayon)))
+    .join('');
+}
+
+/**
+ * Construit la carte de statistiques d'un rayon POUR UN MAGASIN
+ * PRÉCIS (pas toute la base — voir showStatsAuditsRayonView, qui
+ * pré-filtre déjà les audits par magasin).
+ * @param {string} rayon
+ * @param {Audit[]} rayonAudits - Audits déjà filtrés pour ce rayon ET ce magasin.
+ * @returns {string}
+ */
+function _buildRayonStatsCard(rayon, rayonAudits) {
   /** @type {number | null} */
   const avgScore  = rayonAudits.length
     ? Math.round(rayonAudits.reduce((sum, a) => sum + a.score, 0) / rayonAudits.length)
@@ -177,7 +297,7 @@ function _buildRayonCard(rayon, rayonAudits) {
           <div style="font-size:22px;font-weight:700;color:${avgScore !== null ? sc(avgScore) : 'var(--text3)'}">
             ${avgScore !== null ? avgScore + '%' : '–'}
           </div>
-          <div class="tsm tm">Score moy.</div>
+          <div class="tsm tm">Note moy.</div>
         </div>
       </div>
       ${avgScore !== null ? pbar(avgScore) : ''}

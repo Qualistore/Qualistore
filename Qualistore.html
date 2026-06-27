@@ -238,11 +238,27 @@
       </div>
 
       <!-- RAYONS -->
-      <div class="page" id="page-rayons">
-        <div class="flex-btw mb-4">
-          <select class="form-control" style="width:auto" id="flt-ray-mag" onchange="renderRay()"><option value="">Tous les magasins</option></select>
+      <!-- STATISTIQUES D'AUDIT -->
+      <div class="page" id="page-stats-audits">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <select class="form-control" style="width:220px;display:none" id="sa-enseigne-sel" onchange="showStatsAuditsStoreView()">
+            <option value="">Toutes les enseignes</option>
+          </select>
         </div>
-        <div class="grid-3" id="ray-grid"></div>
+
+        <!-- Vue magasins -->
+        <div id="sa-store-view">
+          <div class="grid-3" id="sa-store-grid"></div>
+          <div class="tsm tm" id="sa-store-empty" style="display:none;text-align:center;padding:40px 20px">Aucun magasin visible.</div>
+        </div>
+
+        <!-- Vue rayons (pour un magasin donné) -->
+        <div id="sa-rayon-view" style="display:none">
+          <button class="btn btn-primary" style="font-weight:600;margin-bottom:16px" onclick="showStatsAuditsStoreView()"><i class="ti ti-arrow-left" style="font-size:16px"></i> Retour aux magasins</button>
+          <div class="tsm tm mb-4" id="sa-rayon-ttl" style="font-size:15px;font-weight:600;color:var(--text)"></div>
+          <div class="grid-3" id="sa-rayon-grid"></div>
+          <div class="tsm tm" id="sa-rayon-empty" style="display:none;text-align:center;padding:40px 20px">Aucun audit réalisé dans ce magasin pour l'instant.</div>
+        </div>
       </div>
 
       <!-- RAPPORTS FSQS -->
