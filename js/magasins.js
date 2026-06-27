@@ -201,6 +201,12 @@ function openMagModal(storeId) {
 
   _populateDirectorSelect(isEdit && storeId);
 
+  if (el('m-enseigne-suggestions')) {
+    el('m-enseigne-suggestions').innerHTML = getKnownEnseignes()
+      .map(enseigne => `<option value="${enseigne}">`)
+      .join('');
+  }
+
   if (isEdit) {
     /** @type {Magasin | undefined} */
     const store = DB.magasins.find(m => m.id === storeId);
@@ -265,11 +271,15 @@ function saveMag() {
 
   /** @type {string} */
   const storeId = v('m-id');
+  /** @type {string} */
+  const enseigne = v('m-enseigne').trim();
+  if (enseigne) createEnseigne(enseigne); // sans effet si déjà connue (voir createEnseigne)
+
   /** @type {StoreFormData} */
   const storeData = {
     nom:     name,
     ville:   city,
-    enseigne: v('m-enseigne'),
+    enseigne,
     adr:     v('m-adr').trim(),
     statut:  el('m-statut').value,
     did:     el('m-dir').value || null,
@@ -367,4 +377,185 @@ function _deleteAlertPhotos(alertId) {
     const storagePath = url.split('/storage/v1/object/public/photos/')[1];
     sbDeletePhoto(storagePath);
   });
+}
+
+// ─────────────────────────────────────────────
+// ENSEIGNES (regroupement de magasins, racine de l'arborescence
+// Enseigne → Magasin → Rayon → Points)
+// ─────────────────────────────────────────────
+// Magasin.enseigne reste une simple chaîne de nom (compatible avec
+// les données existantes) — DB.enseignes est juste la liste des noms
+// d'enseigne connus, gérée en CRUD, sur le même principe que
+// getKnownRayons() (rayons.js) : pas d'id distinct du nom, un
+// renommage migre directement la chaîne sur tous les magasins
+// concernés.
+
+/**
+ * Calcule la liste de toutes les enseignes actuellement connues, en
+ * fusionnant DB.enseignes (créées explicitement, potentiellement
+ * sans aucun magasin encore assigné) et les valeurs Magasin.enseigne
+ * réellement utilisées (un magasin peut avoir une enseigne qui
+ * n'a jamais été créée explicitement — données antérieures à ce
+ * chantier, ou import direct).
+ * @returns {string[]} Triées alphabétiquement.
+ */
+function getKnownEnseignes() {
+  /** @type {Set<string>} */
+  const known = new Set(DB.enseignes || []);
+  DB.magasins.forEach(m => { if (m.enseigne) known.add(m.enseigne); });
+  return [...known].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+/**
+ * Crée une enseigne vide (sans magasin assigné) afin qu'elle
+ * apparaisse immédiatement dans getKnownEnseignes() — utile pour la
+ * préparer avant d'y assigner des magasins. Sans effet si elle
+ * existe déjà (correspondance insensible à la casse) ou si le nom
+ * est vide.
+ * @param {string} nom
+ * @returns {boolean} true si créée, false si déjà existante ou nom vide.
+ */
+function createEnseigne(nom) {
+  /** @type {string} */
+  const trimmed = (nom || '').trim();
+  if (!trimmed) return false;
+  if (getKnownEnseignes().some(e => e.toLowerCase() === trimmed.toLowerCase())) return false;
+
+  if (!DB.enseignes) DB.enseignes = [];
+  DB.enseignes.push(trimmed);
+  return true;
+}
+
+/**
+ * Renomme une enseigne PARTOUT où son nom apparaît : DB.enseignes et
+ * Magasin.enseigne pour chaque magasin concerné.
+ * @param {string} oldName
+ * @param {string} newName
+ * @returns {{ok: boolean, error?: string}}
+ */
+function renameEnseigne(oldName, newName) {
+  /** @type {string} */
+  const trimmed = (newName || '').trim();
+  if (!trimmed) return { ok: false, error: 'Le nouveau nom ne peut pas être vide.' };
+  if (trimmed === oldName) return { ok: false, error: 'Le nouveau nom est identique à l\'actuel.' };
+  if (getKnownEnseignes().some(e => e.toLowerCase() === trimmed.toLowerCase() && e !== oldName)) {
+    return { ok: false, error: `L'enseigne « ${trimmed} » existe déjà.` };
+  }
+
+  if (DB.enseignes) DB.enseignes = DB.enseignes.map(e => e === oldName ? trimmed : e);
+  DB.magasins.forEach(m => { if (m.enseigne === oldName) m.enseigne = trimmed; });
+
+  return { ok: true };
+}
+
+/**
+ * Supprime une enseigne de DB.enseignes (action "douce" : les
+ * magasins qui l'avaient renseignée ne sont PAS supprimés ni
+ * modifiés — leur champ Magasin.enseigne garde l'ancien nom, ce qui
+ * la fait simplement réapparaître via getKnownEnseignes() tant qu'au
+ * moins un magasin la référence encore). Pour vraiment faire
+ * disparaître une enseigne, il faut d'abord réaffecter tous ses
+ * magasins à une autre enseigne ou à aucune.
+ * @param {string} nom
+ * @returns {void}
+ */
+function deleteEnseigne(nom) {
+  if (DB.enseignes) DB.enseignes = DB.enseignes.filter(e => e !== nom);
+}
+
+/**
+ * Affiche la liste des enseignes connues (getKnownEnseignes), avec
+ * pour chacune le nombre de magasins qui la référencent et les
+ * actions disponibles (renommer, supprimer).
+ * @returns {void}
+ */
+function renderEnseignes() {
+  /** @type {string[]} */
+  const enseignes = getKnownEnseignes();
+  /** @type {boolean} */
+  const canManage = hasPerm('mag');
+
+  el('ens-cnt').textContent = `${enseignes.length} enseigne(s)`;
+
+  el('ens-tb').innerHTML = enseignes.map(enseigne => {
+    /** @type {Magasin[]} */
+    const stores = DB.magasins.filter(m => m.enseigne === enseigne);
+    return `<tr>
+      <td style="font-weight:500">${enseigne}</td>
+      <td>
+        <span class="tsm tm">${stores.length} magasin(s)</span>
+        ${stores.length ? `<div class="tsm tm" style="margin-top:2px">${stores.map(s => s.nom).join(', ')}</div>` : ''}
+      </td>
+      <td>
+        ${canManage ? `
+          <button class="btn btn-secondary btn-sm" onclick="openRenameEnseignePrompt('${enseigne}')" aria-label="Renommer"><i class="ti ti-pencil"></i></button>
+          <button class="btn btn-danger btn-sm" onclick="confirmDeleteEnseigne('${enseigne}', ${stores.length})" aria-label="Supprimer"><i class="ti ti-trash"></i></button>
+        ` : ''}
+      </td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="3" class="tsm tm" style="text-align:center;padding:24px">Aucune enseigne pour l'instant.</td></tr>`;
+}
+
+/**
+ * Ouvre une invite de saisie pour créer une nouvelle enseigne (vide,
+ * sans magasin assigné — voir createEnseigne).
+ * @returns {void}
+ */
+function openCreateEnseignePrompt() {
+  /** @type {string | null} */
+  const nom = prompt('Nom de la nouvelle enseigne :');
+  if (nom === null) return;
+
+  /** @type {boolean} */
+  const created = createEnseigne(nom);
+  if (!created) {
+    alert(nom.trim() ? `L'enseigne « ${nom.trim()} » existe déjà.` : 'Le nom ne peut pas être vide.');
+    return;
+  }
+
+  save(['enseignes']);
+  renderEnseignes();
+}
+
+/**
+ * Ouvre une invite de saisie pour renommer une enseigne (voir
+ * renameEnseigne — migre tous les magasins concernés).
+ * @param {string} currentName
+ * @returns {void}
+ */
+function openRenameEnseignePrompt(currentName) {
+  /** @type {string | null} */
+  const newName = prompt('Nouveau nom de l\'enseigne :', currentName);
+  if (newName === null) return;
+
+  /** @type {{ok: boolean, error?: string}} */
+  const result = renameEnseigne(currentName, newName);
+  if (!result.ok) {
+    if (result.error) alert(result.error);
+    return;
+  }
+
+  save(['enseignes', 'magasins']);
+  renderEnseignes();
+}
+
+/**
+ * Supprime une enseigne après confirmation. Les magasins qui la
+ * référençaient ne sont pas modifiés (voir deleteEnseigne) ; le
+ * message de confirmation le précise si au moins un magasin est
+ * concerné, pour éviter toute surprise.
+ * @param {string} nom
+ * @param {number} storeCount - Nombre de magasins référençant actuellement cette enseigne (déjà calculé par renderEnseignes, évite un recalcul).
+ * @returns {void}
+ */
+function confirmDeleteEnseigne(nom, storeCount) {
+  /** @type {string} */
+  const warning = storeCount
+    ? `Supprimer l'enseigne « ${nom} » ? ${storeCount} magasin(s) la référencent encore et garderont ce nom jusqu'à réaffectation manuelle.`
+    : `Supprimer l'enseigne « ${nom} » ?`;
+  if (!confirm(warning)) return;
+
+  deleteEnseigne(nom);
+  save(['enseignes']);
+  renderEnseignes();
 }

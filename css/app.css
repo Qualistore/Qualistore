@@ -10,7 +10,7 @@
      différencier les deux modules en un coup d'œil. Même teinte
      exacte qu'avant (#7c3aed) — uniquement centralisée ici au lieu
      d'être répétée en hex dans plus de 25 endroits du HTML. */
-  --qual:#7c3aed;--qual-light:#f5f3ff;--qual-dark:#5b21b6;--qual-border:#ddd6fe;
+  --qual:#7c3aed;--qual-light:#f5f3ff;--qual-dark:#5b21b6;--qual-border:#ddd6fe;--qual-pale:#c4b5fd;
   --sidebar-w:240px;--radius:10px;--radius-lg:14px;
   --shadow:0 1px 4px rgba(0,0,0,.08),0 0 1px rgba(0,0,0,.06);
 }

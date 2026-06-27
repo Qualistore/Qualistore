@@ -315,6 +315,20 @@
         </div>
       </div>
 
+      <!-- ENSEIGNES -->
+      <div class="page" id="page-enseignes">
+        <div class="flex-btw mb-4">
+          <span class="tsm tm" id="ens-cnt"></span>
+          <button class="btn btn-primary" onclick="openCreateEnseignePrompt()"><i class="ti ti-plus"></i> Nouvelle enseigne</button>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Enseigne</th><th>Magasin(s)</th><th>Actions</th></tr></thead>
+            <tbody id="ens-tb"></tbody>
+          </table></div>
+        </div>
+      </div>
+
       <!-- GRILLE -->
       <div class="page" id="page-grille">
         <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
@@ -511,7 +525,7 @@
       <input type="hidden" id="m-id">
       <div class="form-group"><label class="form-label">Nom *</label><input class="form-control" id="m-nom" placeholder="ex : Carrefour Centre-Ville"></div>
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Enseigne</label><select class="form-control" id="m-enseigne"><option value="">Autre</option><option>Carrefour</option><option>Intermarché</option><option>Leclerc</option><option>Auchan</option><option>Casino</option><option>Monoprix</option><option>Super U</option><option>Lidl</option><option>Aldi</option></select></div>
+        <div class="form-group"><label class="form-label">Enseigne</label><input class="form-control" id="m-enseigne" list="m-enseigne-suggestions" placeholder="ex : Carrefour, Intermarché..."><datalist id="m-enseigne-suggestions"></datalist></div>
         <div class="form-group"><label class="form-label">Ville *</label><input class="form-control" id="m-ville" placeholder="Paris"></div>
       </div>
       <div class="form-group"><label class="form-label">Adresse complète</label><input class="form-control" id="m-adr" placeholder="12 rue de la Paix, 75001 Paris"></div>

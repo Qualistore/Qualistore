@@ -239,6 +239,7 @@ function _buildDefaultDB() {
       perms: { 'aud-r': 1, 'aud-w': 1, 'nc': 1, 'ac': 1, 'mag': 1, 'rap': 1, 'grille': 1, 'usr': 1 },
     }],
     magasins:          [],
+    enseignes:         [],
     audits:            [],
     ncs:               [],
     actions:           [],
@@ -326,6 +327,7 @@ async function loadDB() {
       grilleCustom:     _parseGrilleCustom(grilleRows),
       grilleCustomByStore: _parseGrilleCustomByStore(grilleRows),
       deletedRayons:    _parseDeletedRayons(grilleRows),
+      enseignes:        _parseEnseignes(grilleRows),
       qualimetreCustom: _parseQualimetreCustom(qualRows),
       qualimetreGlobal: _parseQualimetreGlobal(qualRows),
       qualimetreZoneLabels: _parseQualimetreZoneLabels(qualRows),
@@ -378,9 +380,25 @@ async function loadDB() {
 function _parseGrilleCustom(rows) {
   const result = {};
   (rows || [])
-    .filter(row => row.rayon !== '__deleted_rayons__' && !row.rayon.startsWith('__store__'))
+    .filter(row => row.rayon !== '__deleted_rayons__' && row.rayon !== '__enseignes__' && !row.rayon.startsWith('__store__'))
     .forEach(row => { result[row.rayon] = row.data; });
   return result;
+}
+
+/**
+ * Extrait la liste des enseignes (ligne réservée '__enseignes__' de
+ * la table `grille_custom`, voir createEnseigne/renameEnseigne/
+ * deleteEnseigne, magasins.js) — réutilise cette table existante
+ * plutôt que d'introduire une nouvelle table Supabase (la création
+ * de table n'est pas possible via l'API REST utilisée par ce
+ * fichier), sur le même principe que les autres lignes réservées.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {string[]}
+ */
+function _parseEnseignes(rows) {
+  /** @type {SupabaseRow | undefined} */
+  const enseignesRow = (rows || []).find(row => row.rayon === '__enseignes__');
+  return enseignesRow && Array.isArray(enseignesRow.data) ? enseignesRow.data : [];
 }
 
 /**
@@ -530,18 +548,21 @@ async function _pushToSupabase(tables) {
     if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
     if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
 
-    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore')) {
+    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore') || tables.includes('enseignes')) {
       /** @type {SupabaseRow[]} */
       const rows = Object.entries(DB.grilleCustom).map(([rayon, data]) => ({ id: rayon, rayon, data }));
       if (DB.deletedRayons && DB.deletedRayons.length) {
         rows.push({ id: '__deleted_rayons__', rayon: '__deleted_rayons__', data: DB.deletedRayons });
       }
+      if (DB.enseignes && DB.enseignes.length) {
+        rows.push({ id: '__enseignes__', rayon: '__enseignes__', data: DB.enseignes });
+      }
       // Grilles spécifiques à un magasin (DB.grilleCustomByStore) —
       // réutilise la même table grille_custom, une ligne par
       // (magasin, rayon), id préfixé '__store__{storeId}__{rayon}'
       // pour ne jamais collisionner avec un nom de rayon réel ni avec
-      // les autres lignes réservées (__deleted_rayons__) — voir
-      // _parseGrilleCustomByStore.
+      // les autres lignes réservées (__deleted_rayons__, __enseignes__)
+      // — voir _parseGrilleCustomByStore.
       Object.entries(DB.grilleCustomByStore || {}).forEach(([storeId, rayons]) => {
         Object.entries(rayons).forEach(([rayon, data]) => {
           rows.push({ id: `__store__${storeId}__${rayon}`, rayon: `__store__${storeId}__${rayon}`, data });
