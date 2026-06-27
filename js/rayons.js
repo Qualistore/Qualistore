@@ -422,23 +422,19 @@ const IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE = 'Non classé';
  * Liste les zones existantes pour un rayon donné, déduites des
  * points de ce rayon (aucune liste fixe).
  *
- * ⚠️ CHANGÉ : la grille commune (DB.grilleCustom) est désormais
- * indexée par enseigne — fallback vers DB.grilleCustom[enseigne][rayon]
- * (au lieu de l'ancien DB.grilleCustom[rayon]), avec la même
- * résolution storeId → enseigne que getGrille (grille.js).
+ * ⚠️ CHANGÉ : réutilise getGrille (grille.js) — fusion complète des
+ * points personnalisés du magasin avec la grille commune de son
+ * enseigne (jamais un remplacement), pour rester cohérent : les
+ * zones affichées doivent toujours correspondre exactement aux
+ * points réellement visibles pour ce magasin.
  * @param {string} rayon
- * @param {string} [storeId] - Référence vers Magasin.id ; omis ou sans surcharge propre pour ce rayon = retombe sur la grille commune de son enseigne.
+ * @param {string} [storeId] - Référence vers Magasin.id.
  * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent, ex : page Grilles avec enseigne choisie directement) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
  * @returns {string[]} Zones triées alphabétiquement, "Non classé" toujours en dernier si présent.
  */
 function getZonesForRayon(rayon, storeId, enseigne) {
   /** @type {GrillePoint[]} */
-  let points = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : [];
-  if (!points.length) {
-    /** @type {string} */
-    const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
-    points = resolvedEnseigne ? (DB.grilleCustom[resolvedEnseigne]?.[rayon] || []) : [];
-  }
+  const points = getGrille(rayon, storeId, enseigne);
 
   /** @type {Set<string>} */
   const zones = new Set();
@@ -487,6 +483,26 @@ function getZonesForRayon(rayon, storeId, enseigne) {
  * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
  * @returns {{ok: boolean, error?: string}}
  */
+/**
+ * Renomme une zone à l'intérieur d'UN SEUL rayon (n'affecte jamais
+ * les zones de même nom dans d'autres rayons — voir la note
+ * d'en-tête de cette section).
+ *
+ * ⚠️ CHANGÉ : depuis la fusion grille commune + points propres au
+ * magasin (voir getGrille), une zone peut désormais contenir un
+ * mélange de points venant des deux endroits. Renomme donc PARTOUT
+ * où la zone apparaît pour ce rayon — dans la grille commune de
+ * l'enseigne ET dans la grille personnalisée du magasin si fourni —
+ * jamais un choix exclusif entre les deux comme avant cette
+ * correction (qui ne renommait que l'un des deux groupes, au hasard
+ * de lequel n'était pas vide).
+ * @param {string} rayon
+ * @param {string} oldZone
+ * @param {string} newZone
+ * @param {string} [storeId] - Référence vers Magasin.id ; si fourni, ses points personnalisés pour ce rayon sont aussi migrés (en plus de la grille commune de l'enseigne, jamais à la place).
+ * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
+ * @returns {{ok: boolean, error?: string}}
+ */
 function renameGrilleZone(rayon, oldZone, newZone, storeId, enseigne) {
   /** @type {string} */
   const trimmed = (newZone || '').trim();
@@ -496,14 +512,14 @@ function renameGrilleZone(rayon, oldZone, newZone, storeId, enseigne) {
     return { ok: false, error: `La zone « ${trimmed} » existe déjà dans ce rayon.` };
   }
 
+  /** @type {string} */
+  const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
   /** @type {GrillePoint[]} */
-  let points = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : [];
-  if (!points.length) {
-    /** @type {string} */
-    const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
-    points = resolvedEnseigne ? (DB.grilleCustom[resolvedEnseigne]?.[rayon] || []) : [];
-  }
-  points.forEach(point => {
+  const commonPoints = resolvedEnseigne ? (DB.grilleCustom[resolvedEnseigne]?.[rayon] || []) : [];
+  /** @type {GrillePoint[]} */
+  const storePoints = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : [];
+
+  [...commonPoints, ...storePoints].forEach(point => {
     if ((point.zone || '') === oldZone) point.zone = trimmed;
   });
 

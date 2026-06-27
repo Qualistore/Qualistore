@@ -594,8 +594,16 @@ async function _pushToSupabase(tables) {
       if (DB.manualRayons && DB.manualRayons.length) {
         rows.push({ id: '__manual_rayons__', rayon: '__manual_rayons__', data: DB.manualRayons });
       }
-      if (DB.enseignes && DB.enseignes.length) {
-        rows.push({ id: '__enseignes__', rayon: '__enseignes__', data: DB.enseignes });
+      // ⚠️ CORRIGÉ : la ligne '__enseignes__' doit être réécrite même
+      // quand DB.enseignes devient VIDE après une suppression (ex :
+      // suppression de la dernière enseigne restante) — sinon
+      // sbUpsert ne reçoit jamais cette ligne dans ce cas précis, et
+      // l'ancienne valeur (avec l'enseigne supprimée encore dedans)
+      // reste intacte côté Supabase indéfiniment. On l'écrit donc dès
+      // que cette table fait partie du scope demandé (pushAll ou
+      // 'enseignes' explicitement listée), peu importe sa longueur.
+      if (pushAll || tables.includes('enseignes')) {
+        rows.push({ id: '__enseignes__', rayon: '__enseignes__', data: DB.enseignes || [] });
       }
       // Grilles spécifiques à un magasin (DB.grilleCustomByStore) —
       // réutilise la même table grille_custom, une ligne par

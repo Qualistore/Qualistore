@@ -95,44 +95,45 @@ let _currentGrilleRayon = '';
 /**
  * Retourne la grille de points de contrôle d'un rayon.
  *
- * ⚠️ CHANGÉ : la grille commune (DB.grilleCustom) est désormais
- * propre à chaque ENSEIGNE — plus une grille unique partagée par
- * toute la base. Résolution à trois niveaux :
- * 1. Si storeId est fourni ET que ce magasin a au moins un point
- *    personnalisé pour ce rayon (DB.grilleCustomByStore[storeId][rayon]),
- *    on retourne UNIQUEMENT ces points (pas de fusion avec la grille
- *    commune de l'enseigne).
- * 2. Sinon, si le magasin a une enseigne renseignée, on retombe sur
- *    la grille commune de CETTE enseigne (DB.grilleCustom[enseigne][rayon]).
- * 3. Un magasin SANS enseigne renseignée n'a accès à aucune grille
- *    commune — uniquement à sa grille personnalisée (cas 1) si elle
- *    existe, sinon tableau vide. Choix délibéré : pas de filet de
- *    secours implicite vers une grille "par défaut" non rattachée à
- *    une enseigne précise.
+ * ⚠️ CHANGÉ : fusion complète, jamais un remplacement. Les points
+ * personnalisés d'un magasin (DB.grilleCustomByStore[storeId][rayon])
+ * s'ajoutent TOUJOURS à la grille commune de son enseigne
+ * (DB.grilleCustom[enseigne][rayon]) — un magasin avec des points
+ * propres ne perd plus l'accès à la grille commune. Avant ce
+ * changement, un magasin avec au moins un point personnalisé ne
+ * voyait QUE ses points propres (comportement "remplace"), ce qui
+ * obligeait à dupliquer manuellement toute la grille commune dans
+ * chaque magasin personnalisé pour ne rien perdre.
  *
- * Pour la page Grilles (édition, pas un magasin précis mais une
- * enseigne choisie directement), voir le paramètre enseigne.
+ * Un magasin SANS enseigne renseignée n'a accès à aucune grille
+ * commune (choix délibéré, pas de filet de secours implicite) —
+ * uniquement à ses points personnalisés, s'il en a.
  *
- * Plus aucune fusion avec GRILLE_BASE_COMMUNE (référentiel commun de
- * 48 points codés en dur dans config.js, retiré précédemment) — tout
- * point de contrôle FSQS provient exclusivement de DB.grilleCustom
- * et/ou DB.grilleCustomByStore, import ou saisie manuelle.
+ * Chaque point retourné porte un champ `_scope` ('common' ou
+ * 'store') NON PERSISTÉ — ajouté ici, à la lecture, uniquement pour
+ * que l'UI sache où agir (modifier/supprimer) sans deviner. Un point
+ * commun affiché dans le contexte d'un magasin reste un point
+ * commun : le modifier ou le supprimer agit sur la grille commune de
+ * l'enseigne (et donc sur tous ses magasins), jamais sur ce seul
+ * magasin — voir _buildPointActions, delCtrl, openCtrlModal.
  * @param {string} rayon
- * @param {string} [storeId] - Référence vers Magasin.id ; omis ou vide = pas de grille personnalisée à considérer (cas 1 sauté).
- * @param {string} [enseigne] - Enseigne explicite à utiliser pour la grille commune (cas 2) ; si omis et storeId fourni, déduite de Magasin.enseigne. Permet à la page Grilles (édition par enseigne choisie directement, sans magasin précis) de fonctionner sans storeId.
- * @returns {GrillePoint[]}
+ * @param {string} [storeId] - Référence vers Magasin.id.
+ * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent, ex : page Grilles avec enseigne choisie directement) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
+ * @returns {(GrillePoint & {_scope: 'common'|'store'})[]}
  */
 function getGrille(rayon, storeId, enseigne) {
-  if (storeId) {
-    /** @type {GrillePoint[]} */
-    const storePoints = DB.grilleCustomByStore?.[storeId]?.[rayon] || [];
-    if (storePoints.length) return storePoints;
-  }
+  /** @type {GrillePoint[]} */
+  const storePoints = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : [];
 
   /** @type {string} */
   const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
-  if (!resolvedEnseigne) return [];
-  return DB.grilleCustom[resolvedEnseigne]?.[rayon] || [];
+  /** @type {GrillePoint[]} */
+  const commonPoints = resolvedEnseigne ? (DB.grilleCustom[resolvedEnseigne]?.[rayon] || []) : [];
+
+  return [
+    ...commonPoints.map(p => ({ ...p, _scope: 'common' })),
+    ...storePoints.map(p => ({ ...p, _scope: 'store' })),
+  ];
 }
 
 // ─────────────────────────────────────────────
@@ -413,31 +414,44 @@ function _buildCategorySection(category, points, rayon, storeId) {
 }
 
 /**
- * Construit la ligne HTML d'un point de contrôle. Tout point de
- * contrôle FSQS est désormais modifiable : getGrille() ne retourne
- * plus que des points custom/importés (DB.grilleCustom ou
- * DB.grilleCustomByStore), il n'existe plus de référentiel de base
- * non modifiable à distinguer — voir getGrille.
- * @param {GrillePoint} point
+ * Construit la ligne HTML d'un point de contrôle.
+ *
+ * ⚠️ CHANGÉ : depuis la fusion grille commune + points propres au
+ * magasin (voir getGrille), un point affiché dans le contexte d'un
+ * magasin peut venir de DEUX endroits différents — point.\_scope
+ * ('common' ou 'store', ajouté par getGrille à la lecture, jamais
+ * persisté) indique lequel. Les actions (modifier/supprimer)
+ * utilisent ce scope pour agir au bon endroit : un point commun
+ * affiché ici reste un point commun, le modifier affecte TOUS les
+ * magasins de l'enseigne, pas seulement celui-ci — voir
+ * _buildPointActions. Un badge discret "Commun" signale ce cas à
+ * l'utilisateur pour éviter toute surprise.
+ * @param {GrillePoint & {_scope?: 'common'|'store'}} point
  * @param {string} rayon
- * @param {string} storeId
+ * @param {string} storeId - Magasin actuellement affiché (page Grilles) ; transmis aux actions UNIQUEMENT si point._scope === 'store' (sinon le point est commun, voir _buildPointActions).
  * @returns {string}
  */
 function _buildPointRow(point, rayon, storeId) {
   /** @type {boolean} */
   const isAdmin = CU && CU.role === 'admin';
+  /** @type {boolean} */
+  const isCommon = point._scope === 'common';
+  /** @type {string} */
+  const commonBadge = (isCommon && storeId)
+    ? ' <span class="tsm" style="color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:0 6px;font-size:10px;vertical-align:middle">Commun</span>'
+    : '';
 
   return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
     <div style="flex:1">
       <div style="font-size:13px">
-        ${point.q}
+        ${point.q}${commonBadge}
       </div>
       ${point.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;font-style:italic">${point.prec}</div>` : ''}
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
       ${critBdg(point.c)}
       <span class="tsm tm" style="white-space:nowrap">Poids : <strong>${point.p}</strong></span>
-      ${isAdmin ? _buildPointActions(rayon, storeId, point.id) : ''}
+      ${isAdmin ? _buildPointActions(rayon, isCommon ? '' : storeId, point.id) : ''}
     </div>
   </div>`;
 }
@@ -446,7 +460,7 @@ function _buildPointRow(point, rayon, storeId) {
  * Construit les boutons d'action (modifier/supprimer) pour un point
  * de contrôle, réservés aux administrateurs.
  * @param {string} rayon
- * @param {string} storeId
+ * @param {string} storeId - Magasin propriétaire RÉEL de ce point précis (chaîne vide = point commun, action sur la grille de l'enseigne) — voir _buildPointRow, qui calcule cette valeur depuis point._scope, jamais depuis le magasin affiché à l'écran.
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @returns {string}
  */
