@@ -469,12 +469,14 @@ function _buildPointRow(point, rayon, storeId) {
   const isManual = point.id.startsWith('cust-');
   /** @type {string} */
   const manualBadge = isManual
-    ? ' <span class="tsm" style="color:var(--warning-dark);background:var(--warning-light);border-radius:8px;padding:0 6px;font-size:10px;vertical-align:middle">Saisi manuellement</span>'
+    ? ' <span class="tsm" style="color:#fff;background:var(--orange);border-radius:8px;padding:1px 7px;font-size:10px;font-weight:600;vertical-align:middle">✎ Manuel</span>'
     : '';
+  /** @type {string} */
+  const intituleStyle = isManual ? `color:var(--orange);font-weight:600` : '';
 
-  return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)${isManual ? ';background:var(--warning-light)' : ''}">
+  return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)${isManual ? ';border-left:3px solid var(--orange);background:var(--orange-light)' : ''}">
     <div style="flex:1">
-      <div style="font-size:13px">
+      <div style="font-size:13px;${intituleStyle}">
         ${point.q}${commonBadge}${manualBadge}
       </div>
       ${point.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;font-style:italic">${point.prec}</div>` : ''}
