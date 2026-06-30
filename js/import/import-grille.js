@@ -132,25 +132,12 @@
 // 1. CONSTANTES
 // ─────────────────────────────────────────────
 
-/**
- * Extensions acceptées par onglet de format.
- * @type {Record<ImportTab, string>}
- */
-const IMPORT_ACCEPT_EXTENSIONS = {
-  csv:  '.csv,.tsv,.txt',
-  xlsx: '.xlsx,.xls',
-  pdf:  '.pdf',
-};
-
-/**
- * Texte d'aide affiché sous la drop zone.
- * @type {Record<ImportTab, string>}
- */
-const IMPORT_ACCEPT_HINTS = {
-  csv:  '.csv · .tsv · .txt acceptés',
-  xlsx: '.xlsx · .xls acceptés',
-  pdf:  '.pdf accepté',
-};
+// ⚠️ CHANGÉ : IMPORT_ACCEPT_EXTENSIONS et IMPORT_ACCEPT_HINTS ont été
+// supprimées avec la sélection manuelle d'onglet de format (voir
+// switchImportTab, supprimée également) — l'input file accepte
+// désormais tous les formats à la fois (voir le HTML, attribut accept
+// déjà fixe), le format réel étant déterminé après coup par
+// l'extension du fichier déposé (voir processImportFile).
 
 /**
  * ⚠️ CHANGÉ : il n'existe plus de liste fermée de rayons FSQS
@@ -230,9 +217,6 @@ let _importRawRows = [];
 /** @type {DetectionResult | null} Résultat de détection courant (mapping + scores + en-têtes non mappés), affiché et corrigible dans la modale. */
 let _importDetection = null;
 
-/** @type {ImportTab} Onglet actif. */
-let _currentImportTab = 'csv';
-
 /** @type {ImportTarget} Destination de l'import. */
 let _importTarget = 'grille';
 
@@ -264,7 +248,6 @@ let _importDefaultEnseigne = '';
 function openImportModal(target) {
   _importTarget        = target || 'grille';
   _importRows          = [];
-  _currentImportTab    = 'csv';
   _importDefaultCrit   = 'Majeure';
   _importDefaultRayons = [];
   _importDefaultEnseigne = '';
@@ -272,6 +255,7 @@ function openImportModal(target) {
   el('imp-file-input').value   = '';
   el('imp-warnings').textContent = '';
   el('pdf-note').style.display = 'none';
+  el('imp-format-info').innerHTML = IMPORT_FORMAT_INFO.default;
   if (el('imp-default-crit')) el('imp-default-crit').value = 'Majeure';
 
   if (el('imp-default-rayons-group')) {
@@ -296,7 +280,6 @@ function openImportModal(target) {
     `<i class="ti ti-upload" style="color:var(--primary)"></i> Importer — ${targetLabel}`;
 
   _clearImportPreview();
-  switchImportTab('csv');
   openModal('m-import');
 }
 
@@ -340,32 +323,10 @@ function _onImportDefaultEnseigneChanged() {
   _importDefaultEnseigne = v('imp-default-enseigne-sel');
 }
 
-// ─────────────────────────────────────────────
-// 4. ONGLETS DE FORMAT
-// ─────────────────────────────────────────────
-
-/**
- * Bascule l'onglet de format actif (CSV/XLSX/PDF), met à jour les
- * indices visuels et le texte d'aide, et vide l'aperçu courant.
- * @param {ImportTab} tab
- * @returns {void}
- */
-function switchImportTab(tab) {
-  _currentImportTab = tab;
-
-  ['csv', 'xlsx', 'pdf'].forEach(t => {
-    const btn = el('tab-' + t);
-    if (!btn) return;
-    btn.classList.toggle('active', t === tab);
-  });
-
-  el('imp-format-info').innerHTML   = IMPORT_FORMAT_INFO[tab];
-  el('imp-accept-hint').textContent = IMPORT_ACCEPT_HINTS[tab];
-  el('imp-file-input').accept       = IMPORT_ACCEPT_EXTENSIONS[tab];
-  el('pdf-note').style.display      = tab === 'pdf' ? '' : 'none';
-
-  _clearImportPreview();
-}
+// ⚠️ CHANGÉ : la section "ONGLETS DE FORMAT" (switchImportTab) a été
+// supprimée — il n'y a plus de sélection manuelle d'onglet avant
+// dépôt de fichier, le format est détecté automatiquement par
+// l'extension (voir processImportFile).
 
 /**
  * Réinitialise l'aperçu d'import (lignes, affichage, bouton de
@@ -440,6 +401,12 @@ function handleImportFile(input) {
  * _showDropZoneFilled) — le bandeau d'accueil n'a plus d'utilité une
  * fois un fichier chargé, et libère la place pour le tableau de
  * lignes détectées.
+ *
+ * ⚠️ CHANGÉ : ne dépend plus d'un onglet de format choisi à l'avance
+ * (switchImportTab, supprimée) — le format est entièrement déterminé
+ * par l'extension du fichier déposé, et le message d'aide
+ * (#imp-format-info) se met à jour après coup pour refléter le
+ * format réellement détecté.
  * @param {File} file
  * @returns {void}
  */
@@ -448,13 +415,22 @@ function processImportFile(file) {
 
   /** @type {string} */
   const name = file.name.toLowerCase();
+  /** @type {'csv'|'xlsx'|'pdf'} */
+  let detectedFormat;
+
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    detectedFormat = 'xlsx';
     _importXLSX(file);
   } else if (name.endsWith('.pdf')) {
+    detectedFormat = 'pdf';
     _importPDF(file);
   } else {
+    detectedFormat = 'csv';
     _importCSV(file);
   }
+
+  if (el('imp-format-info')) el('imp-format-info').innerHTML = IMPORT_FORMAT_INFO[detectedFormat];
+  if (el('pdf-note')) el('pdf-note').style.display = detectedFormat === 'pdf' ? '' : 'none';
 }
 
 /**

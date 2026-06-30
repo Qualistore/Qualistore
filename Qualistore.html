@@ -849,20 +849,15 @@
       <button class="btn-x" onclick="closeModal('m-import')">&times;</button>
     </div>
     <div class="modal-body">
-      <!-- Format tabs -->
-      <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-        <button class="imp-tab active" id="tab-csv" onclick="switchImportTab('csv')"><i class="ti ti-file-text"></i> CSV / TSV</button>
-        <button class="imp-tab" id="tab-xlsx" onclick="switchImportTab('xlsx')"><i class="ti ti-file-spreadsheet"></i> Excel (.xlsx)</button>
-        <button class="imp-tab" id="tab-pdf" onclick="switchImportTab('pdf')"><i class="ti ti-file-type-pdf"></i> PDF</button>
-      </div>
-
-      <!-- Format info -->
+      <!-- Format info — mis à jour automatiquement selon le format
+           détecté une fois le fichier déposé (voir processImportFile,
+           import-grille.js). Plus de sélection manuelle d'onglet :
+           CSV/TSV, Excel et PDF sont tous acceptés directement, le
+           format réel est déterminé par l'extension du fichier. -->
       <div style="background:var(--bg);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.9" id="imp-format-info">
-        <strong style="color:var(--text);font-size:13px">Format CSV / TSV</strong><br>
-        Les colonnes sont détectées automatiquement quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
-        Séparateur auto-détecté : <code style="background:var(--surface);padding:1px 5px;border-radius:4px">;</code> ou <code style="background:var(--surface);padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
-        Le mapping détecté est affiché et modifiable avant import.<br>
-        <span style="color:var(--success-dark)">Exemple : <code style="background:var(--surface);padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>
+        <strong style="color:var(--text);font-size:13px">Déposez un fichier CSV, TSV, Excel (.xlsx/.xls) ou PDF</strong><br>
+        Le format est détecté automatiquement. Les colonnes sont reconnues quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
+        Le mapping détecté est affiché et modifiable avant import.
       </div>
 
       <!-- Enseigne cible (FSQS uniquement) — l'import remplit la grille de base du rayon, héritée par tous les magasins de cette enseigne -->
@@ -899,7 +894,7 @@
           <i class="ti ti-cloud-upload" style="font-size:40px;color:var(--text3);display:block;margin-bottom:10px"></i>
           <div style="font-size:14px;font-weight:500;margin-bottom:4px">Glissez-déposez votre fichier ici</div>
           <div class="tsm tm">ou cliquez pour choisir un fichier</div>
-          <div class="tsm" id="imp-accept-hint" style="color:var(--primary);margin-top:6px">.csv · .tsv · .txt acceptés</div>
+          <div class="tsm" id="imp-accept-hint" style="color:var(--primary);margin-top:6px">.csv · .tsv · .xlsx · .xls · .pdf acceptés</div>
         </div>
         <div id="imp-drop-filled" style="display:none;align-items:center;justify-content:center;gap:10px">
           <i class="ti ti-file-check" style="font-size:20px;color:var(--primary)"></i>

@@ -126,9 +126,10 @@ tbody tr:hover td{background:#f8faff}
 /* Onglets de format (modale Import) — remplace l'ancien style 100%
    inline + bascule JS de style.background/color, pour rester
    cohérent avec le reste des composants (transition, focus). */
-.imp-tab{flex:1;padding:10px;font-size:13px;font-weight:500;background:var(--surface);color:var(--text);border:none;border-left:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s,color .15s}
-.imp-tab:first-child{border-left:none}
-.imp-tab.active{background:var(--primary);color:#fff}
+/* ⚠️ CHANGÉ : .imp-tab (onglets de sélection manuelle de format CSV/
+   Excel/PDF) a été retirée — le format est désormais détecté
+   automatiquement par l'extension du fichier déposé, voir
+   processImportFile, import-grille.js. */
 
 /* Onglets de navigation entre zones (modale d'audit FSQS) — voir
    _buildAuditZoneTabs/switchAuditZone, audits.js. */

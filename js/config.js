@@ -167,6 +167,10 @@ const PDFJS_URL   = CDN_PDFJS;
  * @type {ImportFormatInfoMap}
  */
 const IMPORT_FORMAT_INFO = {
+  default: `<strong style="color:var(--text);font-size:13px">Déposez un fichier CSV, TSV, Excel (.xlsx/.xls) ou PDF</strong><br>
+    Le format est détecté automatiquement. Les colonnes sont reconnues quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
+    Le mapping détecté est affiché et modifiable avant import.`,
+
   csv: `<strong style="color:var(--text);font-size:13px">Format CSV / TSV</strong><br>
     Les colonnes sont détectées automatiquement quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
     Séparateur auto-détecté : <code style="background:#fff;padding:1px 5px;border-radius:4px">;</code> ou <code style="background:#fff;padding:1px 5px;border-radius:4px">,</code> ou tabulation<br>
