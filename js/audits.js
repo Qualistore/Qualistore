@@ -1044,6 +1044,27 @@ function resumeDraft(draftId) {
     if (!auditAnswers[pointId]) return; // point disparu de la grille depuis la mise en pause
     auditAnswers[pointId].cmt    = answer.cmt || '';
     auditAnswers[pointId].photos = answer.photos ? [...answer.photos] : [];
+
+    // ⚠️ CORRIGÉ : mettre à jour auditAnswers ne suffit pas — le HTML
+    // de la question (généré par buildAuditQuestions juste avant,
+    // via _buildAuditQuestion) existe déjà dans le DOM avec sa
+    // miniature de photos vide (puisque auditAnswers[pointId].photos
+    // était encore [] au moment de cette génération). Le commentaire
+    // est lui bien affiché car c'est un <input value="...">, relu par
+    // le navigateur dès que l'attribut value est modifié — mais les
+    // miniatures sont un <div> dont le contenu doit être régénéré
+    // manuellement ici.
+    /** @type {HTMLElement | null} */
+    const photoPreview = el('aphot-' + pointId);
+    if (photoPreview) {
+      photoPreview.innerHTML = auditAnswers[pointId].photos
+        .map(url => `<img src="${url}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`)
+        .join('');
+    }
+    /** @type {HTMLInputElement | null} */
+    const commentInput = document.querySelector(`#and-${pointId} input[type="text"]`);
+    if (commentInput) commentInput.value = auditAnswers[pointId].cmt;
+
     if (!answer.rep) return;
     const buttons  = document.querySelectorAll(`#aaq-${pointId} .rb`);
     /** @type {number} */
