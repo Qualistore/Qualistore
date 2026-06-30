@@ -1023,11 +1023,27 @@ function resumeDraft(draftId) {
   el('a-pause').style.display = '';
   el('a-next').innerHTML = 'Valider l\'audit <i class="ti ti-check"></i>';
 
-  auditAnswers = { ...draft.answers };
+  /**
+   * ⚠️ CORRIGÉ : buildAuditQuestions() réinitialise intégralement
+   * auditAnswers (auditAnswers = {}, voir cette fonction) avant de le
+   * repeupler avec des réponses neutres (rep: null, cmt: '', photos: [])
+   * pour chaque point de la grille. L'affectation auditAnswers =
+   * {...draft.answers} faite juste avant son appel était donc
+   * systématiquement écrasée — seule la réponse C/NC/NA était ensuite
+   * restaurée (boucle ci-dessous), jamais le commentaire ni les
+   * photos. On restaure donc maintenant cmt/photos APRÈS l'appel à
+   * buildAuditQuestions, directement sur les entrées déjà repeuplées
+   * par cette fonction (qui couvrent tous les points de la grille
+   * actuelle, contrairement à draft.answers qui peut être incomplet
+   * si la grille a changé depuis la mise en pause).
+   */
   buildAuditQuestions(draft.rayon, draft.mid);
 
-  // Restaurer les réponses déjà saisies
+  // Restaurer les réponses déjà saisies (C/NC/NA + commentaire + photos)
   Object.entries(draft.answers).forEach(([pointId, answer]) => {
+    if (!auditAnswers[pointId]) return; // point disparu de la grille depuis la mise en pause
+    auditAnswers[pointId].cmt    = answer.cmt || '';
+    auditAnswers[pointId].photos = answer.photos ? [...answer.photos] : [];
     if (!answer.rep) return;
     const buttons  = document.querySelectorAll(`#aaq-${pointId} .rb`);
     /** @type {number} */
