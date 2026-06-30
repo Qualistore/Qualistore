@@ -663,7 +663,7 @@ function _buildAuditQuestion(point) {
       <div class="rb" onclick="setAudRep('${point.id}','NC',this)"><i class="ti ti-x" style="font-size:12px"></i> Non conforme</div>
       <div class="rb" onclick="setAudRep('${point.id}','NA',this)"><i class="ti ti-minus" style="font-size:12px"></i> N/A</div>
     </div>
-    <div class="nc-det" id="and-${point.id}">
+    <div class="nc-det${savedAnswer?.rep === 'NC' ? ' on' : ''}" id="and-${point.id}">
       <input type="text" class="form-control" style="font-size:12px;margin-top:6px"
              placeholder="Commentaire NC…" value="${_escapeHtmlAttr(savedComment)}"
              oninput="auditAnswers['${point.id}'].cmt=this.value">
