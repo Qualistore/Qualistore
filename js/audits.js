@@ -496,15 +496,38 @@ function auditPrev() {
  * pas auparavant. Si _auditZoneKeys est vide, switchAuditZone()
  * n'est pas appelée (elle crasherait sur _auditZones[undefined]) et
  * un message d'état vide est affiché à la place.
+ * ⚠️ CORRIGÉ : accepte désormais existingAnswers, pour restaurer un
+ * brouillon en pause SANS dépendre du DOM. Avant cette correction,
+ * resumeDraft() restaurait auditAnswers puis mettait à jour le DOM
+ * manuellement après coup (el('aphot-'+pointId).innerHTML = ...) —
+ * mais cette mise à jour ne fonctionnait QUE pour les points de la
+ * première zone affichée par défaut (switchAuditZone(_auditZoneKeys[0]),
+ * appelée en interne par cette fonction) : pour toute autre zone,
+ * l'élément DOM correspondant n'existe pas encore (HTML jamais
+ * généré tant que l'utilisateur n'a pas cliqué sur cet onglet), donc
+ * el(...) retournait null et la mise à jour échouait silencieusement
+ * — les photos/commentaires des zones 2, 3... restaient invisibles
+ * au premier affichage de ces onglets. En fusionnant existingAnswers
+ * ICI, avant tout rendu de zone, _buildAuditQuestion (appelée pour
+ * CHAQUE zone, y compris celles jamais encore affichées) lit déjà
+ * les bonnes données dès sa première génération — plus de dépendance
+ * fragile à l'existence préalable d'un élément DOM.
  * @param {string} rayon
  * @param {string} [storeId] - Référence vers Magasin.id (le magasin audité) ; omis ou vide = grille commune uniquement.
+ * @param {Record<string, AuditAnswer>} [existingAnswers] - Réponses déjà saisies à restaurer (typiquement Draft.answers, voir resumeDraft) — fusionnées par-dessus les réponses neutres par défaut, point par point.
  * @returns {void}
  */
-function buildAuditQuestions(rayon, storeId) {
+function buildAuditQuestions(rayon, storeId, existingAnswers) {
   /** @type {GrillePoint[]} */
   const allPoints = getGrille(rayon, storeId);
   auditAnswers = {};
-  allPoints.forEach(point => { auditAnswers[point.id] = { q: point.q, rep: null, cmt: '', photos: [] }; });
+  allPoints.forEach(point => {
+    /** @type {AuditAnswer | undefined} */
+    const existing = existingAnswers?.[point.id];
+    auditAnswers[point.id] = existing
+      ? { q: point.q, rep: existing.rep ?? null, cmt: existing.cmt || '', photos: existing.photos ? [...existing.photos] : [] }
+      : { q: point.q, rep: null, cmt: '', photos: [] };
+  });
 
   // Regrouper les points par zone (GrillePoint.zone — sous-partie du
   // rayon, voir rayons.js)
@@ -1024,53 +1047,22 @@ function resumeDraft(draftId) {
   el('a-next').innerHTML = 'Valider l\'audit <i class="ti ti-check"></i>';
 
   /**
-   * ⚠️ CORRIGÉ : buildAuditQuestions() réinitialise intégralement
-   * auditAnswers (auditAnswers = {}, voir cette fonction) avant de le
-   * repeupler avec des réponses neutres (rep: null, cmt: '', photos: [])
-   * pour chaque point de la grille. L'affectation auditAnswers =
-   * {...draft.answers} faite juste avant son appel était donc
-   * systématiquement écrasée — seule la réponse C/NC/NA était ensuite
-   * restaurée (boucle ci-dessous), jamais le commentaire ni les
-   * photos. On restaure donc maintenant cmt/photos APRÈS l'appel à
-   * buildAuditQuestions, directement sur les entrées déjà repeuplées
-   * par cette fonction (qui couvrent tous les points de la grille
-   * actuelle, contrairement à draft.answers qui peut être incomplet
-   * si la grille a changé depuis la mise en pause).
+   * ⚠️ CORRIGÉ : les réponses du brouillon (commentaire, photos, et
+   * réponse C/NC/NA) sont désormais passées directement à
+   * buildAuditQuestions, qui les fusionne dès la construction de
+   * auditAnswers — avant tout rendu de zone. Cela évite de dépendre
+   * du DOM (l'ancienne approche mettait à jour manuellement
+   * el('aphot-'+pointId) après coup, ce qui ne fonctionnait que pour
+   * la première zone affichée par défaut — les zones suivantes
+   * n'ayant pas encore d'élément DOM généré à ce stade, voir la
+   * JSDoc de buildAuditQuestions pour le détail complet du bug).
+   * Plus besoin de restaurer manuellement le style des boutons C/NC/NA
+   * ici : switchAuditZone (appelée en interne par buildAuditQuestions
+   * pour la première zone, puis à chaque clic d'onglet par
+   * l'utilisateur) le fait déjà elle-même en lisant auditAnswers, qui
+   * contient désormais les bonnes réponses dès le départ.
    */
-  buildAuditQuestions(draft.rayon, draft.mid);
-
-  // Restaurer les réponses déjà saisies (C/NC/NA + commentaire + photos)
-  Object.entries(draft.answers).forEach(([pointId, answer]) => {
-    if (!auditAnswers[pointId]) return; // point disparu de la grille depuis la mise en pause
-    auditAnswers[pointId].cmt    = answer.cmt || '';
-    auditAnswers[pointId].photos = answer.photos ? [...answer.photos] : [];
-
-    // ⚠️ CORRIGÉ : mettre à jour auditAnswers ne suffit pas — le HTML
-    // de la question (généré par buildAuditQuestions juste avant,
-    // via _buildAuditQuestion) existe déjà dans le DOM avec sa
-    // miniature de photos vide (puisque auditAnswers[pointId].photos
-    // était encore [] au moment de cette génération). Le commentaire
-    // est lui bien affiché car c'est un <input value="...">, relu par
-    // le navigateur dès que l'attribut value est modifié — mais les
-    // miniatures sont un <div> dont le contenu doit être régénéré
-    // manuellement ici.
-    /** @type {HTMLElement | null} */
-    const photoPreview = el('aphot-' + pointId);
-    if (photoPreview) {
-      photoPreview.innerHTML = auditAnswers[pointId].photos
-        .map(url => `<img src="${url}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`)
-        .join('');
-    }
-    /** @type {HTMLInputElement | null} */
-    const commentInput = document.querySelector(`#and-${pointId} input[type="text"]`);
-    if (commentInput) commentInput.value = auditAnswers[pointId].cmt;
-
-    if (!answer.rep) return;
-    const buttons  = document.querySelectorAll(`#aaq-${pointId} .rb`);
-    /** @type {number} */
-    const btnIndex = AUDIT_ANSWER_BUTTON_INDEX[answer.rep];
-    if (buttons[btnIndex]) setAudRep(pointId, answer.rep, buttons[btnIndex]);
-  });
+  buildAuditQuestions(draft.rayon, draft.mid, draft.answers);
 
   auditStep = 1;
   openModal('m-audit');
