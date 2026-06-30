@@ -342,7 +342,7 @@ function deleteAudit(auditId) {
   DB.audits = DB.audits.filter(a => a.id !== auditId);
   DB.ncs    = DB.ncs.filter(nc => nc.aid !== auditId);
   save();
-  sbDeleteWhere('audit', 'id', auditId);
+  sbDeleteWhere('audits', 'id', auditId);
   renderAudits();
 }
 
