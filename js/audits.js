@@ -607,7 +607,31 @@ function switchAuditZone(zone) {
  * @param {GrillePoint} point
  * @returns {string}
  */
+/**
+ * Construit le HTML d'une question d'audit (intitulé, boutons de
+ * réponse C/NC/NA, et bloc de détail NC avec commentaire + photos).
+ *
+ * ⚠️ CORRIGÉ : pré-remplit le commentaire et les miniatures de photos
+ * depuis auditAnswers[point.id] si déjà saisis — auparavant ce bloc
+ * était toujours généré vide, y compris lors de la reconstruction du
+ * HTML à chaque changement d'onglet/zone (voir switchAuditZone, qui
+ * appelle cette fonction pour chaque point de la zone affichée). Le
+ * commentaire et les photos restaient bien en mémoire dans
+ * auditAnswers (donc PAS perdus par pauseAudit/submitAudit), mais
+ * disparaissaient visuellement de l'écran au retour sur la zone —
+ * avec un risque réel de perte si l'utilisateur modifiait alors le
+ * champ vide affiché, écrasant la vraie valeur déjà enregistrée.
+ * @param {GrillePoint} point
+ * @returns {string}
+ */
 function _buildAuditQuestion(point) {
+  /** @type {AuditAnswer | undefined} */
+  const savedAnswer = auditAnswers[point.id];
+  /** @type {string} */
+  const savedComment = savedAnswer?.cmt || '';
+  /** @type {string[]} */
+  const savedPhotos = savedAnswer?.photos || [];
+
   return `<div class="aq" id="aaq-${point.id}" style="margin-bottom:8px">
     <div class="qt">${critBdg(point.c)} ${point.q}</div>
     ${point.prec ? `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-style:italic">${point.prec}</div>` : ''}
@@ -618,9 +642,11 @@ function _buildAuditQuestion(point) {
     </div>
     <div class="nc-det" id="and-${point.id}">
       <input type="text" class="form-control" style="font-size:12px;margin-top:6px"
-             placeholder="Commentaire NC…"
+             placeholder="Commentaire NC…" value="${_escapeHtmlAttr(savedComment)}"
              oninput="auditAnswers['${point.id}'].cmt=this.value">
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aphot-${point.id}"></div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aphot-${point.id}">${savedPhotos
+        .map(url => `<img src="${url}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`)
+        .join('')}</div>
       <input type="file" accept="image/*" multiple style="display:none" id="aphi-${point.id}"
              onchange="handleAuditPhoto('${point.id}',this)">
       <button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:11px"
