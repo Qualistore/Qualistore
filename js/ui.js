@@ -98,7 +98,7 @@ const PAGE_METADATA = {
   qualimetre:          ['Qualimètre',             'Référentiel par magasin'],
   'audit-qualimetre':  ['Audit Qualimètre',       'Parcours client – Œil du client'],
   'rapport-qualimetre':['Rapport Qualimètre',     'Historique et exports des audits Qualimètre'],
-  'grille-qualimetre': ['Grille Qualimètre',      'Points de contrôle par zone'],
+  'grille-qualimetre': ['Grille Qualimètre',      'Une grille commune par enseigne'],
   brouillons:          ['Brouillons',             'Audits en cours de saisie'],
   backup:              ['Sauvegarde',             'Export & import des données'],
 };

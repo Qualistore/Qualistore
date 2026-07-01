@@ -1,6 +1,7 @@
 // ══════════════════════════════════════════════════════════════
-// GRILLE-QUALIMETRE — Gestion de la grille Qualimètre par zone
+// GRILLE-QUALIMETRE — Gestion de la grille Qualimètre par enseigne et par zone
 // Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, CDN_SHEETJS, CDN_PDFJS), ui.js,
+//             magasins.js (getKnownEnseignes — classement par enseigne, même liste que pour la grille FSQS),
 //             import/import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
 //             import/import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap),
 //             import/import-grille.js (_resolveOrCreateZoneFromDocument, ResolvedZone, IMPORT_UNCLASSIFIED_ZONE_LABEL — résolution de zone partagée avec l'import de grille FSQS)
@@ -8,13 +9,17 @@
 
 // ─────────────────────────────────────────────
 // 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
-//    ⚠️ Déduits de l'usage dans ce fichier.
 //
-//    ✅ CONFIRMATION DÉFINITIVE (déjà pressentie dans qualimetre.js) :
-//    DB.qualimetreCustom est Record<storeId, Record<zoneId, GrillePoint[]>>
-//    et DB.qualimetreGlobal est Record<zoneId, GrillePoint[]> — ce
-//    fichier les construit explicitement avec cette forme exacte
-//    (voir _upsertQualimetrePoint, _applyImportToStore).
+//    ⚠️ CHANGÉ : DB.qualimetreGlobal n'est plus indexé directement
+//    par QMZone.id (Record<zoneId, GrillePoint[]>, une seule grille
+//    partagée par toute la base) mais par nom d'enseigne PUIS par
+//    QMZone.id (Record<enseigne, Record<zoneId, GrillePoint[]>>) —
+//    chaque enseigne a désormais sa propre grille commune Qualimètre,
+//    exactement sur le même principe que DB.grilleCustom pour le
+//    FSQS (voir getGrille, grille.js). Les points personnalisés d'un
+//    magasin (DB.qualimetreCustom[storeId][zoneId]) s'AJOUTENT
+//    désormais à ceux de la grille commune de son enseigne (fusion,
+//    jamais un remplacement) — voir getQualimetrePoints.
 // ─────────────────────────────────────────────
 
 /**
@@ -55,7 +60,7 @@
  * @property {string} id
  * @property {string} emoji
  * @property {string} label
- * @property {GrillePoint[]} points
+ * @property {(GrillePoint & {_scope: 'common'|'store'})[]} points
  */
 
 /**
@@ -65,8 +70,23 @@
  */
 
 /**
- * Dictionnaire des points Qualimètre globaux, indexé par QMZone.id.
- * @typedef {Record<string, GrillePoint[]>} QualimetreGlobalMap
+ * Dictionnaire des points Qualimètre communs, indexé par nom
+ * d'enseigne PUIS par QMZone.id — chaque enseigne a sa propre grille
+ * commune, héritée par tous ses magasins (voir getQualimetrePoints).
+ * La clé réservée '__sans_enseigne__' n'apparaît que si l'ancien
+ * format plat contenait des données lors de la migration (voir
+ * _migrateQualimetreGlobalToEnseigneScoped, storage.js) ; elle reste
+ * éditable normalement en attendant réaffectation manuelle.
+ * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreGlobalMap
+ */
+
+/**
+ * Statistiques agrégées de la grille commune Qualimètre d'une
+ * enseigne, affichées sur sa carte dans la vue d'ensemble (voir
+ * _buildQualimetreEnseigneCard).
+ * @typedef {Object} QMEnseigneStats
+ * @property {number} zoneCount - Nombre de zones ayant au moins un point.
+ * @property {number} pointCount - Nombre total de points, toutes zones confondues.
  */
 
 /**
@@ -122,6 +142,9 @@ const GQ_DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
  */
 let _gqImportData = [];
 
+/** @type {string} Enseigne actuellement affichée dans la vue détail de la page Grille Qualimètre (voir showQualimetreEnseigneDetail) — chaîne vide si la vue cartes (aperçu par enseigne) est affichée. Peut valoir '__sans_enseigne__' (résidu de migration, voir storage.js). Toute écriture dans la grille commune (storeId vide) cible cette enseigne. */
+let _gqCurrentEnseigne = '';
+
 /** @type {RawImportRow[]} Lignes brutes du fichier actuellement chargé (clés = en-têtes d'origine), conservées pour rejouer normalizeRows si le mapping est corrigé manuellement sans re-lire le fichier. */
 let _gqRawRows = [];
 
@@ -148,44 +171,67 @@ let _gqDefaultCrit = 'Majeure';
 // ─────────────────────────────────────────────
 
 /**
- * Retourne les points de contrôle d'une zone pour un magasin donné.
- * Respecte la priorité : custom magasin > global > [].
+ * Retourne les points de contrôle d'une zone pour un magasin donné,
+ * PAR FUSION avec la grille commune de son enseigne — jamais un
+ * remplacement (même principe que getGrille, grille.js, FSQS). Un
+ * magasin avec des points propres ne perd donc jamais l'accès à la
+ * grille commune de son enseigne.
+ *
+ * Chaque point retourné porte un champ `_scope` ('common' ou
+ * 'store') NON PERSISTÉ — ajouté ici, à la lecture, uniquement pour
+ * que l'UI sache où agir (modifier/supprimer) sans deviner : un
+ * point commun affiché dans le contexte d'un magasin reste un point
+ * commun, le modifier ou le supprimer agit sur la grille commune de
+ * l'enseigne (donc sur tous ses magasins), jamais sur ce seul
+ * magasin — voir _buildGqPointRow.
+ *
+ * Un magasin SANS enseigne renseignée n'a accès à aucune grille
+ * commune (choix délibéré, aucun filet de secours implicite) —
+ * uniquement à ses points personnalisés, s'il en a.
  * @param {string | null} storeId - Référence vers Magasin.id, ou null/chaîne vide pour ignorer la personnalisation magasin.
  * @param {string} zoneId - Référence vers QMZone.id.
- * @returns {GrillePoint[]}
+ * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent, ex : page Grille Qualimètre avec enseigne choisie directement) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
+ * @returns {(GrillePoint & {_scope: 'common'|'store'})[]}
  */
-function getQualimetrePoints(storeId, zoneId) {
-  if (storeId) {
-    /** @type {GrillePoint[]} */
-    const storePoints = DB.qualimetreCustom?.[storeId]?.[zoneId] || [];
-    if (storePoints.length) return storePoints;
-  }
+function getQualimetrePoints(storeId, zoneId, enseigne) {
   /** @type {GrillePoint[]} */
-  const globalPoints = DB.qualimetreGlobal?.[zoneId] || [];
-  if (globalPoints.length) return globalPoints;
-  return [];
+  const storePoints = storeId ? (DB.qualimetreCustom?.[storeId]?.[zoneId] || []) : [];
+
+  /** @type {string} */
+  const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
+  /** @type {GrillePoint[]} */
+  const commonPoints = resolvedEnseigne ? (DB.qualimetreGlobal?.[resolvedEnseigne]?.[zoneId] || []) : [];
+
+  return [
+    ...commonPoints.map(p => ({ ...p, _scope: 'common' })),
+    ...storePoints.map(p => ({ ...p, _scope: 'store' })),
+  ];
 }
 
 /**
- * Retourne la grille complète d'un magasin :
- * toutes les zones qui ont au moins un point. Applique tout
- * renommage manuel persistant (voir _resolveZoneLabel,
- * renameQmZone) sur le label affiché.
+ * Retourne la grille complète d'un magasin (ou d'une enseigne
+ * directement) : toutes les zones qui ont au moins un point, fusion
+ * commun + magasin comprise (voir getQualimetrePoints). Applique tout
+ * renommage manuel persistant (voir _resolveZoneLabel, renameQmZone)
+ * sur le label affiché.
  * @param {string | null} storeId
+ * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis. Signature rétrocompatible : les appelants existants (audit-qualimetre.js, rapport-qualimetre.js) n'appellent qu'avec storeId et continuent de fonctionner à l'identique.
  * @returns {QMZoneWithPoints[]}
  */
-function getQualimetreGrille(storeId) {
+function getQualimetreGrille(storeId, enseigne) {
+  /** @type {string} */
+  const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
   /** @type {Set<string>} */
   const zoneIds = new Set([
     ...QM_ZONES.map(z => z.id),
-    ...Object.keys(DB.qualimetreGlobal || {}),
+    ...Object.keys(DB.qualimetreGlobal?.[resolvedEnseigne] || {}),
   ]);
 
   return [...zoneIds]
     .map(zoneId => {
       /** @type {QMZone} */
       const zoneMeta = QM_ZONES.find(z => z.id === zoneId) || { id: zoneId, emoji: '', label: zoneId };
-      return { ...zoneMeta, label: _resolveZoneLabel(zoneId, zoneMeta.label), points: getQualimetrePoints(storeId, zoneId) };
+      return { ...zoneMeta, label: _resolveZoneLabel(zoneId, zoneMeta.label), points: getQualimetrePoints(storeId, zoneId, resolvedEnseigne) };
     })
     .filter(zone => zone.points.length > 0);
 }
@@ -195,14 +241,129 @@ function getQualimetreGrille(storeId) {
 // ─────────────────────────────────────────────
 
 /**
- * Affiche la page de gestion de la grille Qualimètre : peuple les
- * sélecteurs de zone/magasin puis rend le contenu.
+ * Liste les enseignes affichables en page Grille Qualimètre : toutes
+ * les enseignes connues (getKnownEnseignes, magasins.js) plus, si
+ * elle contient encore des points, l'enseigne réservée
+ * '__sans_enseigne__' — résidu de l'ancien format plat conservé sans
+ * perte par la migration (voir _migrateQualimetreGlobalToEnseigneScoped,
+ * storage.js) — toujours en dernière position quand elle apparaît.
+ * @returns {string[]}
+ */
+function getKnownQualimetreEnseignes() {
+  /** @type {string[]} */
+  const enseignes = getKnownEnseignes();
+  /** @type {boolean} */
+  const hasLeftoverData = Object.values(DB.qualimetreGlobal?.__sans_enseigne__ || {}).some(points => points.length > 0);
+  return hasLeftoverData ? [...enseignes, '__sans_enseigne__'] : enseignes;
+}
+
+/**
+ * Libellé affiché pour une enseigne dans la page Grille Qualimètre —
+ * gère le cas particulier de la clé réservée '__sans_enseigne__'.
+ * @param {string} enseigne
+ * @returns {string}
+ */
+function _qmEnseigneLabel(enseigne) {
+  return enseigne === '__sans_enseigne__' ? 'Sans enseigne (ancien référentiel)' : enseigne;
+}
+
+/**
+ * Calcule les statistiques de la grille commune Qualimètre d'une
+ * enseigne : nombre de zones ayant au moins un point, et nombre total
+ * de points, toutes zones confondues — affichées sur sa carte dans la
+ * vue d'ensemble (voir _buildQualimetreEnseigneCard).
+ * @param {string} enseigne
+ * @returns {QMEnseigneStats}
+ */
+function _getQualimetreEnseigneStats(enseigne) {
+  /** @type {GrillePoint[][]} */
+  const nonEmptyZones = Object.values(DB.qualimetreGlobal?.[enseigne] || {}).filter(points => points.length > 0);
+  return {
+    zoneCount:  nonEmptyZones.length,
+    pointCount: nonEmptyZones.reduce((sum, points) => sum + points.length, 0),
+  };
+}
+
+/**
+ * Construit la carte HTML d'une enseigne pour la vue d'ensemble de la
+ * page Grille Qualimètre. Cliquer sur la carte ouvre la vue détail de
+ * cette enseigne (voir showQualimetreEnseigneDetail).
+ * @param {string} enseigne
+ * @returns {string}
+ */
+function _buildQualimetreEnseigneCard(enseigne) {
+  /** @type {QMEnseigneStats} */
+  const { zoneCount, pointCount } = _getQualimetreEnseigneStats(enseigne);
+  return `<div class="card rayon-card" onclick="showQualimetreEnseigneDetail('${_escapeHtmlAttr(enseigne)}')" style="cursor:pointer">
+    <div class="card-body" style="text-align:center;padding:24px 16px">
+      <i class="ti ti-building" style="font-size:28px;color:var(--qual);margin-bottom:10px;display:block"></i>
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px">${_qmEnseigneLabel(enseigne)}</div>
+      <div style="font-size:24px;font-weight:700;color:${pointCount ? 'var(--text)' : 'var(--text3)'}">${pointCount}</div>
+      <div class="tsm tm">point(s) de contrôle</div>
+      <div class="tsm tm" style="margin-top:6px">${zoneCount} zone(s)</div>
+    </div>
+  </div>`;
+}
+
+/**
+ * Point d'entrée de la page Grille Qualimètre (voir _getPageRenderer,
+ * ui.js) — affiche toujours la vue d'ensemble par enseigne à
+ * l'arrivée sur la page (une carte par enseigne, avec son nombre de
+ * zones et de points de contrôle communs).
  * @returns {void}
  */
 function showGrilleQualimetre() {
+  _gqCurrentEnseigne = '';
+
+  if (el('gq-cards-view'))  el('gq-cards-view').style.display  = '';
+  if (el('gq-detail-view')) el('gq-detail-view').style.display = 'none';
+
+  /** @type {string[]} */
+  const enseignes = getKnownQualimetreEnseignes();
+  const grid  = el('gq-cards-grid');
+  const empty = el('gq-cards-empty');
+  if (!grid) return;
+
+  if (!enseignes.length) {
+    grid.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  grid.innerHTML = enseignes.map(e => _buildQualimetreEnseigneCard(e)).join('');
+}
+
+/**
+ * Affiche la vue détail de la grille Qualimètre d'une enseigne :
+ * sélecteurs de magasin (filtrés à cette enseigne) et de zone, puis
+ * le contenu de la zone sélectionnée (voir _gqRender).
+ * @param {string} enseigne
+ * @returns {void}
+ */
+function showQualimetreEnseigneDetail(enseigne) {
+  _gqCurrentEnseigne = enseigne;
+
+  if (el('gq-cards-view'))  el('gq-cards-view').style.display  = 'none';
+  if (el('gq-detail-view')) el('gq-detail-view').style.display = '';
+  if (el('gq-detail-ttl'))  el('gq-detail-ttl').textContent    = _qmEnseigneLabel(enseigne);
+
   _buildGqZoneSelect();
-  _buildGqMagSelect();
+  _buildGqMagSelect(enseigne);
   _gqRender();
+}
+
+/**
+ * Rafraîchit la vue actuellement affichée : le détail de l'enseigne
+ * en cours (_gqCurrentEnseigne) si une est sélectionnée, sinon la vue
+ * d'ensemble par enseigne. Centralise le retour après une action
+ * (sauvegarde, suppression, import, renommage de zone) sans jamais
+ * perdre le contexte d'édition en cours.
+ * @returns {void}
+ */
+function _gqRefreshCurrentView() {
+  if (_gqCurrentEnseigne) showQualimetreEnseigneDetail(_gqCurrentEnseigne);
+  else showGrilleQualimetre();
 }
 
 /** @returns {void} */
@@ -212,7 +373,7 @@ function onGqZoneChange() { _gqRender(); }
 
 /**
  * Peuple le select de zones (QM_ZONES + zones ad hoc présentes dans
- * qualimetreGlobal).
+ * qualimetreGlobal, toutes enseignes confondues).
  * @returns {void}
  */
 function _buildGqZoneSelect() {
@@ -227,11 +388,16 @@ function _buildGqZoneSelect() {
 }
 
 /**
- * Peuple le select de magasins visibles, en préservant la sélection
- * courante si elle reste valide.
+ * Peuple le select de magasins de la vue détail, restreint aux
+ * magasins de l'enseigne actuellement affichée (_gqCurrentEnseigne).
+ * La clé réservée '__sans_enseigne__' n'affiche jamais de magasin
+ * (aucun magasin réel n'y est automatiquement rattaché — voir
+ * getQualimetrePoints) : seule la grille commune "orpheline" reste
+ * éditable, en attendant réaffectation manuelle par l'admin.
+ * @param {string} enseigne
  * @returns {void}
  */
-function _buildGqMagSelect() {
+function _buildGqMagSelect(enseigne) {
   const select = el('gq-mag-sel');
   if (!select) return;
 
@@ -239,17 +405,22 @@ function _buildGqMagSelect() {
   const currentValue = select.value;
   while (select.options.length > 1) select.remove(1);
 
-  DB.magasins
-    .filter(m => visibleMids().includes(m.id))
-    .forEach(m => {
-      const option = document.createElement('option');
-      option.value       = m.id;
-      option.textContent = m.nom;
-      select.appendChild(option);
-    });
+  if (enseigne !== '__sans_enseigne__') {
+    DB.magasins
+      .filter(m => visibleMids().includes(m.id))
+      .filter(m => m.enseigne === enseigne)
+      .forEach(m => {
+        const option = document.createElement('option');
+        option.value       = m.id;
+        option.textContent = m.nom;
+        select.appendChild(option);
+      });
+  }
 
   if (currentValue && [...select.options].some(o => o.value === currentValue)) {
     select.value = currentValue;
+  } else {
+    select.value = '';
   }
 }
 
@@ -300,18 +471,22 @@ function renameQmZone(zoneId, newLabel) {
 }
 
 /**
- * Fusionne QM_ZONES avec les zones présentes dans qualimetreGlobal
- * (zones "ad hoc" créées via import, sans métadonnées emoji/label),
- * en appliquant tout renommage manuel persistant (voir
- * _resolveZoneLabel).
+ * Fusionne QM_ZONES avec les zones présentes dans qualimetreGlobal,
+ * toutes enseignes confondues (zones "ad hoc" créées via import, sans
+ * métadonnées emoji/label), en appliquant tout renommage manuel
+ * persistant (voir _resolveZoneLabel).
  * @returns {QMZone[]}
  */
 function _getAllZones() {
-  /** @type {string[]} */
-  const globalZoneIds = Object.keys(DB.qualimetreGlobal || {});
+  /** @type {Set<string>} */
+  const globalZoneIds = new Set();
+  Object.values(DB.qualimetreGlobal || {}).forEach(zonesMap => {
+    Object.keys(zonesMap || {}).forEach(id => globalZoneIds.add(id));
+  });
+
   return [
     ...QM_ZONES.map(z => ({ ...z, label: _resolveZoneLabel(z.id, z.label) })),
-    ...globalZoneIds
+    ...[...globalZoneIds]
       .filter(id => !QM_ZONES.find(z => z.id === id))
       .map(id => ({ id, emoji: '', label: _resolveZoneLabel(id, id) })),
   ];
@@ -319,7 +494,9 @@ function _getAllZones() {
 
 /**
  * Affiche le contenu de la zone Qualimètre sélectionnée (barre de
- * source + liste des points), ou un état vide si aucun point.
+ * comptage + liste des points, fusion commun + magasin comprise),
+ * dans le contexte de l'enseigne actuellement affichée
+ * (_gqCurrentEnseigne), ou un état vide si aucun point.
  * @returns {void}
  */
 function _gqRender() {
@@ -333,14 +510,8 @@ function _gqRender() {
   _gqUpdateAdminButtons(isAdmin);
   _gqUpdateScopeLabel(storeId);
 
-  /** @type {GrillePoint[]} */
-  const points         = getQualimetrePoints(storeId || null, zoneId);
-  /** @type {boolean} */
-  const isCustomStore  = storeId && (DB.qualimetreCustom?.[storeId]?.[zoneId] || []).length > 0;
-  /** @type {boolean} */
-  const isCustomGlobal = (DB.qualimetreGlobal?.[zoneId] || []).length > 0;
-  /** @type {boolean} */
-  const isBase         = !isCustomStore && !isCustomGlobal;
+  /** @type {(GrillePoint & {_scope: 'common'|'store'})[]} */
+  const points = getQualimetrePoints(storeId || null, zoneId, _gqCurrentEnseigne);
 
   const body = el('gq-body');
   if (!body) return;
@@ -358,7 +529,7 @@ function _gqRender() {
   }
 
   body.innerHTML =
-    _buildGqSourceBar(isCustomStore, isCustomGlobal, isBase, isAdmin, storeId, zoneId, points.length) +
+    _buildGqSourceBar(points.length, isAdmin, storeId, zoneId) +
     points.map(point => _buildGqPointRow(point, isAdmin, storeId, zoneId)).join('');
 }
 
@@ -376,81 +547,92 @@ function _gqUpdateAdminButtons(isAdmin) {
 }
 
 /**
- * Met à jour le libellé indiquant la portée de la grille affichée
- * (magasin spécifique ou grille globale).
- * @param {string} storeId - Référence vers Magasin.id, ou chaîne vide pour la grille globale.
+ * Met à jour le libellé indiquant la portée de la grille affichée :
+ * grille commune de l'enseigne actuelle, ou grille d'un magasin
+ * précis (dans ce cas toujours fusionnée avec la grille commune de
+ * son enseigne — voir getQualimetrePoints).
+ * @param {string} storeId - Référence vers Magasin.id, ou chaîne vide pour la grille commune de l'enseigne.
  * @returns {void}
  */
 function _gqUpdateScopeLabel(storeId) {
   const scopeEl = el('gq-scope-label');
   if (!scopeEl) return;
+  /** @type {string} */
+  const enseigneLabel = _qmEnseigneLabel(_gqCurrentEnseigne);
   if (storeId) {
     /** @type {Magasin | undefined} */
     const store = DB.magasins.find(m => m.id === storeId);
-    scopeEl.innerHTML = `Grille personnalisée pour <strong>${store ? store.nom : storeId}</strong>`;
+    scopeEl.innerHTML = `Grille de <strong>${store ? store.nom : storeId}</strong> — points propres fusionnés avec la grille commune de <strong>${enseigneLabel}</strong>`;
   } else {
-    scopeEl.innerHTML = `Grille <strong>globale</strong> (appliquée à tous les magasins sans personnalisation)`;
+    scopeEl.innerHTML = `Grille <strong>commune</strong> de l'enseigne <strong>${enseigneLabel}</strong> (héritée par tous ses magasins, en plus de leurs éventuels points propres)`;
   }
 }
 
 /**
- * Construit la barre d'info indiquant la source de la grille
- * affichée, avec un bouton de réinitialisation pour les admins si
- * la zone n'est pas au référentiel de base.
- * @param {boolean} isCustomStore
- * @param {boolean} isCustomGlobal
- * @param {boolean} isBase
- * @param {boolean} isAdmin
- * @param {string} storeId
- * @param {string} zoneId
+ * Construit la barre d'info au-dessus de la liste des points d'une
+ * zone (nombre total, bouton de réinitialisation pour les admins).
+ * ⚠️ CHANGÉ : la fusion commun + magasin rend obsolète l'ancien badge
+ * de source unique (personnalisé/global/base) — chaque point porte
+ * désormais son propre badge de portée (voir _buildGqPointRow).
  * @param {number} pointCount
+ * @param {boolean} isAdmin
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune de l'enseigne.
+ * @param {string} zoneId - Référence vers QMZone.id.
  * @returns {string}
  */
-function _buildGqSourceBar(isCustomStore, isCustomGlobal, isBase, isAdmin, storeId, zoneId, pointCount) {
+function _buildGqSourceBar(pointCount, isAdmin, storeId, zoneId) {
   /** @type {string} */
-  const badge = isCustomStore
-    ? `<span style="background:#ede9fe;color:#6d28d9;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Personnalisé magasin</span>`
-    : isCustomGlobal
-      ? `<span style="background:#f0fdf4;color:#15803d;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Grille globale</span>`
-      : `<span style="background:#f1f5f9;color:#64748b;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Référentiel de base</span>`;
-
-  /** @type {string} */
-  const resetBtn = isAdmin && !isBase
+  const resetBtn = isAdmin
     ? `<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="_gqResetZone('${storeId || ''}','${zoneId}')">
          <i class="ti ti-refresh"></i> Réinitialiser cette zone
        </button>`
     : '';
 
   return `<div style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)">
-    ${badge}
     <span class="tsm tm">${pointCount} point(s)</span>
     ${resetBtn}
   </div>`;
 }
 
 /**
- * Construit la ligne HTML d'un point de contrôle Qualimètre, avec
- * boutons modifier/supprimer pour les admins.
- * @param {GrillePoint} point
+ * Construit la ligne HTML d'un point de contrôle Qualimètre, avec un
+ * badge indiquant sa portée réelle (commun à l'enseigne, ou propre au
+ * magasin affiché) et des boutons modifier/supprimer pour les admins
+ * qui agissent TOUJOURS sur la portée réelle du point — jamais sur le
+ * magasin affiché si le point est commun (voir getQualimetrePoints).
+ * @param {GrillePoint & {_scope: 'common'|'store'}} point
  * @param {boolean} isAdmin
- * @param {string} storeId
+ * @param {string} storeId - Magasin actuellement affiché (peut différer de la portée réelle du point si celui-ci est commun).
  * @param {string} zoneId
  * @returns {string}
  */
 function _buildGqPointRow(point, isAdmin, storeId, zoneId) {
   /** @type {string} */
+  const scopeBadge = point._scope === 'common'
+    ? `<span style="background:#f0fdf4;color:#15803d;border-radius:12px;padding:1px 8px;font-size:10px;font-weight:600;white-space:nowrap">Commun enseigne</span>`
+    : `<span style="background:#ede9fe;color:#6d28d9;border-radius:12px;padding:1px 8px;font-size:10px;font-weight:600;white-space:nowrap">Personnalisé magasin</span>`;
+
+  // Un point commun se modifie/supprime toujours au niveau de
+  // l'enseigne, jamais du magasin affiché — voir getQualimetrePoints.
+  /** @type {string} */
+  const actionStoreId = point._scope === 'common' ? '' : storeId;
+
+  /** @type {string} */
   const actionButtons = isAdmin
-    ? `<button class="btn btn-secondary btn-sm" onclick="openGqCtrlModal('${storeId || ''}','${zoneId}','${point.id}')" aria-label="Modifier">
+    ? `<button class="btn btn-secondary btn-sm" onclick="openGqCtrlModal('${actionStoreId || ''}','${zoneId}','${point.id}')" aria-label="Modifier">
          <i class="ti ti-pencil"></i>
        </button>
-       <button class="btn btn-danger btn-sm" onclick="delGqCtrl('${storeId || ''}','${zoneId}','${point.id}')" aria-label="Supprimer">
+       <button class="btn btn-danger btn-sm" onclick="delGqCtrl('${actionStoreId || ''}','${zoneId}','${point.id}')" aria-label="Supprimer">
          <i class="ti ti-trash"></i>
        </button>`
     : '';
 
   return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
     <div style="flex:1;min-width:0">
-      <div style="font-size:13px;font-weight:500">${point.q}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="font-size:13px;font-weight:500">${point.q}</div>
+        ${scopeBadge}
+      </div>
       ${point.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;font-style:italic">${point.prec}</div>` : ''}
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
@@ -525,8 +707,11 @@ function _buildGqCtrlZoneSelect(selectedZoneId) {
 }
 
 /**
- * Peuple le select de magasins de la modale d'édition de point
- * (option "Tous les magasins" pour la portée globale).
+ * Peuple le select de magasins de la modale d'édition de point,
+ * restreint aux magasins de l'enseigne actuellement affichée
+ * (_gqCurrentEnseigne) — un point "portée magasin" créé depuis cette
+ * page ne peut viser qu'un magasin de cette enseigne, jamais un autre
+ * (option "Tous les magasins de l'enseigne" pour la portée commune).
  * @param {string} selectedStoreId
  * @returns {void}
  */
@@ -534,17 +719,19 @@ function _buildGqCtrlMagSelect(selectedStoreId) {
   const select = el('gqc-mag-sel');
   if (!select) return;
   select.innerHTML =
-    '<option value="">— Tous les magasins —</option>' +
+    '<option value="">— Tous les magasins de l\'enseigne —</option>' +
     DB.magasins
       .filter(m => visibleMids().includes(m.id))
+      .filter(m => m.enseigne === _gqCurrentEnseigne)
       .map(m => `<option value="${m.id}"${m.id === selectedStoreId ? ' selected' : ''}>${m.nom}</option>`)
       .join('');
 }
 
 /**
  * Pré-remplit le formulaire avec les données d'un point existant
- * (recherché dans qualimetreCustom[storeId][zoneId], sinon
- * qualimetreGlobal[zoneId]).
+ * (recherché dans qualimetreCustom[storeId][zoneId], sinon dans la
+ * grille commune de l'enseigne courante,
+ * qualimetreGlobal[_gqCurrentEnseigne][zoneId]).
  * @param {string} storeId
  * @param {string} zoneId
  * @param {string} pointId - Référence vers GrillePoint.id.
@@ -555,8 +742,8 @@ function _populateGqCtrlForm(storeId, zoneId, pointId) {
   let points = [];
   if (storeId && DB.qualimetreCustom?.[storeId]?.[zoneId]) {
     points = DB.qualimetreCustom[storeId][zoneId];
-  } else if (DB.qualimetreGlobal?.[zoneId]) {
-    points = DB.qualimetreGlobal[zoneId];
+  } else if (_gqCurrentEnseigne && DB.qualimetreGlobal?.[_gqCurrentEnseigne]?.[zoneId]) {
+    points = DB.qualimetreGlobal[_gqCurrentEnseigne][zoneId];
   }
 
   /** @type {GrillePoint | undefined} */
@@ -644,13 +831,15 @@ function saveGqCtrl() {
   if (el('gq-mag-sel')  && storeId) el('gq-mag-sel').value  = storeId;
   if (el('gq-zone-sel') && zoneId)  el('gq-zone-sel').value = zoneId;
 
-  showGrilleQualimetre();
+  _gqRefreshCurrentView();
 }
 
 /**
- * Insère ou met à jour un point dans le store approprié (magasin ou
- * global), avec lazy-init des niveaux intermédiaires manquants.
- * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * Insère ou met à jour un point dans le store approprié : la grille
+ * personnalisée du magasin (storeId fourni), ou la grille commune de
+ * l'enseigne actuellement affichée (_gqCurrentEnseigne, storeId
+ * vide) — avec lazy-init des niveaux intermédiaires manquants.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille commune de l'enseigne courante.
  * @param {string} zoneId - Référence vers QMZone.id.
  * @param {string} existingId - Référence vers GrillePoint.id à mettre à jour ; chaîne vide pour une création.
  * @param {GrillePoint} newPoint
@@ -663,9 +852,11 @@ function _upsertQualimetrePoint(storeId, zoneId, existingId, newPoint) {
     if (!DB.qualimetreCustom[storeId][zoneId]) DB.qualimetreCustom[storeId][zoneId] = [];
     _upsertInArray(DB.qualimetreCustom[storeId][zoneId], existingId, newPoint);
   } else {
+    if (!_gqCurrentEnseigne) return; // garde-fou : jamais de grille commune sans enseigne sélectionnée
     if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
-    if (!DB.qualimetreGlobal[zoneId]) DB.qualimetreGlobal[zoneId] = [];
-    _upsertInArray(DB.qualimetreGlobal[zoneId], existingId, newPoint);
+    if (!DB.qualimetreGlobal[_gqCurrentEnseigne]) DB.qualimetreGlobal[_gqCurrentEnseigne] = {};
+    if (!DB.qualimetreGlobal[_gqCurrentEnseigne][zoneId]) DB.qualimetreGlobal[_gqCurrentEnseigne][zoneId] = [];
+    _upsertInArray(DB.qualimetreGlobal[_gqCurrentEnseigne][zoneId], existingId, newPoint);
   }
 }
 
@@ -693,9 +884,10 @@ function _upsertInArray(array, existingId, newItem) {
 // ─────────────────────────────────────────────
 
 /**
- * Supprime un point de contrôle Qualimètre (magasin ou global),
+ * Supprime un point de contrôle Qualimètre (magasin, ou grille
+ * commune de l'enseigne actuellement affichée si storeId est vide),
  * après confirmation.
- * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille commune de l'enseigne courante.
  * @param {string} zoneId - Référence vers QMZone.id.
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @returns {void}
@@ -707,35 +899,35 @@ function delGqCtrl(storeId, zoneId, pointId) {
     if (!DB.qualimetreCustom?.[storeId]) return;
     DB.qualimetreCustom[storeId][zoneId] = (DB.qualimetreCustom[storeId][zoneId] || []).filter(p => p.id !== pointId);
   } else {
-    if (!DB.qualimetreGlobal) return;
-    DB.qualimetreGlobal[zoneId] = (DB.qualimetreGlobal[zoneId] || []).filter(p => p.id !== pointId);
+    if (!_gqCurrentEnseigne || !DB.qualimetreGlobal?.[_gqCurrentEnseigne]) return;
+    DB.qualimetreGlobal[_gqCurrentEnseigne][zoneId] = (DB.qualimetreGlobal[_gqCurrentEnseigne][zoneId] || []).filter(p => p.id !== pointId);
   }
 
   save(['qualimetreCustom', 'qualimetreGlobal']);
-  showGrilleQualimetre();
+  _gqRefreshCurrentView();
 }
 
 /**
  * Réinitialise (supprime tous les points de) une zone, pour la
- * personnalisation magasin ou la grille globale selon `storeId`,
- * après confirmation.
- * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
+ * personnalisation magasin ou la grille commune de l'enseigne
+ * actuellement affichée selon `storeId`, après confirmation.
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille commune de l'enseigne courante.
  * @param {string} zoneId - Référence vers QMZone.id.
  * @returns {void}
  */
 function _gqResetZone(storeId, zoneId) {
   /** @type {string} */
-  const scopeLabel = storeId ? 'la personnalisation magasin' : 'la grille globale';
+  const scopeLabel = storeId ? 'la personnalisation magasin' : `la grille commune de l'enseigne « ${_qmEnseigneLabel(_gqCurrentEnseigne)} »`;
   if (!confirm(`Réinitialiser ${scopeLabel} pour cette zone ? Les points seront supprimés.`)) return;
 
   if (storeId) {
     if (DB.qualimetreCustom?.[storeId]) delete DB.qualimetreCustom[storeId][zoneId];
-  } else {
-    if (DB.qualimetreGlobal) delete DB.qualimetreGlobal[zoneId];
+  } else if (_gqCurrentEnseigne && DB.qualimetreGlobal?.[_gqCurrentEnseigne]) {
+    delete DB.qualimetreGlobal[_gqCurrentEnseigne][zoneId];
   }
 
   save(['qualimetreCustom', 'qualimetreGlobal']);
-  showGrilleQualimetre();
+  _gqRefreshCurrentView();
 }
 
 /**
@@ -765,7 +957,7 @@ function openRenameZonePrompt() {
   }
 
   save(['qualimetreZoneLabels']);
-  showGrilleQualimetre();
+  _gqRefreshCurrentView();
 }
 
 // ─────────────────────────────────────────────
@@ -795,7 +987,7 @@ function exportGrilleCSV() {
   /** @type {string} */
   const storeId = v('gq-mag-sel') || '';
   /** @type {QMZoneWithPoints[]} */
-  const grille  = getQualimetreGrille(storeId || null);
+  const grille  = getQualimetreGrille(storeId || null, _gqCurrentEnseigne);
 
   /** @type {(string|number)[][]} */
   const rows = [['zone', 'question', 'precision', 'criticite', 'poids']];
@@ -826,11 +1018,16 @@ function exportGrilleCSV() {
 // ─────────────────────────────────────────────
 
 /**
- * Ouvre la modale d'import de grille Qualimètre, réinitialise
- * l'état d'import et peuple le select de magasins cibles.
+ * Ouvre la modale d'import de grille Qualimètre, réinitialise l'état
+ * d'import et peuple le select de magasins cibles — restreint aux
+ * magasins de l'enseigne actuellement affichée (_gqCurrentEnseigne),
+ * puisque l'import se fait toujours depuis le contexte d'une enseigne
+ * précise (voir showQualimetreEnseigneDetail).
  * @returns {void}
  */
 function openGqImportModal() {
+  if (!_gqCurrentEnseigne) { showToast('Sélectionnez une enseigne avant d\'importer.', 'warning'); return; }
+
   _gqImportData = [];
   _gqRawRows    = [];
   _gqDetection  = null;
@@ -839,13 +1036,15 @@ function openGqImportModal() {
   el('gq-import-preview').innerHTML = '';
   el('gq-import-err').classList.remove('show');
   if (el('gqi-default-crit')) el('gqi-default-crit').value = 'Majeure';
+  if (el('gqi-ens-lbl')) el('gqi-ens-lbl').textContent = _qmEnseigneLabel(_gqCurrentEnseigne);
 
   const magSelect = el('gqi-mag-sel');
   if (magSelect) {
     magSelect.innerHTML =
-      '<option value="">— Tous les magasins (global) —</option>' +
+      `<option value="">— Grille commune de l'enseigne —</option>` +
       DB.magasins
         .filter(m => visibleMids().includes(m.id))
+        .filter(m => m.enseigne === _gqCurrentEnseigne)
         .map(m => `<option value="${m.id}">${m.nom}</option>`)
         .join('');
   }
@@ -1362,8 +1561,10 @@ function confirmGqImport() {
     if (!DB.qualimetreCustom[storeId]) DB.qualimetreCustom[storeId] = {};
     _applyImportToStore(DB.qualimetreCustom[storeId]);
   } else {
+    if (!_gqCurrentEnseigne) { _gqImportErr('Aucune enseigne sélectionnée.'); return; }
     if (!DB.qualimetreGlobal) DB.qualimetreGlobal = {};
-    _applyImportToStore(DB.qualimetreGlobal);
+    if (!DB.qualimetreGlobal[_gqCurrentEnseigne]) DB.qualimetreGlobal[_gqCurrentEnseigne] = {};
+    _applyImportToStore(DB.qualimetreGlobal[_gqCurrentEnseigne]);
   }
 
   save(['qualimetreCustom', 'qualimetreGlobal']);
@@ -1371,7 +1572,7 @@ function confirmGqImport() {
   showToast(`Grille Qualimètre importée (${_gqImportData.length} point(s))`, 'success');
   _gqImportData = [];
   _gqZoneReplaceFlags = {};
-  showGrilleQualimetre();
+  _gqRefreshCurrentView();
 }
 
 /**

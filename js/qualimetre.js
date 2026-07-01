@@ -8,12 +8,14 @@
 // 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
 //    ⚠️ Déduits de l'usage dans ce fichier.
 //
-//    ⚠️ PRÉCISION À REPORTER DANS storage.js : ce fichier révèle que
-//    DB.qualimetreCustom est en réalité un dictionnaire à 2 niveaux
-//    (storeId → zoneId → GrillePoint[]), et DB.qualimetreGlobal un
-//    dictionnaire à 1 niveau (zoneId → GrillePoint[]) — alors que
-//    storage.js, faute d'information à l'époque, les typait en
-//    Record<string, unknown> génériques. Non modifié ici sans accord.
+//    ⚠️ CHANGÉ : DB.qualimetreGlobal n'est plus une grille unique
+//    partagée par toute la base — chaque enseigne a désormais sa
+//    propre grille commune (voir QualimetreGlobalMap ci-dessous et
+//    getQualimetrePoints, grille-qualimetre.js). Les points d'un
+//    magasin personnalisé s'ajoutent à ceux de la grille commune de
+//    son enseigne (fusion) : chaque point affiché ici porte donc un
+//    champ `_scope` indiquant sa portée réelle (voir
+//    _buildQualimetrePointRow).
 // ─────────────────────────────────────────────
 
 /**
@@ -53,9 +55,12 @@
  */
 
 /**
- * Dictionnaire des points Qualimètre globaux (appliqués à tous les
- * magasins sans personnalisation propre), indexé par QMZone.id.
- * @typedef {Record<string, GrillePoint[]>} QualimetreGlobalMap
+ * Dictionnaire des points Qualimètre communs, indexé par nom
+ * d'enseigne PUIS par QMZone.id — chaque enseigne a sa propre grille
+ * commune, héritée par tous ses magasins et fusionnée avec leurs
+ * éventuels points propres (jamais un remplacement — voir
+ * getQualimetrePoints, grille-qualimetre.js).
+ * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreGlobalMap
  */
 
 // ─────────────────────────────────────────────
@@ -165,7 +170,7 @@ function showQualimetre() {
   }
 
   el('qual-body').innerHTML =
-    _buildSourceBadgeBar(storeId, zoneId, points.length) +
+    _buildPointCountBar(points.length) +
     points.map(point => _buildQualimetrePointRow(point)).join('');
 }
 
@@ -187,44 +192,40 @@ function _buildEmptyState(iconClass, message) {
 }
 
 /**
- * Construit la barre d'info indiquant la source de la grille
- * (personnalisée magasin, globale ou référentiel de base).
- * @param {string} storeId - Référence vers Magasin.id.
- * @param {string} zoneId - Référence vers QMZone.id.
+ * Construit la barre indiquant le nombre de points de contrôle
+ * affichés. ⚠️ CHANGÉ : la grille commune de l'enseigne et les points
+ * propres au magasin sont désormais fusionnés (voir
+ * getQualimetrePoints, grille-qualimetre.js) — chaque point porte
+ * donc son propre badge de portée (voir _buildQualimetrePointRow) au
+ * lieu d'un badge de source unique pour toute la zone.
  * @param {number} pointCount
  * @returns {string}
  */
-function _buildSourceBadgeBar(storeId, zoneId, pointCount) {
-  /** @type {boolean} */
-  const isCustomStore = storeId &&
-    DB.qualimetreCustom &&
-    (DB.qualimetreCustom[storeId]?.[zoneId] || []).length > 0;
-
-  /** @type {boolean} */
-  const isCustomGlobal = (DB.qualimetreGlobal?.[zoneId] || []).length > 0;
-
-  /** @type {string} */
-  const badge = isCustomStore
-    ? `<span style="background:#ede9fe;color:#6d28d9;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Personnalisé</span>`
-    : isCustomGlobal
-      ? `<span style="background:#f0fdf4;color:#15803d;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Grille globale</span>`
-      : `<span style="background:#f1f5f9;color:#64748b;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600">Référentiel de base</span>`;
-
+function _buildPointCountBar(pointCount) {
   return `<div style="display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--border)">
-    ${badge}
     <span class="tsm tm">${pointCount} point(s)</span>
   </div>`;
 }
 
 /**
- * Construit la ligne HTML d'un point de contrôle Qualimètre.
- * @param {GrillePoint} point
+ * Construit la ligne HTML d'un point de contrôle Qualimètre, avec un
+ * badge indiquant sa portée réelle (commun à l'enseigne du magasin,
+ * ou personnalisé pour ce magasin précis).
+ * @param {GrillePoint & {_scope: 'common'|'store'}} point
  * @returns {string}
  */
 function _buildQualimetrePointRow(point) {
+  /** @type {string} */
+  const scopeBadge = point._scope === 'common'
+    ? `<span style="background:#f0fdf4;color:#15803d;border-radius:12px;padding:1px 8px;font-size:10px;font-weight:600;white-space:nowrap">Commun enseigne</span>`
+    : `<span style="background:#ede9fe;color:#6d28d9;border-radius:12px;padding:1px 8px;font-size:10px;font-weight:600;white-space:nowrap">Personnalisé magasin</span>`;
+
   return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border)">
     <div style="flex:1;min-width:0">
-      <div style="font-size:13px;font-weight:500">${point.q}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="font-size:13px;font-weight:500">${point.q}</div>
+        ${scopeBadge}
+      </div>
       ${point.prec ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;font-style:italic">${point.prec}</div>` : ''}
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">

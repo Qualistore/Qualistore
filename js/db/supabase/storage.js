@@ -141,15 +141,26 @@
  */
 
 /**
- * Dictionnaire de configuration "qualimètre" globale, indexé par nom
+ * Dictionnaire de configuration "qualimètre" commune, indexé par nom
  * d'enseigne PUIS par QMZone.id. ⚠️ CHANGÉ : était indexé directement
  * par QMZone.id (Record<zoneId, GrillePoint[]>), une seule grille
  * partagée par toute la base — devenu Record<enseigne, Record<zoneId,
- * GrillePoint[]>>, chaque enseigne ayant sa propre grille globale
+ * GrillePoint[]>>, chaque enseigne ayant sa propre grille commune
  * indépendante (même principe que GrilleCustomMap, FSQS). Un magasin
- * sans enseigne renseignée n'a accès à aucune grille globale (voir
+ * sans enseigne renseignée n'a accès à aucune grille commune (voir
  * getQualimetrePoints, grille-qualimetre.js) — uniquement à sa grille
- * personnalisée propre si elle existe (DB.qualimetreCustom).
+ * personnalisée propre si elle existe (DB.qualimetreCustom). Les
+ * points d'un magasin personnalisé s'AJOUTENT à ceux de la grille
+ * commune de son enseigne (fusion, jamais un remplacement — même
+ * principe que getGrille, grille.js).
+ *
+ * La clé réservée '__sans_enseigne__' n'est jamais créée par
+ * l'application elle-même : elle n'existe que si l'ancien format plat
+ * (une seule grille globale, avant cette évolution) contenait des
+ * données au moment de la migration — voir
+ * _migrateQualimetreGlobalToEnseigneScoped. Elle reste éditable
+ * normalement (comme n'importe quelle enseigne) le temps que l'admin
+ * réaffecte manuellement ces points à une vraie enseigne.
  * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreGlobalMap
  */
 
@@ -316,6 +327,8 @@ async function loadDB() {
   /** @type {DB | null} */
   const localCache = _loadFromLocalStorage();
   if (localCache) DB = localCache;
+  // Migration non destructive — sûre à appeler même si déjà migrée.
+  if (DB.qualimetreGlobal) DB.qualimetreGlobal = _migrateQualimetreGlobalToEnseigneScoped(DB.qualimetreGlobal);
 
   try {
     /** @type {[User[], Magasin[], Audit[], NC[], Action[], Alerte[], SupabaseRow[], QualAudit[], SupabaseRow[], Draft[]]} */
@@ -344,7 +357,7 @@ async function loadDB() {
       magasinRayons:    _parseMagasinRayons(grilleRows),
       enseignes:        _parseEnseignes(grilleRows),
       qualimetreCustom: _parseQualimetreCustom(qualRows),
-      qualimetreGlobal: _parseQualimetreGlobal(qualRows),
+      qualimetreGlobal: _migrateQualimetreGlobalToEnseigneScoped(_parseQualimetreGlobal(qualRows)),
       qualimetreZoneLabels: _parseQualimetreZoneLabels(qualRows),
       qualAudits: qualAudits || [],
     };
@@ -537,6 +550,42 @@ function _parseQualimetreCustom(rows) {
 function _parseQualimetreGlobal(rows) {
   const globalRow = (rows || []).find(row => row.mid === '__global__');
   return globalRow ? globalRow.data : {};
+}
+
+/**
+ * Migre DB.qualimetreGlobal de l'ancien format plat
+ * (Record<zoneId, GrillePoint[]>, une seule grille partagée par toute
+ * la base) vers le nouveau format par enseigne
+ * (Record<enseigne, Record<zoneId, GrillePoint[]>>) — voir le typedef
+ * QualimetreGlobalMap.
+ *
+ * ⚠️ AUCUNE DONNÉE SUPPRIMÉE : les points de l'ancien format sont
+ * conservés intégralement sous la clé réservée '__sans_enseigne__',
+ * visible et éditable comme n'importe quelle enseigne dans la page
+ * Grille Qualimètre (voir grille-qualimetre.js), en attendant une
+ * réaffectation manuelle par l'admin vers une enseigne réelle. Aucune
+ * règle ne devine automatiquement à quelle enseigne ces points
+ * appartenaient — ce serait une règle métier codée en dur que rien
+ * dans les données ne permet de justifier.
+ *
+ * Idempotente et sûre à appeler à chaque chargement : sans effet si
+ * `raw` est vide, ou déjà au nouveau format (détecté par la forme de
+ * sa première valeur — un tableau signale l'ancien format plat, un
+ * objet le nouveau format déjà migré).
+ * @param {Record<string, unknown> | null | undefined} raw - Valeur brute de qualimetreGlobal, ancien ou nouveau format.
+ * @returns {QualimetreGlobalMap}
+ */
+function _migrateQualimetreGlobalToEnseigneScoped(raw) {
+  if (!raw || !Object.keys(raw).length) return raw || {};
+
+  /** @type {unknown} */
+  const firstValue = Object.values(raw)[0];
+  /** @type {boolean} */
+  const isOldFlatFormat = Array.isArray(firstValue);
+  if (!isOldFlatFormat) return raw;
+
+  console.warn('⚠️ Migration qualimetreGlobal : ancien format plat détecté, conservé intégralement sous "__sans_enseigne__" (aucune donnée supprimée).');
+  return { __sans_enseigne__: raw };
 }
 
 /**

@@ -386,36 +386,44 @@
 
 <!-- GRILLE QUALIMÈTRE -->
       <div class="page" id="page-grille-qualimetre">
-        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
-          <div>
-            <div style="font-size:18px;font-weight:700;color:var(--text)"><i class="ti ti-adjustments" style="color:var(--qual)"></i> Grille Qualimètre</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:2px">Gérez les points de contrôle par zone — global ou par magasin</div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button id="gq-btn-import" class="btn btn-secondary btn-sm" onclick="openGqImportModal()" style="display:none"><i class="ti ti-upload"></i> Importer</button>
-            <button id="gq-btn-add" class="btn btn-primary btn-sm" onclick="openGqCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
-          </div>
+        <!-- Vue cartes : une carte par enseigne -->
+        <div id="gq-cards-view">
+          <div id="gq-cards-grid" class="grid-3"></div>
+          <div class="tsm tm" id="gq-cards-empty" style="display:none;text-align:center;padding:40px 20px">Aucune enseigne pour l'instant. Créez-en une depuis la page Enseignes pour commencer.</div>
         </div>
-        <div class="card" style="margin-bottom:16px">
-          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:14px 18px">
-            <div style="flex:1;min-width:180px">
-              <label class="form-label">Magasin</label>
-              <select class="form-control" id="gq-mag-sel" onchange="onGqMagChange()">
-                <option value="">— Global (tous magasins) —</option>
-              </select>
+
+        <!-- Vue détail : grille Qualimètre d'une enseigne -->
+        <div id="gq-detail-view" style="display:none">
+          <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+            <button class="btn btn-primary" style="font-weight:600" onclick="showGrilleQualimetre()"><i class="ti ti-arrow-left" style="font-size:16px"></i> Retour aux enseignes</button>
+            <div style="display:flex;gap:8px">
+              <button id="gq-btn-import" class="btn btn-secondary btn-sm" onclick="openGqImportModal()" style="display:none"><i class="ti ti-upload"></i> Importer</button>
+              <button id="gq-btn-add" class="btn btn-primary btn-sm" onclick="openGqCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
             </div>
-            <div style="flex:1;min-width:180px">
-              <label class="form-label">Zone</label>
-              <div style="display:flex;gap:6px;align-items:center">
-                <select class="form-control" id="gq-zone-sel" onchange="onGqZoneChange()" style="flex:1"></select>
-                <button class="btn btn-secondary btn-sm" id="btn-rename-zone" onclick="openRenameZonePrompt()" style="display:none" aria-label="Renommer la zone" title="Renommer la zone"><i class="ti ti-pencil"></i></button>
+          </div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:12px"><i class="ti ti-building" style="color:var(--qual)"></i> <span id="gq-detail-ttl"></span></div>
+          <div class="card" style="margin-bottom:16px">
+            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:14px 18px">
+              <div style="flex:1;min-width:180px">
+                <label class="form-label">Magasin</label>
+                <select class="form-control" id="gq-mag-sel" onchange="onGqMagChange()">
+                  <option value="">Grille commune de l'enseigne</option>
+                </select>
+              </div>
+              <div style="flex:1;min-width:180px">
+                <label class="form-label">Zone</label>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <select class="form-control" id="gq-zone-sel" onchange="onGqZoneChange()" style="flex:1"></select>
+                  <button class="btn btn-secondary btn-sm" id="btn-rename-zone" onclick="openRenameZonePrompt()" style="display:none" aria-label="Renommer la zone" title="Renommer la zone"><i class="ti ti-pencil"></i></button>
+                </div>
               </div>
             </div>
+            <div style="padding:4px 18px 12px;font-size:12px;color:var(--text2)" id="gq-scope-label"></div>
           </div>
-          <div style="padding:4px 18px 12px;font-size:12px;color:var(--text2)" id="gq-scope-label"></div>
+          <div class="card" id="gq-body"></div>
         </div>
-        <div class="card" id="gq-body"></div>
       </div>
+
 
       <!-- AUDIT QUALIMÈTRE -->
       <div class="page" id="page-audit-qualimetre">
@@ -1106,10 +1114,12 @@
     <div class="modal-body">
       <div class="alert alert-danger" id="gq-import-err"></div>
 
+      <div class="tsm tm" style="margin-bottom:12px">Enseigne : <strong id="gqi-ens-lbl" style="color:var(--text)"></strong></div>
+
       <div class="form-group">
         <label class="form-label">Appliquer à</label>
         <select class="form-control" id="gqi-mag-sel" onchange="_gqRenderImportPreview()">
-          <option value="">— Tous les magasins (global) —</option>
+          <option value="">— Grille commune de l'enseigne —</option>
         </select>
       </div>
 
