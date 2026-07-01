@@ -343,8 +343,8 @@ function showQualimetreEnseigneDetail(enseigne) {
   if (el('gq-detail-view')) el('gq-detail-view').style.display = '';
   if (el('gq-detail-ttl'))  el('gq-detail-ttl').textContent    = _qmEnseigneLabel(enseigne);
 
-  _buildGqZoneSelect();
   _buildGqMagSelect(enseigne);
+  _buildGqZoneSelect();
   _gqRender();
 }
 
@@ -369,17 +369,41 @@ function onGqZoneChange() { _gqRender(); }
 /**
  * Peuple le select de zones (QM_ZONES + zones ad hoc présentes dans
  * qualimetreGlobal, toutes enseignes confondues).
+ *
+ * ⚠️ CORRIGÉ : préserve désormais la sélection courante si elle reste
+ * valide (comme _buildGqMagSelect) ; à défaut, sélectionne la
+ * première zone qui contient réellement des points dans le contexte
+ * actuel (magasin sélectionné, sinon grille commune de l'enseigne)
+ * plutôt que systématiquement la toute première de la liste. Sans ce
+ * correctif, l'utilisateur atterrissait toujours sur "Référentiel
+ * Affichage" (premier élément de QM_ZONES) — zone qui, en pratique,
+ * n'a souvent aucun point importé (voir les limites connues de
+ * l'import PDF) — donnant l'impression trompeuse qu'un import n'a
+ * rien produit alors que les autres zones étaient bien remplies.
  * @returns {void}
  */
 function _buildGqZoneSelect() {
   const select = el('gq-zone-sel');
   if (!select) return;
 
+  /** @type {string} */
+  const currentValue = select.value;
   /** @type {QMZone[]} */
   const allZones = _getAllZones();
   select.innerHTML = allZones.map(zone =>
     `<option value="${zone.id}">${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}</option>`
   ).join('');
+
+  if (currentValue && allZones.some(z => z.id === currentValue)) {
+    select.value = currentValue;
+    return;
+  }
+
+  /** @type {string} */
+  const storeId = v('gq-mag-sel') || '';
+  /** @type {QMZone | undefined} */
+  const zoneWithPoints = allZones.find(zone => getQualimetrePoints(storeId || null, zone.id, _gqCurrentEnseigne).length > 0);
+  if (zoneWithPoints) select.value = zoneWithPoints.id;
 }
 
 /**
@@ -1544,6 +1568,13 @@ function confirmGqImport() {
 
   /** @type {string} */
   const storeId = el('gqi-mag-sel')?.value || '';
+  // Capturé avant réinitialisation de _gqImportData, pour naviguer
+  // vers une zone qui contient réellement les points qui viennent
+  // d'être importés (voir plus bas) — sans ça, la vue peut très bien
+  // rester sur une zone restée sélectionnée depuis avant l'import,
+  // vide, donnant l'impression trompeuse que rien n'a été importé.
+  /** @type {string | undefined} */
+  const firstImportedZoneId = _gqImportData[0]?.zoneId;
 
   if (storeId) {
     if (!DB.qualimetreCustom) DB.qualimetreCustom = {};
@@ -1562,6 +1593,14 @@ function confirmGqImport() {
   _gqImportData = [];
   _gqZoneReplaceFlags = {};
   _gqRefreshCurrentView();
+
+  // Navigation explicite vers une zone importée, PLUTÔT que de
+  // laisser _buildGqZoneSelect (appelé par _gqRefreshCurrentView)
+  // préserver une sélection antérieure potentiellement vide.
+  if (firstImportedZoneId && el('gq-zone-sel')) {
+    el('gq-zone-sel').value = firstImportedZoneId;
+    _gqRender();
+  }
 }
 
 /**
