@@ -163,7 +163,7 @@ const IMPORT_CONCEPT_DEFINITIONS = [
     concept: 'methode',
     headerPatterns: [
       /^(m[eé]thode|m[eé]thode de v[eé]rification|indication|modalit[eé]|pr[eé]cisions?)$/,
-      /m[eé]thode|indication|modalit[eé]|comment v[eé]rifier|protocole|pr[eé]cisions?/,
+      /m[eé]thode|indication|modalit[eé]|comment v[eé]rifier|protocole|pr[eé]cisions?|ce qu.{0,3}il faut v[eé]rifier|^[aà] v[eé]rifier|consigne/,
     ],
     contentScorer: null,
   },

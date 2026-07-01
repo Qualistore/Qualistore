@@ -107,7 +107,7 @@
  * @property {string} zoneId - Id de zone résolu (voir ResolvedZone, import-grille.js).
  * @property {string} zoneName - Valeur brute de zone telle que lue dans le fichier source, non résolue. Jamais perdue même si zoneId pointe vers "Non classé".
  * @property {string} q
- * @property {string} prec
+ * @property {string} prec - Méthode de contrôle / précision, initialisée depuis NormalizedImportRow.methode (colonne détectée par le concept 'methode' — ex : "Méthode", "Ce qu'il faut vérifier", "À vérifier" ; voir import-detect.js). Chaîne vide si aucune colonne de ce type n'a été détectée. ⚠️ CORRIGÉ : figée à '' auparavant, cette colonne était donc systématiquement perdue à l'import Qualimètre alors que le moteur FSQS (import-grille.js) la routait déjà correctement.
  * @property {GrilleCriticite} c
  * @property {number} p
  * @property {string} extra - Contenu des colonnes du document non reconnues comme un concept métier connu, concaténé pour ne perdre aucune information. Voir import-normalize.js.
@@ -1200,7 +1200,7 @@ function _buildGqParsedRows(normalized, mapping) {
     /** @type {ResolvedZone} */
     const zone  = _resolveOrCreateZoneFromDocument(row.rayon, '');
 
-    rows.push({ zoneId: zone.id, zoneName: row.rayon, q: row.q.trim(), prec: '', c: crit, p: poids, extra: row.extra || '', isDuplicate: false });
+    rows.push({ zoneId: zone.id, zoneName: row.rayon, q: row.q.trim(), prec: row.methode || '', c: crit, p: poids, extra: row.extra || '', isDuplicate: false });
   });
 
   /** @type {DuplicateMap} */
