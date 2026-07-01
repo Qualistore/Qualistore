@@ -281,6 +281,37 @@ function _scoreNumericContent(cellValues) {
 // ─────────────────────────────────────────────
 
 /**
+ * Collecte l'ensemble des en-têtes (clés) présents dans des lignes
+ * brutes, dans leur ordre de première apparition.
+ *
+ * ⚠️ CHANGÉ : ne se limite plus aux clés de la première ligne
+ * (Object.keys(rawRows[0])) — un document multi-sections (voir
+ * buildRawRowsFromCellRows, import-grille.js) peut légitimement
+ * produire des lignes aux en-têtes DIFFÉRENTS d'une section à l'autre
+ * (ex : une section dont l'en-tête n'a pas été reconnu retombe sur
+ * des en-têtes synthétiques "Colonne 1", "Colonne 2"..., tandis que
+ * les autres sections gardent leurs vrais en-têtes). Ne considérer
+ * que la première ligne pouvait faire retomber TOUT le mapping sur
+ * des en-têtes non pertinents si cette première ligne provenait
+ * justement d'une section mal reconnue — même si la majorité des
+ * lignes du document avaient des en-têtes parfaitement exploitables.
+ * @param {RawImportRow[]} rawRows
+ * @returns {string[]}
+ */
+function _collectAllHeaders(rawRows) {
+  /** @type {Set<string>} */
+  const seen = new Set();
+  /** @type {string[]} */
+  const headers = [];
+  rawRows.forEach(row => {
+    Object.keys(row).forEach(key => {
+      if (!seen.has(key)) { seen.add(key); headers.push(key); }
+    });
+  });
+  return headers;
+}
+
+/**
  * Détecte, pour chaque concept métier connu, la colonne la plus
  * probable du document, en combinant un score sur le nom d'en-tête
  * et (si défini) un score sur le contenu des cellules. Ne modifie
@@ -292,12 +323,12 @@ function _scoreNumericContent(cellValues) {
  * concepts), elle est attribuée au concept pour lequel son score est
  * le plus élevé, et le second concept reçoit sa meilleure colonne
  * restante (si elle dépasse le seuil).
- * @param {RawImportRow[]} rawRows - Lignes brutes ; la première ligne sert de référence pour les en-têtes (clés), les suivantes pour le scoring de contenu.
+ * @param {RawImportRow[]} rawRows - Lignes brutes ; l'union des clés de TOUTES les lignes sert de référence pour les en-têtes (voir _collectAllHeaders), le contenu des premières lignes pour le scoring de contenu.
  * @returns {DetectionResult}
  */
 function detectConceptMapping(rawRows) {
   /** @type {string[]} */
-  const headers = rawRows.length ? Object.keys(rawRows[0]) : [];
+  const headers = _collectAllHeaders(rawRows);
 
   /** @type {Record<ImportConcept, ConceptScore[]>} */
   const scoresByConcept = /** @type {Record<ImportConcept, ConceptScore[]>} */ ({});
@@ -446,27 +477,79 @@ function buildSyntheticHeaders(columnCount) {
  * (zone donnée en ligne plutôt qu'en colonne). Volontairement
  * extensible : ajouter un synonyme observé chez un client = ajouter
  * une entrée à cette liste.
+ *
+ * ⚠️ CHANGÉ : accepte désormais un identifiant libre entre le mot-clé
+ * et le ':' (ex : "Zone 1 :", "Secteur n°3 :", "RAYON 10 :"), et non
+ * plus uniquement "Zone :" seul — un client peut tout à fait numéroter
+ * ses zones. Le test s'applique après retrait d'une éventuelle
+ * décoration en tête de ligne (émoji, puce, symbole — voir
+ * _stripLeadingDecoration), jamais avant.
  * @type {RegExp[]}
  */
-const IMPORT_SECTION_TITLE_PATTERNS = [
-  /^zone\s*:/i,
-  /^secteur\s*:/i,
-  /^rayon\s*:/i,
+/**
+ * Mots-clés reconnus en préfixe d'une ligne-titre de section (zone
+ * donnée en ligne plutôt qu'en colonne). Liste volontairement large
+ * et extensible : ajouter un synonyme observé chez un client = 
+ * ajouter une entrée ici, jamais réécrire la logique de détection ni
+ * les motifs eux-mêmes (générés automatiquement, voir
+ * IMPORT_SECTION_TITLE_PATTERNS). Écrits sans accent : la
+ * comparaison se fait sur une version normalisée du texte (voir
+ * _normalizeHeaderForMatching), donc "departement" couvre aussi
+ * "Département".
+ * @type {string[]}
+ */
+const IMPORT_SECTION_TITLE_KEYWORDS = [
+  'zone', 'secteur', 'rayon', 'section', 'departement', 'emplacement',
+  'local', 'atelier', 'service', 'perimetre', 'espace', 'poste', 'lieu',
+  'unite', 'famille', 'categorie', 'chapitre', 'partie', 'bloc', 'groupe',
+  'aire', 'domaine', 'region', 'salle', 'etage', 'niveau', 'batiment',
+  'site', 'entrepot', 'gondole', 'ligne',
 ];
 
 /**
+ * Motifs reconnaissant un préfixe de ligne-titre de section, générés
+ * à partir de IMPORT_SECTION_TITLE_KEYWORDS. Accepte un identifiant
+ * libre entre le mot-clé et le séparateur (ex : "Zone 1 :", "Secteur
+ * n°3 -", "RAYON 10 –") et plusieurs séparateurs usuels (deux-points,
+ * tiret simple, tiret demi-cadratin, tiret cadratin) — le test
+ * s'applique sur le texte normalisé (voir _normalizeHeaderForMatching),
+ * jamais sur le texte brut.
+ * @type {RegExp[]}
+ */
+const IMPORT_SECTION_TITLE_PATTERNS = IMPORT_SECTION_TITLE_KEYWORDS.map(
+  keyword => new RegExp(`^${keyword}\\b[^:\\-–—]{0,20}[:\\-–—]`, 'i')
+);
+
+/**
+ * Retire toute décoration non signifiante en tête de texte (émoji,
+ * puce, symbole, ponctuation isolée) — un extracteur PDF place
+ * fréquemment une icône dans son propre run de texte, juste avant le
+ * libellé réel d'un titre de section. Ne retire jamais une lettre ou
+ * un chiffre : seulement ce qui les précède.
+ * @param {string} text
+ * @returns {string}
+ */
+function _stripLeadingDecoration(text) {
+  return String(text || '').replace(/^[^\p{L}\d]+/u, '').trim();
+}
+
+/**
  * Détecte les index de lignes-titre de section dans des lignes
- * brutes de cellules. Deux niveaux de signal :
- * - signal FORT : la colonne A porte un préfixe reconnu
- *   (IMPORT_SECTION_TITLE_PATTERNS) et c'est la seule valeur non
- *   vide de la ligne.
- * - signal FAIBLE : la colonne A est la seule valeur non vide de la
- *   ligne, mais sans préfixe reconnu (ex : "COMMUN" seul). Ce signal
- *   n'est retenu que si au moins un signal FORT existe déjà ailleurs
- *   dans le fichier — sans cela, une ligne de donnée isolée (case
- *   vide à droite par accident de saisie) serait prise à tort pour
- *   un titre de section. La présence d'au moins une zone préfixée
- *   confirme que le fichier suit bien ce schéma de mise en page.
+ * brutes de cellules. Une ligne est candidate si elle ne porte
+ * qu'UNE seule cellule "signifiante" (contenant au moins une lettre
+ * ou un chiffre) — les autres cellules, si non vides, ne contiennent
+ * que de la décoration (émoji, puce, symbole isolé dans son propre
+ * run de texte par l'extracteur PDF/XLSX). Deux niveaux de signal :
+ * - signal FORT : la cellule signifiante, décoration retirée en tête
+ *   (voir _stripLeadingDecoration), porte un préfixe reconnu
+ *   (IMPORT_SECTION_TITLE_PATTERNS).
+ * - signal FAIBLE : une seule cellule signifiante, mais sans préfixe
+ *   reconnu (ex : "COMMUN" seul). Ce signal n'est retenu que si au
+ *   moins un signal FORT existe déjà ailleurs dans le fichier — sans
+ *   cela, une ligne de donnée isolée (case vide à droite par accident
+ *   de saisie) serait prise à tort pour un titre de section. La
+ *   présence d'au moins une zone préfixée confirme que le fichier
+ *   suit bien ce schéma de mise en page.
  * @param {CellRow[]} cellRows
  * @returns {number[]} Index (dans cellRows) des lignes-titre détectées, triés par ordre croissant.
  */
@@ -477,16 +560,18 @@ function detectSectionTitleRowIndexes(cellRows) {
   const weakIndexes = [];
 
   cellRows.forEach((row, index) => {
+    /** @type {string[]} */
+    const meaningfulCells = row
+      .map(cell => String(cell || '').trim())
+      .filter(cell => /[\p{L}\d]/u.test(cell));
+    if (meaningfulCells.length !== 1) return;
+
     /** @type {string} */
-    const first = String(row[0] || '').trim();
-    if (!first) return;
+    const label = _stripLeadingDecoration(meaningfulCells[0]);
+    if (!label) return;
 
     /** @type {boolean} */
-    const restEmpty = row.slice(1).every(cell => !String(cell || '').trim());
-    if (!restEmpty) return;
-
-    /** @type {boolean} */
-    const hasRecognizedPrefix = IMPORT_SECTION_TITLE_PATTERNS.some(p => p.test(first));
+    const hasRecognizedPrefix = IMPORT_SECTION_TITLE_PATTERNS.some(p => p.test(_normalizeHeaderForMatching(label)));
     if (hasRecognizedPrefix) {
       strongIndexes.push(index);
     } else {
@@ -505,21 +590,41 @@ function detectSectionTitleRowIndexes(cellRows) {
 }
 
 /**
- * Extrait le libellé de zone à partir du texte brut d'une
- * ligne-titre de section. Retire le préfixe reconnu s'il y en a un
- * ("Zone : STOCKAGE / ATELIER" -> "STOCKAGE / ATELIER") ; renvoie le
- * texte tel quel (trim) si aucun préfixe ne correspond (cas du
- * signal faible, ex : "COMMUN" -> "COMMUN").
- * @param {string} rawTitle
+ * Extrait le libellé de zone à partir d'une ligne-titre de section
+ * complète (et non plus de sa seule première colonne — voir
+ * detectSectionTitleRowIndexes, qui identifie désormais la cellule
+ * signifiante quelle que soit sa position). Retire toute décoration
+ * en tête (émoji, puce) puis le préfixe reconnu s'il y en a un
+ * ("Zone 1 : ABORDS & ACCUEIL" -> "ABORDS & ACCUEIL", "Secteur –
+ * Frais LS" -> "Frais LS") ; renvoie le texte tel quel si aucun
+ * préfixe ne correspond (cas du signal faible, ex : "COMMUN" ->
+ * "COMMUN").
+ *
+ * ⚠️ La reconnaissance du préfixe se fait sur une version normalisée
+ * du texte (accents/casse — voir _normalizeHeaderForMatching, cohérent
+ * avec detectSectionTitleRowIndexes), mais la coupure elle-même se
+ * fait sur le texte D'ORIGINE, au niveau du premier séparateur
+ * rencontré (':', '-', '–', '—') : le libellé retourné conserve donc
+ * accents et casse exacts du document, jamais une version normalisée.
+ * @param {CellRow} titleRow
  * @returns {string}
  */
-function extractZoneLabelFromSectionTitle(rawTitle) {
+function extractZoneLabelFromSectionTitle(titleRow) {
+  /** @type {string[]} */
+  const meaningfulCells = (titleRow || [])
+    .map(cell => String(cell || '').trim())
+    .filter(cell => /[\p{L}\d]/u.test(cell));
   /** @type {string} */
-  const trimmed = String(rawTitle || '').trim();
-  for (const pattern of IMPORT_SECTION_TITLE_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      return trimmed.replace(pattern, '').trim();
-    }
+  const trimmed = _stripLeadingDecoration(meaningfulCells[0] || '');
+  /** @type {string} */
+  const normalized = _normalizeHeaderForMatching(trimmed);
+
+  /** @type {boolean} */
+  const hasRecognizedPrefix = IMPORT_SECTION_TITLE_PATTERNS.some(p => p.test(normalized));
+  if (hasRecognizedPrefix) {
+    /** @type {RegExpMatchArray | null} */
+    const separatorMatch = trimmed.match(/[:\-–—]/);
+    if (separatorMatch) return trimmed.slice(separatorMatch.index + 1).trim();
   }
   return trimmed;
 }
@@ -557,7 +662,7 @@ function splitRowsIntoSections(cellRows, titleRowIndexes) {
     /** @type {number} */
     const nextTitleIndex = i + 1 < titleRowIndexes.length ? titleRowIndexes[i + 1] : cellRows.length;
     /** @type {string} */
-    const zoneLabel = extractZoneLabelFromSectionTitle(cellRows[titleIndex][0]);
+    const zoneLabel = extractZoneLabelFromSectionTitle(cellRows[titleIndex]);
     /** @type {CellRow[]} */
     const rows = cellRows.slice(titleIndex + 1, nextTitleIndex);
     sections.push({ zoneLabel, rows });
