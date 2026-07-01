@@ -154,13 +154,12 @@
  * commune de son enseigne (fusion, jamais un remplacement — même
  * principe que getGrille, grille.js).
  *
- * La clé réservée '__sans_enseigne__' n'est jamais créée par
- * l'application elle-même : elle n'existe que si l'ancien format plat
- * (une seule grille globale, avant cette évolution) contenait des
- * données au moment de la migration — voir
- * _migrateQualimetreGlobalToEnseigneScoped. Elle reste éditable
- * normalement (comme n'importe quelle enseigne) le temps que l'admin
- * réaffecte manuellement ces points à une vraie enseigne.
+ * ⚠️ Toute grille commune DOIT être rattachée à une enseigne réelle,
+ * sans exception : l'ancien format plat (sans enseigne) est
+ * intégralement supprimé à la migration (voir
+ * _migrateQualimetreGlobalToEnseigneScoped) et l'import Qualimètre
+ * refuse de s'exécuter tant qu'aucune enseigne n'est sélectionnée
+ * (voir openGqImportModal, grille-qualimetre.js).
  * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreGlobalMap
  */
 
@@ -553,20 +552,19 @@ function _parseQualimetreGlobal(rows) {
 }
 
 /**
- * Migre DB.qualimetreGlobal de l'ancien format plat
+ * Purge DB.qualimetreGlobal de l'ancien format plat
  * (Record<zoneId, GrillePoint[]>, une seule grille partagée par toute
- * la base) vers le nouveau format par enseigne
- * (Record<enseigne, Record<zoneId, GrillePoint[]>>) — voir le typedef
- * QualimetreGlobalMap.
+ * la base, sans notion d'enseigne) au profit du nouveau format par
+ * enseigne (Record<enseigne, Record<zoneId, GrillePoint[]>>) — voir
+ * le typedef QualimetreGlobalMap.
  *
- * ⚠️ AUCUNE DONNÉE SUPPRIMÉE : les points de l'ancien format sont
- * conservés intégralement sous la clé réservée '__sans_enseigne__',
- * visible et éditable comme n'importe quelle enseigne dans la page
- * Grille Qualimètre (voir grille-qualimetre.js), en attendant une
- * réaffectation manuelle par l'admin vers une enseigne réelle. Aucune
- * règle ne devine automatiquement à quelle enseigne ces points
- * appartenaient — ce serait une règle métier codée en dur que rien
- * dans les données ne permet de justifier.
+ * ⚠️ SUPPRESSION DÉLIBÉRÉE ET ASSUMÉE (demande explicite) : contrairement
+ * à une migration classique, les points de l'ancien format ne sont PAS
+ * conservés — toute grille commune Qualimètre doit désormais être
+ * rattachée à une enseigne réelle, sans exception ni case "orpheline".
+ * Un magasin sans enseigne n'a accès à aucune grille commune, et
+ * l'import Qualimètre est bloqué tant qu'aucune enseigne n'est
+ * sélectionnée (voir openGqImportModal, grille-qualimetre.js).
  *
  * Idempotente et sûre à appeler à chaque chargement : sans effet si
  * `raw` est vide, ou déjà au nouveau format (détecté par la forme de
@@ -584,8 +582,8 @@ function _migrateQualimetreGlobalToEnseigneScoped(raw) {
   const isOldFlatFormat = Array.isArray(firstValue);
   if (!isOldFlatFormat) return raw;
 
-  console.warn('⚠️ Migration qualimetreGlobal : ancien format plat détecté, conservé intégralement sous "__sans_enseigne__" (aucune donnée supprimée).');
-  return { __sans_enseigne__: raw };
+  console.warn('⚠️ Ancien format qualimetreGlobal (sans enseigne) détecté et supprimé — toute grille commune Qualimètre doit désormais être rattachée à une enseigne.');
+  return {};
 }
 
 /**
