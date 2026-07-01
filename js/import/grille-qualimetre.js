@@ -1164,17 +1164,19 @@ function _gqLoadPDFJS(callback) {
  * _onGqMappingConceptChanged (rejeu après correction manuelle du
  * mapping).
  *
- * ⚠️ CORRIGÉ : le filtre "ligne de titre de zone" (criticité ET
- * poids vides) ne s'applique désormais QUE si le document possède
- * réellement une colonne mappée à 'criticite' OU 'poids` (paramètre
- * `mapping`). Sans cette condition, un document qui n'a tout
- * simplement AUCUNE de ces deux colonnes (cas réel observé : relevé
- * d'audit C/NC sans référentiel de criticité) verrait TOUTES ses
- * lignes filtrées à tort, puisque crit/poids y sont alors
- * systématiquement vides pour des raisons n'ayant rien à voir avec
- * une ligne-titre. Quand aucune des deux colonnes n'existe, la
- * criticité retombe sur _gqDefaultCrit pour chaque ligne (voir
- * _gqNormalizeCrit) — jamais sur un filtrage de la ligne elle-même.
+ * ⚠️ CORRIGÉ (2ème fois) : le filtre "ligne de titre de zone"
+ * (criticité ET poids vides) ne s'applique désormais QUE si le
+ * document possède une colonne criticité OU poids QUI CONTIENT
+ * RÉELLEMENT AU MOINS UNE VALEUR quelque part — pas seulement si
+ * cette colonne est présente/mappée. Un référentiel entièrement
+ * dépourvu de criticité/poids (cas réel : import d'un référentiel
+ * pas encore priorisé, avec des en-têtes "Criticité"/"Poids" présents
+ * mais vides sur toutes les lignes) voyait auparavant TOUTES ses
+ * lignes rejetées comme "lignes-titre", pour un résultat final vide
+ * sans aucune erreur visible expliquant pourquoi (voir aussi la
+ * première correction ci-dessous, qui ne couvrait que le cas où la
+ * colonne n'existait pas du tout — pas celui où elle existe mais est
+ * intégralement vide).
  * @param {NormalizedImportRow[]} normalized
  * @param {ConceptMapping | null} [mapping] - Mapping détecté pour ce document ; utilisé uniquement pour savoir si le filtre "ligne de titre" est pertinent ici (voir avertissement ci-dessus). Si absent (compatibilité), le filtre s'applique comme avant.
  * @returns {GqParsedRow[]}
@@ -1182,6 +1184,10 @@ function _gqLoadPDFJS(callback) {
 function _buildGqParsedRows(normalized, mapping) {
   /** @type {boolean} */
   const hasCritOrPoidsColumn = !mapping || !!mapping.criticite || !!mapping.poids;
+  /** @type {boolean} */
+  const columnActuallyHasValues = normalized.some(r => r.crit || r.poids);
+  /** @type {boolean} */
+  const shouldFilterTitleRows = hasCritOrPoidsColumn && columnActuallyHasValues;
 
   /** @type {GqParsedRow[]} */
   const rows = [];
@@ -1189,9 +1195,10 @@ function _buildGqParsedRows(normalized, mapping) {
     if (!row.q.trim()) return;
 
     // Ignorer les lignes de titre de zone (criticité et poids vides)
-    // — seulement pertinent si le document a une de ces colonnes ;
-    // voir avertissement ci-dessus.
-    if (hasCritOrPoidsColumn && !row.crit && !row.poids) return;
+    // — seulement pertinent si le document a une colonne de ce type
+    // ET qu'elle contient réellement au moins une valeur ; voir
+    // avertissement ci-dessus.
+    if (shouldFilterTitleRows && !row.crit && !row.poids) return;
 
     /** @type {GrilleCriticite} */
     const crit  = _gqNormalizeCrit(row.crit) || _gqDefaultCrit;
