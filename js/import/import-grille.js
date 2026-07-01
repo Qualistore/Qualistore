@@ -774,7 +774,7 @@ function _fillDownRawRowsColumn(rawRows, columnHeader) {
  */
 function _forceZoneMappingToDetectedColumn(detection, rawRows) {
   /** @type {string[]} */
-  const headers = rawRows.length ? Object.keys(rawRows[0]) : [];
+  const headers = _collectAllHeaders(rawRows);
   if (!headers.includes(IMPORT_DETECTED_ZONE_COLUMN)) return detection;
   if (detection.mapping.zone === IMPORT_DETECTED_ZONE_COLUMN) return detection;
 
@@ -1204,7 +1204,7 @@ const IMPORT_CONCEPT_LABELS = {
  */
 function _buildMappingBlock(detection) {
   /** @type {string[]} */
-  const allHeaders = _importRawRows.length ? Object.keys(_importRawRows[0]) : [];
+  const allHeaders = _collectAllHeaders(_importRawRows);
 
   /** @type {string} */
   const rows = Object.keys(IMPORT_CONCEPT_LABELS).map(concept => {
@@ -1253,7 +1253,7 @@ function _onMappingConceptChanged(concept, newHeader) {
   _importDetection.mapping[concept] = newHeader || null;
 
   /** @type {string[]} */
-  const allHeaders = _importRawRows.length ? Object.keys(_importRawRows[0]) : [];
+  const allHeaders = _collectAllHeaders(_importRawRows);
   /** @type {Set<string>} */
   const assignedHeaders = new Set(Object.values(_importDetection.mapping).filter(Boolean));
   _importDetection.unmappedHeaders = allHeaders.filter(h => !assignedHeaders.has(h));

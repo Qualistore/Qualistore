@@ -1473,7 +1473,7 @@ const GQ_CONCEPT_LABELS = {
  */
 function _buildGqMappingBlock(detection) {
   /** @type {string[]} */
-  const allHeaders = _gqRawRows.length ? Object.keys(_gqRawRows[0]) : [];
+  const allHeaders = _collectAllHeaders(_gqRawRows);
 
   /** @type {string} */
   const rows = Object.keys(GQ_CONCEPT_LABELS).map(concept => {
@@ -1520,7 +1520,7 @@ function _onGqMappingConceptChanged(concept, newHeader) {
   _gqDetection.mapping[concept] = newHeader || null;
 
   /** @type {string[]} */
-  const allHeaders = _gqRawRows.length ? Object.keys(_gqRawRows[0]) : [];
+  const allHeaders = _collectAllHeaders(_gqRawRows);
   /** @type {Set<string>} */
   const assignedHeaders = new Set(Object.values(_gqDetection.mapping).filter(Boolean));
   _gqDetection.unmappedHeaders = allHeaders.filter(h => !assignedHeaders.has(h));
