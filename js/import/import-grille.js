@@ -1721,9 +1721,17 @@ function _findExistingZoneIdByLabel(normalizedLabel, storeId) {
   const fromStaticZones = QM_ZONES.find(z => _normalizeZoneLabel(z.label) === normalizedLabel);
   if (fromStaticZones) return fromStaticZones.id;
 
+  // ⚠️ CORRIGÉ : DB.qualimetreGlobal est désormais indexé par enseigne
+  // PUIS par zoneId (voir storage.js) — Object.keys(DB.qualimetreGlobal)
+  // donnerait des noms d'ENSEIGNE, pas de zone. Il faut itérer sur les
+  // zoneId de chaque enseigne, toutes enseignes confondues (un même
+  // libellé de zone doit être reconnu, quelle que soit l'enseigne où
+  // il a déjà été créé).
   if (DB.qualimetreGlobal) {
     /** @type {string | undefined} */
-    const fromGlobalIds = Object.keys(DB.qualimetreGlobal).find(zoneId => _normalizeZoneLabel(zoneId) === normalizedLabel);
+    const fromGlobalIds = Object.values(DB.qualimetreGlobal)
+      .flatMap(zonesMap => Object.keys(zonesMap || {}))
+      .find(zoneId => _normalizeZoneLabel(zoneId) === normalizedLabel);
     if (fromGlobalIds) return fromGlobalIds;
   }
 

@@ -1198,13 +1198,13 @@ function _buildGqParsedRows(normalized, mapping) {
     /** @type {number} */
     const poids = parseInt(row.poids) || GQ_DEFAULT_POIDS[crit];
     /** @type {ResolvedZone} */
-    const zone  = _resolveOrCreateZoneFromDocument(row.rayon, '');
+    const zone  = _resolveOrCreateZoneFromDocument(row.zone, '');
 
-    rows.push({ zoneId: zone.id, zoneName: row.rayon, q: row.q.trim(), prec: row.methode || '', c: crit, p: poids, extra: row.extra || '', isDuplicate: false });
+    rows.push({ zoneId: zone.id, zoneName: row.zone, q: row.q.trim(), prec: row.methode || '', c: crit, p: poids, extra: row.extra || '', isDuplicate: false });
   });
 
   /** @type {DuplicateMap} */
-  const duplicates = findDuplicateRows(rows.map(r => ({ rayon: r.zoneName, q: r.q })));
+  const duplicates = findDuplicateRows(rows.map(r => ({ zone: r.zoneName, q: r.q })));
   duplicates.forEach((_, index) => { rows[index].isDuplicate = true; });
 
   _gqInitZoneReplaceFlags(rows);
