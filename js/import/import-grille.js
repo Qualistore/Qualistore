@@ -496,7 +496,7 @@ function _parseCSVText(text) {
   if (!lines.length) { _showImportPreview([], null, [], '0 ligne lue'); return; }
 
   /** @type {string} */
-  const separator = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
+  const separator = detectImportSeparator(lines);
 
   /** @type {string[][]} */
   const cellRows = lines.map(line => line.split(separator).map(c => c.trim().replace(/^["']|["']$/g, '')));
@@ -901,17 +901,110 @@ async function _extractPdfText(pdf) {
       lineMap[y].push({ x: item.transform[4], str: item.str });
     });
 
-    // Trier les lignes de haut en bas, les mots de gauche à droite
-    Object.keys(lineMap)
+    // Trier les lignes de haut en bas, chacune de gauche à droite
+    /** @type {{x: number, str: string}[][]} */
+    const rawLines = Object.keys(lineMap)
       .sort((a, b) => b - a)
-      .forEach(y => {
-        /** @type {{x: number, str: string}[]} */
-        const sortedItems = lineMap[y].sort((a, b) => a.x - b.x);
-        fullText += sortedItems.map(i => i.str).join('\t') + '\n';
-      });
+      .map(y => lineMap[y].sort((a, b) => a.x - b.x));
+
+    // Fusionner les lignes physiques qui ne sont en réalité que la
+    // suite, par retour à la ligne, d'une cellule trop longue de la
+    // ligne logique précédente — voir _mergeWrappedPdfLines.
+    /** @type {{x: number, str: string}[][]} */
+    const mergedLines = _mergeWrappedPdfLines(rawLines);
+
+    mergedLines.forEach(cells => {
+      fullText += cells.map(c => c.str).join('\t') + '\n';
+    });
   }
 
   return fullText;
+}
+
+/**
+ * Fusionne les lignes physiques d'un texte PDF qui appartiennent en
+ * réalité à la même ligne logique de tableau, mais ont été séparées
+ * par un simple retour à la ligne À L'INTÉRIEUR d'une cellule (texte
+ * trop long pour tenir sur une seule ligne physique) — cas très
+ * fréquent dès qu'une colonne contient une description un peu longue.
+ *
+ * ⚠️ SANS CETTE FUSION, chaque cellule qui déborde produit une ligne
+ * fantôme à une seule cellule, qui casse l'alignement colonne/en-tête
+ * pour toutes les lignes suivantes ET peut être prise à tort pour une
+ * ligne-titre de section (voir detectSectionTitleRowIndexes,
+ * import-detect.js) — c'est la cause la plus fréquente d'un import
+ * PDF qui "ne détecte aucune donnée" alors que le fichier est
+ * pourtant un tableau parfaitement lisible visuellement.
+ *
+ * Heuristique auto-calibrée sur CHAQUE ligne précédente (jamais un
+ * seuil fixe en points, qui serait fragile d'un document à l'autre
+ * selon la largeur réelle des colonnes) : une ligne de continuation
+ * n'a normalement aucun élément proche de la colonne de GAUCHE de la
+ * ligne précédente — tout ce qu'elle contient se trouve plus près
+ * d'une colonne plus à droite. Concrètement, si le premier élément
+ * d'une ligne est plus proche en X de la 2ème cellule de la ligne
+ * précédente que de sa 1ère, c'est une continuation ; sinon (y
+ * compris si la ligne précédente n'a qu'une seule cellule, ex : une
+ * ligne-titre de section) c'est une nouvelle ligne. Son contenu est
+ * alors rattaché (avec un espace) à la cellule de la ligne précédente
+ * dont le X est le plus proche — jamais à une position arbitraire.
+ *
+ * Ne fusionne jamais au-delà d'une page (chaque page redémarre avec
+ * un tableau vide de lignes déjà accumulées) : un saut de page reste
+ * toujours traité comme un nouveau départ, cas plus rare et plus
+ * ambigu qu'il vaut mieux ne pas deviner.
+ * @param {{x: number, str: string}[][]} rawLines - Lignes physiques triées de haut en bas, chacune déjà triée de gauche à droite.
+ * @returns {{x: number, str: string}[][]} Lignes logiques fusionnées (mêmes objets cellules que rawLines, mutés en place pour les fusions).
+ */
+function _mergeWrappedPdfLines(rawLines) {
+  /** @type {{x: number, str: string}[][]} */
+  const mergedLines = [];
+
+  rawLines.forEach(line => {
+    /** @type {{x: number, str: string}[]} */
+    const meaningfulItems = line.filter(item => item.str && item.str.trim());
+    if (!meaningfulItems.length) return;
+
+    /** @type {{x: number, str: string}[] | undefined} */
+    const previousLine = mergedLines[mergedLines.length - 1];
+    // Seules les cellules porteuses de texte réel (lettres/chiffres)
+    // comptent comme colonnes pour la décision de continuation — une
+    // icône/émoji isolée dans sa propre cellule (fréquent en tête de
+    // ligne-titre de section) ne doit jamais être prise pour une
+    // "colonne 1", sous peine de fausser la comparaison avec la ligne
+    // suivante. Elle reste néanmoins conservée telle quelle dans le
+    // résultat (meaningfulItems, non filtré) : elle n'est ignorée que
+    // pour cette décision.
+    /** @type {{x: number, str: string}[]} */
+    const previousTextualCells = previousLine
+      ? previousLine.filter(item => /[\p{L}\d]/u.test(item.str))
+      : [];
+
+    /** @type {boolean} */
+    const looksLikeContinuation =
+      previousTextualCells.length > 1 &&
+      Math.abs(meaningfulItems[0].x - previousTextualCells[0].x) > Math.abs(meaningfulItems[0].x - previousTextualCells[1].x);
+
+    if (!looksLikeContinuation) {
+      mergedLines.push(meaningfulItems);
+      return;
+    }
+
+    meaningfulItems.forEach(item => {
+      /** @type {{x: number, str: string}} */
+      let closestCell = previousTextualCells[0];
+      /** @type {number} */
+      let smallestDistance = Math.abs(previousTextualCells[0].x - item.x);
+      previousTextualCells.forEach(cell => {
+        /** @type {number} */
+        const distance = Math.abs(cell.x - item.x);
+        if (distance < smallestDistance) { smallestDistance = distance; closestCell = cell; }
+      });
+      closestCell.str = closestCell.str ? `${closestCell.str} ${item.str}` : item.str;
+    });
+  });
+
+  return mergedLines;
 }
 
 // ─────────────────────────────────────────────

@@ -2,7 +2,7 @@
 // GRILLE-QUALIMETRE — Gestion de la grille Qualimètre par enseigne et par zone
 // Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, CDN_SHEETJS, CDN_PDFJS), ui.js,
 //             magasins.js (getKnownEnseignes — classement par enseigne, même liste que pour la grille FSQS),
-//             import/import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
+//             import/import-detect.js (detectConceptMapping, buildSyntheticHeaders, detectImportSeparator, RawImportRow, DetectionResult, ImportConcept),
 //             import/import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap),
 //             import/import-grille.js (_resolveOrCreateZoneFromDocument, ResolvedZone, IMPORT_UNCLASSIFIED_ZONE_LABEL — résolution de zone partagée avec l'import de grille FSQS)
 // ══════════════════════════════════════════════════════════════
@@ -73,10 +73,10 @@
  * Dictionnaire des points Qualimètre communs, indexé par nom
  * d'enseigne PUIS par QMZone.id — chaque enseigne a sa propre grille
  * commune, héritée par tous ses magasins (voir getQualimetrePoints).
- * La clé réservée '__sans_enseigne__' n'apparaît que si l'ancien
- * format plat contenait des données lors de la migration (voir
- * _migrateQualimetreGlobalToEnseigneScoped, storage.js) ; elle reste
- * éditable normalement en attendant réaffectation manuelle.
+ * Toute grille commune est nécessairement rattachée à une enseigne
+ * réelle : il n'existe aucune case "sans enseigne" (voir
+ * _migrateQualimetreGlobalToEnseigneScoped, storage.js, qui supprime
+ * l'ancien format plat au lieu de le conserver).
  * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreGlobalMap
  */
 
@@ -142,7 +142,7 @@ const GQ_DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
  */
 let _gqImportData = [];
 
-/** @type {string} Enseigne actuellement affichée dans la vue détail de la page Grille Qualimètre (voir showQualimetreEnseigneDetail) — chaîne vide si la vue cartes (aperçu par enseigne) est affichée. Peut valoir '__sans_enseigne__' (résidu de migration, voir storage.js). Toute écriture dans la grille commune (storeId vide) cible cette enseigne. */
+/** @type {string} Enseigne actuellement affichée dans la vue détail de la page Grille Qualimètre (voir showQualimetreEnseigneDetail) — chaîne vide si la vue cartes (aperçu par enseigne) est affichée. Toujours une enseigne réelle (getKnownEnseignes, magasins.js) quand non vide. Toute écriture dans la grille commune (storeId vide) cible cette enseigne. */
 let _gqCurrentEnseigne = '';
 
 /** @type {RawImportRow[]} Lignes brutes du fichier actuellement chargé (clés = en-têtes d'origine), conservées pour rejouer normalizeRows si le mapping est corrigé manuellement sans re-lire le fichier. */
@@ -242,29 +242,24 @@ function getQualimetreGrille(storeId, enseigne) {
 
 /**
  * Liste les enseignes affichables en page Grille Qualimètre : toutes
- * les enseignes connues (getKnownEnseignes, magasins.js) plus, si
- * elle contient encore des points, l'enseigne réservée
- * '__sans_enseigne__' — résidu de l'ancien format plat conservé sans
- * perte par la migration (voir _migrateQualimetreGlobalToEnseigneScoped,
- * storage.js) — toujours en dernière position quand elle apparaît.
+ * les enseignes connues (getKnownEnseignes, magasins.js). Toute
+ * grille commune Qualimètre est nécessairement rattachée à une
+ * enseigne réelle — il n'existe aucune case "sans enseigne" (voir
+ * _migrateQualimetreGlobalToEnseigneScoped, storage.js, qui supprime
+ * l'ancien format plat au lieu de le conserver).
  * @returns {string[]}
  */
 function getKnownQualimetreEnseignes() {
-  /** @type {string[]} */
-  const enseignes = getKnownEnseignes();
-  /** @type {boolean} */
-  const hasLeftoverData = Object.values(DB.qualimetreGlobal?.__sans_enseigne__ || {}).some(points => points.length > 0);
-  return hasLeftoverData ? [...enseignes, '__sans_enseigne__'] : enseignes;
+  return getKnownEnseignes();
 }
 
 /**
- * Libellé affiché pour une enseigne dans la page Grille Qualimètre —
- * gère le cas particulier de la clé réservée '__sans_enseigne__'.
+ * Libellé affiché pour une enseigne dans la page Grille Qualimètre.
  * @param {string} enseigne
  * @returns {string}
  */
 function _qmEnseigneLabel(enseigne) {
-  return enseigne === '__sans_enseigne__' ? 'Sans enseigne (ancien référentiel)' : enseigne;
+  return enseigne;
 }
 
 /**
@@ -390,10 +385,6 @@ function _buildGqZoneSelect() {
 /**
  * Peuple le select de magasins de la vue détail, restreint aux
  * magasins de l'enseigne actuellement affichée (_gqCurrentEnseigne).
- * La clé réservée '__sans_enseigne__' n'affiche jamais de magasin
- * (aucun magasin réel n'y est automatiquement rattaché — voir
- * getQualimetrePoints) : seule la grille commune "orpheline" reste
- * éditable, en attendant réaffectation manuelle par l'admin.
  * @param {string} enseigne
  * @returns {void}
  */
@@ -405,17 +396,15 @@ function _buildGqMagSelect(enseigne) {
   const currentValue = select.value;
   while (select.options.length > 1) select.remove(1);
 
-  if (enseigne !== '__sans_enseigne__') {
-    DB.magasins
-      .filter(m => visibleMids().includes(m.id))
-      .filter(m => m.enseigne === enseigne)
-      .forEach(m => {
-        const option = document.createElement('option');
-        option.value       = m.id;
-        option.textContent = m.nom;
-        select.appendChild(option);
-      });
-  }
+  DB.magasins
+    .filter(m => visibleMids().includes(m.id))
+    .filter(m => m.enseigne === enseigne)
+    .forEach(m => {
+      const option = document.createElement('option');
+      option.value       = m.id;
+      option.textContent = m.nom;
+      select.appendChild(option);
+    });
 
   if (currentValue && [...select.options].some(o => o.value === currentValue)) {
     select.value = currentValue;
@@ -1246,7 +1235,7 @@ function _gqParseCSV(text) {
   if (lines.length < 2) { _gqImportErr('Le fichier est vide ou ne contient pas de données.'); return; }
 
   /** @type {string} */
-  const separator = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
+  const separator = detectImportSeparator(lines);
   /** @type {string[][]} */
   const cellRows = lines.map(line => line.split(separator).map(c => c.trim().replace(/^["']|["']$/g, '')));
 

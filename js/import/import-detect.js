@@ -703,3 +703,44 @@ function fillDownColumn(cellRows, columnIndex) {
     return filled;
   });
 }
+
+// ─────────────────────────────────────────────
+// 6. DÉTECTION DU SÉPARATEUR (CSV / TSV / texte extrait d'un PDF)
+// ─────────────────────────────────────────────
+
+/**
+ * Détecte le séparateur de colonnes le plus probable dans un texte
+ * CSV/TSV brut (ou un texte reconstitué depuis un PDF), en comptant
+ * sur COMBIEN de lignes chaque séparateur candidat apparaît
+ * réellement.
+ *
+ * ⚠️ CHANGÉ : ne se base plus uniquement sur la première ligne du
+ * texte, qui peut très bien être un contenu introductif non tabulaire
+ * (page de garde, instructions...) — cas fréquent en PDF, où le
+ * tableau réel ne commence qu'après plusieurs lignes de texte libre.
+ * Baser la détection sur cette seule première ligne pouvait faire
+ * retomber tout le document sur la virgule par défaut alors qu'il est
+ * entièrement tabulé à la tabulation, cassant le découpage en
+ * colonnes pour l'intégralité du fichier.
+ * @param {string[]} lines - Lignes de texte déjà découpées (non vides).
+ * @returns {';' | '\t' | ','}
+ */
+function detectImportSeparator(lines) {
+  /** @type {Array<';' | '\t' | ','>} */
+  const candidates = [';', '\t', ','];
+  /** @type {';' | '\t' | ','} */
+  let best = ',';
+  /** @type {number} */
+  let bestCount = -1;
+
+  candidates.forEach(separator => {
+    /** @type {number} */
+    const lineCount = lines.filter(line => line.includes(separator)).length;
+    if (lineCount > bestCount) {
+      bestCount = lineCount;
+      best = separator;
+    }
+  });
+
+  return best;
+}
