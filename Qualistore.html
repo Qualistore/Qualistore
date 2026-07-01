@@ -796,12 +796,13 @@
       </div>
       <div class="form-group">
         <label class="form-label">Zone <span class="tsm tm">(sous-partie du rayon, devient un onglet dans l'audit — laisser vide pour "Non classé")</span></label>
-        <input class="form-control" id="ctrl-zone" list="ctrl-zone-suggestions" placeholder="ex : Lieu de stockage, Vente...">
+        <input class="form-control" id="ctrl-zone" list="ctrl-zone-suggestions" oninput="_onCtrlZoneInput()" placeholder="ex : Lieu de stockage, Vente...">
         <datalist id="ctrl-zone-suggestions"></datalist>
       </div>
 <div class="form-group">
-        <label class="form-label">Catégorie <span class="tsm tm">(sous-section)</span></label>
-        <input class="form-control" id="ctrl-cat" placeholder="ex : Température, Hygiène...">
+        <label class="form-label">Catégorie <span class="tsm tm">(sous-section de la zone)</span></label>
+        <input class="form-control" id="ctrl-cat" list="ctrl-cat-suggestions" placeholder="ex : Température, Hygiène...">
+        <datalist id="ctrl-cat-suggestions"></datalist>
       </div>
       <div class="form-group">
         <label class="form-label">Intitulé du point de contrôle *</label>

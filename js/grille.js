@@ -559,10 +559,16 @@ function openCtrlModal(rayon, pointId, storeId) {
   });
 
   if (isEdit) {
-    _populateCtrlForm(rayon, pointId, _ctrlStoreCurrent);
+    _populateCtrlForm(rayon, pointId, _ctrlStoreCurrent, _ctrlEnseigneCurrent);
   } else {
     _resetCtrlForm();
   }
+
+  // ⚠️ AJOUTÉ : les suggestions de catégorie dépendent de la zone —
+  // construites après le remplissage du formulaire (édition ou reset)
+  // pour refléter la zone réellement affichée à l'écran, voir
+  // _buildCtrlCatSuggestions.
+  _buildCtrlCatSuggestions(_ctrlRayonCurrent, _ctrlStoreCurrent, _ctrlEnseigneCurrent, v('ctrl-zone'));
 
   openModal('m-ctrl');
 }
@@ -570,21 +576,41 @@ function openCtrlModal(rayon, pointId, storeId) {
 /**
  * Pré-remplit le formulaire avec les données d'un point de contrôle
  * existant. Sans effet si le point n'est pas trouvé dans
- * DB.grilleCustom[rayon] ou DB.grilleCustomByStore[storeId][rayon]
- * selon le scope (depuis le retrait de GRILLE_BASE_COMMUNE, tout
- * point de contrôle vit dans l'un de ces deux endroits — voir
- * getGrille).
+ * DB.grilleCustom[enseigne][rayon] ou
+ * DB.grilleCustomByStore[storeId][rayon] selon le scope (depuis le
+ * retrait de GRILLE_BASE_COMMUNE, tout point de contrôle vit dans
+ * l'un de ces deux endroits — voir getGrille).
+ *
+ * ⚠️ CORRIGÉ : cette fonction cherchait auparavant le point commun
+ * dans `DB.grilleCustom[rayon]`, une structure obsolète depuis le
+ * passage à des grilles communes indexées par ENSEIGNE
+ * (`DB.grilleCustom[enseigne][rayon]`, voir getGrille et saveCtrl).
+ * Le point n'était donc jamais trouvé pour un point commun, et le
+ * formulaire d'édition restait vide (ou gardait les valeurs du point
+ * précédemment édité) — obligeant à ressaisir le point à l'aveugle.
  * @param {string} rayon
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @param {string} [storeId] - Magasin d'origine du point ; absent/vide = grille commune.
+ * @param {string} [enseigne] - Enseigne de la grille commune (ex : valeur brute de #grille-enseigne-sel, peut valoir '__sans_enseigne__') ; ignorée si storeId est fourni.
  * @returns {void}
  */
-function _populateCtrlForm(rayon, pointId, storeId) {
+function _populateCtrlForm(rayon, pointId, storeId, enseigne) {
+  /** @type {string} */
+  const resolvedEnseigne = enseigne === '__sans_enseigne__' ? '' : (enseigne || '');
   /** @type {GrillePoint[]} */
-  const source = storeId ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || []) : (DB.grilleCustom[rayon] || []);
+  const source = storeId
+    ? (DB.grilleCustomByStore?.[storeId]?.[rayon] || [])
+    : (DB.grilleCustom?.[resolvedEnseigne]?.[rayon] || []);
   /** @type {GrillePoint | undefined} */
   const point = source.find(p => p.id === pointId);
-  if (!point) return;
+  if (!point) {
+    // Ne devrait plus arriver depuis la correction ci-dessus ; on
+    // repart d'un formulaire vide plutôt que de laisser les valeurs
+    // d'un point précédemment édité, pour ne jamais induire l'admin
+    // en erreur silencieusement.
+    _resetCtrlForm();
+    return;
+  }
 
   sv('ctrl-q',    point.q);
   sv('ctrl-zone', point.zone || '');
@@ -634,6 +660,55 @@ function _buildCtrlZoneSuggestions(rayon, storeId, enseigne) {
     .filter(zone => zone !== IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE)
     .map(zone => `<option value="${_escapeHtmlAttr(zone)}">`)
     .join('');
+}
+
+/**
+ * Peuple #ctrl-cat-suggestions (modale point de contrôle) avec les
+ * catégories (sous-sections) déjà connues pour la zone actuellement
+ * saisie dans le formulaire, dans le scope (magasin ou commun)
+ * donné. Champ texte libre avec liste déroulante de suggestions —
+ * pas un select fermé — même principe que pour la zone (voir
+ * _buildCtrlZoneSuggestions) : ces suggestions n'empêchent jamais de
+ * taper une nouvelle catégorie, créée implicitement à
+ * l'enregistrement (voir saveCtrl).
+ *
+ * Si aucune zone n'est encore saisie, propose les catégories de
+ * TOUTES les zones du rayon (pas de restriction tant que l'admin n'a
+ * pas choisi/tapé de zone).
+ * @param {string} rayon
+ * @param {string} [storeId]
+ * @param {string} [enseigne]
+ * @param {string} [zone] - Zone actuellement saisie dans #ctrl-zone ; si vide, les catégories de toutes les zones du rayon sont proposées.
+ * @returns {void}
+ */
+function _buildCtrlCatSuggestions(rayon, storeId, enseigne, zone) {
+  /** @type {HTMLDataListElement | null} */
+  const datalist = el('ctrl-cat-suggestions');
+  if (!datalist) return;
+
+  /** @type {string} */
+  const trimmedZone = (zone || '').trim();
+  /** @type {GrillePoint[]} */
+  const points = getGrille(rayon, storeId, enseigne)
+    .filter(p => !trimmedZone || ((p.zone && p.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) === trimmedZone);
+
+  /** @type {string[]} */
+  const categories = [...new Set(points.map(p => (p.cat || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'fr'));
+
+  datalist.innerHTML = categories.map(cat => `<option value="${_escapeHtmlAttr(cat)}">`).join('');
+}
+
+/**
+ * Rafraîchit les suggestions de catégorie (#ctrl-cat-suggestions)
+ * quand l'utilisateur modifie le champ Zone dans la modale point de
+ * contrôle — les catégories proposées suivent la zone en cours de
+ * saisie (voir _buildCtrlCatSuggestions). Déclenché par l'`oninput`
+ * de #ctrl-zone (Qualistore.html).
+ * @returns {void}
+ */
+function _onCtrlZoneInput() {
+  _buildCtrlCatSuggestions(_ctrlRayonCurrent, _ctrlStoreCurrent, _ctrlEnseigneCurrent, v('ctrl-zone'));
 }
 
 // ─────────────────────────────────────────────
