@@ -644,6 +644,15 @@ function switchAuditZone(zone) {
  * disparaissaient visuellement de l'écran au retour sur la zone —
  * avec un risque réel de perte si l'utilisateur modifiait alors le
  * champ vide affiché, écrasant la vraie valeur déjà enregistrée.
+ *
+ * ⚠️ CORRIGÉ : l'unique bouton "Ajouter photo" ne déclenchait qu'un
+ * input sans attribut `capture`, ce qui ouvrait systématiquement la
+ * galerie sur mobile — aucun moyen de prendre une photo directement
+ * avec l'appareil. Remplacé par deux boutons distincts ("Galerie" /
+ * "Appareil photo"), chacun relié à son propre input file caché, le
+ * second avec `capture="environment"`. handleAuditPhoto() n'a pas eu
+ * besoin d'être modifiée : elle traite déjà n'importe quel input de
+ * ce type.
  * @param {GrillePoint} point
  * @returns {string}
  */
@@ -672,10 +681,18 @@ function _buildAuditQuestion(point) {
         .join('')}</div>
       <input type="file" accept="image/*" multiple style="display:none" id="aphi-${point.id}"
              onchange="handleAuditPhoto('${point.id}',this)">
-      <button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:11px"
-              onclick="el('aphi-${point.id}').click()">
-        <i class="ti ti-camera"></i> Ajouter photo
-      </button>
+      <input type="file" accept="image/*" capture="environment" style="display:none" id="aphic-${point.id}"
+             onchange="handleAuditPhoto('${point.id}',this)">
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size:11px"
+                onclick="el('aphi-${point.id}').click()">
+          <i class="ti ti-photo"></i> Galerie
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size:11px"
+                onclick="el('aphic-${point.id}').click()">
+          <i class="ti ti-camera"></i> Appareil photo
+        </button>
+      </div>
     </div>
   </div>`;
 }
