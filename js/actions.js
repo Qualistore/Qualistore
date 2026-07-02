@@ -51,6 +51,7 @@
  * @property {string} aid - Référence polymorphe : vers Audit.id si isAlert est faux, vers Alerte.id si isAlert est vrai.
  * @property {string} [mid] - Référence vers Magasin.id (vu dans magasins.js).
  * @property {string} desc - Description / intitulé de la non-conformité.
+ * @property {string} [pid] - Référence vers GrillePoint.id d'origine (voir submitAudit, audits.js ; définition canonique dans nc.js) — absente sur les NC créées avant ce champ ou issues d'une alerte. Utilisée par _buildActionPhotosHtml pour retrouver sans ambiguïté la bonne photo.
  * @property {'Ouverte'|'En cours'|'Clôturée'} statut
  * @property {boolean} [isAlert] - Vrai si la NC provient d'une alerte terrain plutôt que d'un audit planifié.
  * @property {string} [closedDate] - Date de clôture (format produit par today()).
@@ -167,6 +168,15 @@ function _buildActionRow(action, canEdit) {
  * Construit le bloc HTML des miniatures photo associées à une action,
  * en cherchant d'abord dans les réponses d'audit, puis dans l'alerte
  * terrain liée si applicable.
+ *
+ * ⚠️ CORRIGÉ : matche désormais la réponse d'audit via `linkedNc.pid`
+ * (référence stable vers GrillePoint.id, voir submitAudit audits.js)
+ * quand elle est disponible, au lieu de chercher par texte
+ * (`x.q === description`) — même bug et même correction que
+ * _buildNcPhotosHtml (nc.js) : le texte seul ne suffit pas à
+ * distinguer deux points de contrôle au même intitulé (points
+ * dupliqués dans le référentiel). Repli sur le texte pour les NC
+ * créées avant l'ajout de `pid`.
  * @param {NC | undefined} linkedNc
  * @param {string} description
  * @returns {string} HTML (vide si aucune photo trouvée).
@@ -175,7 +185,9 @@ function _buildActionPhotosHtml(linkedNc, description) {
   /** @type {Audit | undefined} */
   const audit = DB.audits.find(a => a.id === linkedNc?.aid);
   /** @type {AuditAnswer | undefined} */
-  const answer = audit?.answers && Object.values(audit.answers).find(x => x.q === description);
+  const answer = audit?.answers && (
+    linkedNc?.pid ? audit.answers[linkedNc.pid] : Object.values(audit.answers).find(x => x.q === description)
+  );
   /** @type {string} */
   const auditPhotos = answer?.photos?.length
     ? answer.photos.map(p => _photoThumb(p)).join('')

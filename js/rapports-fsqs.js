@@ -38,6 +38,7 @@
  * @property {string} id
  * @property {string} aid
  * @property {string} desc
+ * @property {string} [pid] - Référence vers GrillePoint.id d'origine (définition canonique dans nc.js) — absente sur les NC créées avant ce champ.
  * @property {string} crit
  * @property {'Ouverte'|'En cours'|'Clôturée'} statut
  * @property {string} [cmt]
@@ -376,13 +377,23 @@ function _buildNcTableRow(nc, audit) {
 
 /**
  * Construit les commentaire + photos d'une NC dans le tableau du rapport.
+ *
+ * ⚠️ CORRIGÉ : matche désormais la réponse d'audit via `nc.pid` en
+ * priorité (référence stable vers GrillePoint.id, voir submitAudit
+ * audits.js), au lieu de chercher par texte (`a.q === nc.desc`) —
+ * même bug et même correction que _buildNcPhotosHtml (nc.js) : le
+ * texte seul ne distingue pas deux points de contrôle au même
+ * intitulé (points dupliqués dans le référentiel). Repli sur le
+ * texte pour les NC créées avant l'ajout de `pid`.
  * @param {NC} nc
  * @param {Audit} audit
  * @returns {string}
  */
 function _buildNcRowPhotosHtml(nc, audit) {
   /** @type {AuditAnswer | undefined} */
-  const answer     = audit?.answers && Object.values(audit.answers).find(a => a.q === nc.desc);
+  const answer     = audit?.answers && (
+    nc.pid ? audit.answers[nc.pid] : Object.values(audit.answers).find(a => a.q === nc.desc)
+  );
   /** @type {string} */
   const comment    = answer?.cmt || nc.cmt || '';
   /** @type {string[]} */
@@ -417,6 +428,9 @@ function _buildNcRowPhotosHtml(nc, audit) {
  * Collecte toutes les entrées d'annexe photo (une par photo) pour
  * les NC liées aux audits fournis, qu'elles proviennent de la
  * réponse d'audit ou d'une alerte terrain liée.
+ *
+ * ⚠️ CORRIGÉ : même correction que _buildNcRowPhotosHtml — matching
+ * par `nc.pid` en priorité, repli sur le texte pour compatibilité.
  * @param {Audit[]} audits
  * @returns {Annexe[]}
  */
@@ -426,7 +440,9 @@ function _collectAnnexes(audits) {
     const linkedNcs = DB.ncs.filter(nc => nc.aid === audit.id);
     return linkedNcs.flatMap(nc => {
       /** @type {AuditAnswer | undefined} */
-      const answer      = audit.answers && Object.values(audit.answers).find(a => a.q === nc.desc);
+      const answer      = audit.answers && (
+        nc.pid ? audit.answers[nc.pid] : Object.values(audit.answers).find(a => a.q === nc.desc)
+      );
       /** @type {string[]} */
       const auditPhotos = answer?.photos || [];
 

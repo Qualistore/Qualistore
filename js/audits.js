@@ -75,6 +75,13 @@
 /**
  * Non-conformité (NC), créée automatiquement à la soumission d'un
  * audit pour chaque point répondu 'NC'.
+ *
+ * ⚠️ AJOUTÉ : `pid` (référence vers GrillePoint.id) est désormais
+ * renseigné à la création — voir submitAudit. Auparavant, la NC ne
+ * gardait que `desc` (le texte de la question), ce qui rendait
+ * impossible de retrouver sans ambiguïté sa photo d'origine quand
+ * plusieurs points de contrôle du référentiel partageaient le même
+ * intitulé (voir _buildNcPhotosHtml, nc.js, pour le détail du bug).
  * @typedef {Object} NC
  * @property {string} id - Préfixé 'NC-' + uid().
  * @property {string} mid - Référence vers Magasin.id.
@@ -82,6 +89,7 @@
  * @property {string} rayon
  * @property {string} date - Date de l'audit d'origine.
  * @property {string} desc - Intitulé du point de contrôle (copié depuis GrillePoint.q).
+ * @property {string} [pid] - Référence vers GrillePoint.id d'origine — absente sur les NC créées avant ce champ.
  * @property {string} crit - Criticité (copiée depuis GrillePoint.c).
  * @property {string} resp - Nom du responsable (copié depuis l'auditeur).
  * @property {string} dl - Date d'échéance (deadline).
@@ -880,7 +888,7 @@ async function submitAudit() {
     /** @type {NC} */
     DB.ncs.push({
       id: ncId, mid, mag: store.nom || '', rayon, date,
-      desc: point.q, crit: point.c, resp: aud, dl: deadline,
+      desc: point.q, pid: point.id, crit: point.c, resp: aud, dl: deadline,
       statut: 'Ouverte', cmt: auditAnswers[point.id].cmt, aid: auditId,
     });
     /** @type {Action} */

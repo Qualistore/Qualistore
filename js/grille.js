@@ -293,6 +293,7 @@ function showRayonDetail(rayon) {
 
   const addButton = el('btn-add-ctrl');
   if (addButton) addButton.style.display = isAdmin ? '' : 'none';
+  if (el('btn-find-duplicates')) el('btn-find-duplicates').style.display = isAdmin ? '' : 'none';
 
   /** @type {GrillePoint[]} */
   const allPoints = getGrille(resolvedRayon, storeId, enseigneArg);
@@ -850,14 +851,18 @@ function saveCtrl() {
 // ─────────────────────────────────────────────
 
 /**
- * Supprime un point de contrôle personnalisé, après confirmation.
+ * Retire un point de contrôle personnalisé de son emplacement de
+ * stockage (grille commune de l'enseigne ou grille propre à un
+ * magasin) — sans confirmation, sans sauvegarde, sans rafraîchir
+ * l'affichage. Utilitaire bas niveau partagé par delCtrl() et la
+ * suppression depuis la modale des doublons (voir
+ * openGrilleDoublonsModal), pour ne pas dupliquer cette logique.
  * @param {string} rayon
  * @param {string} pointId - Référence vers GrillePoint.id.
- * @param {string} [storeId] - Magasin d'origine du point (DB.grilleCustomByStore) ; absent/vide = grille commune de l'enseigne actuellement sélectionnée (#grille-enseigne-sel).
+ * @param {string} [storeId] - Magasin d'origine du point ; absent/vide = grille commune de l'enseigne actuellement sélectionnée (#grille-enseigne-sel).
  * @returns {void}
  */
-function delCtrl(rayon, pointId, storeId) {
-  if (!confirm('Supprimer ce point de contrôle personnalisé ?')) return;
+function _removeGrillePoint(rayon, pointId, storeId) {
   if (storeId) {
     if (DB.grilleCustomByStore?.[storeId]?.[rayon]) {
       DB.grilleCustomByStore[storeId][rayon] = DB.grilleCustomByStore[storeId][rayon].filter(p => p.id !== pointId);
@@ -871,6 +876,18 @@ function delCtrl(rayon, pointId, storeId) {
       DB.grilleCustom[enseigne][rayon] = DB.grilleCustom[enseigne][rayon].filter(p => p.id !== pointId);
     }
   }
+}
+
+/**
+ * Supprime un point de contrôle personnalisé, après confirmation.
+ * @param {string} rayon
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {string} [storeId] - Magasin d'origine du point (DB.grilleCustomByStore) ; absent/vide = grille commune de l'enseigne actuellement sélectionnée (#grille-enseigne-sel).
+ * @returns {void}
+ */
+function delCtrl(rayon, pointId, storeId) {
+  if (!confirm('Supprimer ce point de contrôle personnalisé ?')) return;
+  _removeGrillePoint(rayon, pointId, storeId);
   save();
   showRayonDetail(rayon);
 }
@@ -1053,4 +1070,137 @@ function confirmClearGrillePoints() {
   }
   save();
   showRayonDetail(currentRayon);
+}
+
+// ─────────────────────────────────────────────
+// 10. DÉTECTION DES POINTS DE CONTRÔLE DUPLIQUÉS
+// ─────────────────────────────────────────────
+// Contexte : deux (ou plus) points de contrôle partageant la même
+// zone et le même intitulé cassent le lien NC → photo, qui matche
+// par texte en dernier recours quand `pid` est absent (voir
+// _buildNcPhotosHtml, nc.js) — toutes les NC issues de points au même
+// intitulé affichent alors la photo du même premier point trouvé.
+// Cet outil aide à repérer et nettoyer ces doublons dans le
+// référentiel, le plus souvent issus d'un import répété par erreur.
+
+/**
+ * Détecte les points de contrôle dupliqués d'un rayon dans le scope
+ * actuellement affiché (grille commune d'une enseigne, ou magasin
+ * précis) — deux points sont considérés dupliqués s'ils partagent la
+ * même zone ET le même intitulé (GrillePoint.q), comparaison
+ * insensible à la casse et aux espaces superflus. La catégorie
+ * (GrillePoint.cat) n'entre pas dans la comparaison : deux points de
+ * même zone/intitulé mais de catégorie différente sont quand même
+ * signalés, car c'est l'intitulé affiché à l'audit qui crée
+ * l'ambiguïté de matching (voir la note d'en-tête ci-dessus).
+ * @param {string} rayon
+ * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune de l'enseigne.
+ * @param {string} enseigne - Valeur brute de #grille-enseigne-sel (peut valoir '__sans_enseigne__') ; ignorée si storeId est fourni.
+ * @returns {{zone: string, q: string, points: (GrillePoint & {_scope: 'common'|'store'})[]}[]} Un élément par groupe de doublons (2 points ou plus), trié par zone puis intitulé.
+ */
+function _detectDuplicateGrillePoints(rayon, storeId, enseigne) {
+  /** @type {string} */
+  const enseigneArg = enseigne === '__sans_enseigne__' ? '' : enseigne;
+  /** @type {(GrillePoint & {_scope: 'common'|'store'})[]} */
+  const points = getGrille(rayon, storeId, enseigneArg);
+
+  /** @type {Map<string, (GrillePoint & {_scope: 'common'|'store'})[]>} */
+  const groups = new Map();
+  points.forEach(point => {
+    /** @type {string} */
+    const zone = (point.zone && point.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE;
+    /** @type {string} */
+    const key = zone.toLowerCase() + '|' + point.q.trim().toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(point);
+  });
+
+  return [...groups.values()]
+    .filter(pts => pts.length > 1)
+    .map(pts => ({
+      zone: (pts[0].zone && pts[0].zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE,
+      q: pts[0].q,
+      points: pts,
+    }))
+    .sort((a, b) => a.zone.localeCompare(b.zone, 'fr') || a.q.localeCompare(b.q, 'fr'));
+}
+
+/**
+ * Ouvre la modale listant les points de contrôle dupliqués du rayon
+ * actuellement affiché (_currentGrilleRayon), dans le scope actuel
+ * (grille commune ou magasin précis) — voir
+ * _detectDuplicateGrillePoints. Chaque doublon peut être supprimé
+ * individuellement depuis la modale (voir _delDuplicateGrillePoint),
+ * qui rafraîchit ensuite la liste sur place.
+ * @returns {void}
+ */
+function openGrilleDoublonsModal() {
+  _renderGrilleDoublonsBody();
+  openModal('m-grille-doublons');
+}
+
+/**
+ * (Re)construit le corps de la modale des doublons — appelée à
+ * l'ouverture, puis après chaque suppression individuelle pour
+ * refléter l'état à jour sans avoir à rouvrir la modale.
+ * @returns {void}
+ */
+function _renderGrilleDoublonsBody() {
+  /** @type {string} */
+  const rayon = _currentGrilleRayon;
+  /** @type {string} */
+  const enseigne = el('grille-enseigne-sel') ? el('grille-enseigne-sel').value : '';
+  /** @type {string} */
+  const storeId = el('grille-mag-sel') ? el('grille-mag-sel').value : '';
+  /** @type {ReturnType<typeof _detectDuplicateGrillePoints>} */
+  const groups = _detectDuplicateGrillePoints(rayon, storeId, enseigne);
+
+  if (!groups.length) {
+    el('grille-doublons-body').innerHTML = `<div class="tsm tm" style="padding:24px;text-align:center"><i class="ti ti-circle-check" style="color:var(--success);font-size:22px;display:block;margin-bottom:8px"></i>Aucun doublon détecté pour ce rayon.</div>`;
+    return;
+  }
+
+  el('grille-doublons-body').innerHTML = `
+    <div class="tsm tm" style="margin-bottom:12px">${groups.length} intitulé(s) en double détecté(s) dans « ${rayon} » — conservez-en un par groupe et supprimez les autres.</div>
+    ${groups.map(g => `
+      <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius)">
+        <div style="padding:8px 14px;background:var(--qual-light);font-size:12px;font-weight:700;color:var(--qual-dark)">
+          ${g.zone} — ${g.points.length}× « ${g.q} »
+        </div>
+        ${g.points.map(p => `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              ${p.cat ? `<span class="tsm tm">${p.cat}</span>` : ''}
+              ${critBdg(p.c)}
+              <span class="tsm tm">Poids : ${p.p}</span>
+              ${p._scope === 'common'
+                ? '<span class="tsm" style="color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:0 6px;font-size:10px">Commun</span>'
+                : ''}
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="_delDuplicateGrillePoint('${rayon}','${p.id}','${p._scope === 'common' ? '' : storeId}')">
+              <i class="ti ti-trash"></i> Supprimer
+            </button>
+          </div>
+        `).join('')}
+      </div>
+    `).join('')}`;
+}
+
+/**
+ * Supprime un point de contrôle depuis la modale des doublons, après
+ * confirmation, puis rafraîchit sur place la liste des doublons
+ * restants (sans fermer la modale) ainsi que la vue détail du rayon
+ * en arrière-plan (voir _removeGrillePoint, réutilisée depuis
+ * delCtrl).
+ * @param {string} rayon
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {string} [storeId] - Magasin propriétaire du point ; absent/vide = grille commune de l'enseigne actuellement sélectionnée.
+ * @returns {void}
+ */
+function _delDuplicateGrillePoint(rayon, pointId, storeId) {
+  if (!confirm('Supprimer ce point de contrôle ?')) return;
+  _removeGrillePoint(rayon, pointId, storeId);
+  save();
+  _renderGrilleDoublonsBody();
+  showRayonDetail(rayon);
 }

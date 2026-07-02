@@ -377,6 +377,7 @@
               <button class="btn btn-secondary btn-sm" id="btn-rename-rayon" onclick="openRenameRayonPrompt()" style="display:none" aria-label="Renommer le rayon" title="Renommer le rayon"><i class="ti ti-pencil"></i> Renommer</button>
               <button class="btn btn-secondary btn-sm" id="btn-delete-rayon" onclick="confirmDeleteRayon()" style="display:none" aria-label="Supprimer le rayon" title="Supprimer le rayon"><i class="ti ti-trash"></i> Supprimer le rayon</button>
               <button class="btn btn-secondary btn-sm" id="btn-clear-ctrl-points" onclick="confirmClearGrillePoints()" style="display:none;color:var(--danger)"><i class="ti ti-eraser"></i> Vider les points</button>
+              <button class="btn btn-secondary btn-sm" id="btn-find-duplicates" onclick="openGrilleDoublonsModal()" style="display:none"><i class="ti ti-copy"></i> Doublons</button>
               <button class="btn btn-danger" id="btn-add-ctrl" onclick="openCtrlModal()" style="display:none"><i class="ti ti-plus"></i> Ajouter un point</button>
             </div>
           </div>
@@ -831,6 +832,20 @@
     <div class="modal-foot">
       <button class="btn btn-secondary" onclick="closeModal('m-ctrl')">Annuler</button>
       <button class="btn btn-primary" onclick="saveCtrl()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DOUBLONS DE POINTS DE CONTRÔLE (admin only) -->
+<div class="modal-ov" id="m-grille-doublons">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-copy" style="color:var(--danger)"></i> Points de contrôle dupliqués</div>
+      <button class="btn-x" onclick="closeModal('m-grille-doublons')">&times;</button>
+    </div>
+    <div class="modal-body" id="grille-doublons-body"></div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-grille-doublons')">Fermer</button>
     </div>
   </div>
 </div>

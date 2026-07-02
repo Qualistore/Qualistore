@@ -37,6 +37,7 @@
  * @property {'Ouverte'|'En cours'|'Clôturée'} statut
  * @property {string} [cmt] - Commentaire de suivi/clôture.
  * @property {string} aid - Référence polymorphe vers Audit.id (ou Alerte.id si isAlert).
+ * @property {string} [pid] - Référence vers GrillePoint.id d'origine (voir submitAudit, audits.js) — absente sur les NC créées avant ce champ, ou issues d'une alerte (isAlert). Permet de retrouver sans ambiguïté la bonne réponse/photo dans Audit.answers même quand plusieurs points de contrôle partagent un intitulé identique (voir _buildNcPhotosHtml) ; à défaut, retombe sur une recherche par texte (`desc`), plus fragile en cas de doublon.
  * @property {boolean} [isAlert] - Vrai si la NC provient d'une alerte terrain plutôt que d'un audit planifié.
  * @property {string | null} [closedDate] - Date de clôture ; null après réouverture (reopenNC), absent/undefined avant toute clôture.
  */
@@ -223,6 +224,18 @@ function _buildNcRow(nc, isAdmin) {
 
 /**
  * Construit le HTML des photos liées à une NC (depuis audit ou alerte).
+ *
+ * ⚠️ CORRIGÉ : recherche désormais la réponse d'origine par `nc.pid`
+ * (référence stable vers GrillePoint.id, voir submitAudit audits.js)
+ * quand elle est disponible, au lieu de chercher par texte
+ * (`a.q === nc.desc`). La recherche par texte renvoyait TOUJOURS la
+ * première réponse de l'audit dont l'intitulé correspondait — si
+ * plusieurs points de contrôle du référentiel partagent le même
+ * intitulé (points dupliqués dans la grille), toutes leurs NC
+ * affichaient la photo du même premier point trouvé, peu importe
+ * lequel avait réellement été photographié. Repli sur l'ancienne
+ * recherche par texte pour les NC créées avant l'ajout de `pid`
+ * (compatibilité, aucune donnée existante perdue).
  * @param {NC} nc
  * @returns {string} HTML, ou chaîne vide si aucune photo.
  */
@@ -230,7 +243,9 @@ function _buildNcPhotosHtml(nc) {
   /** @type {Audit | undefined} */
   const audit  = DB.audits.find(a => a.id === nc.aid);
   /** @type {AuditAnswer | undefined} */
-  const answer = audit?.answers && Object.values(audit.answers).find(a => a.q === nc.desc);
+  const answer = audit?.answers && (
+    nc.pid ? audit.answers[nc.pid] : Object.values(audit.answers).find(a => a.q === nc.desc)
+  );
   /** @type {string[]} */
   const auditPhotos = answer?.photos || [];
 
@@ -896,6 +911,12 @@ function exportSelectedNC() {
 /**
  * Construit le HTML des miniatures photos (depuis audit ou alerte)
  * pour un export PDF.
+ *
+ * ⚠️ CORRIGÉ : même correction que _buildNcPhotosHtml (matching par
+ * `nc.pid` en priorité, repli sur le texte pour compatibilité) — voir
+ * sa JSDoc pour le détail du bug corrigé (photos dupliquées/mal
+ * assignées quand plusieurs points de contrôle partagent un intitulé
+ * identique).
  * @param {NC} nc
  * @param {string} [borderColor] - Couleur de bordure des miniatures.
  * @returns {string} HTML, ou chaîne vide si aucune photo.
@@ -904,7 +925,9 @@ function _buildPdfPhotosHtml(nc, borderColor = '#e2e6ef') {
   /** @type {Audit | undefined} */
   const audit      = DB.audits.find(a => a.id === nc.aid);
   /** @type {AuditAnswer | undefined} */
-  const answer     = audit?.answers && Object.values(audit.answers).find(a => a.q === nc.desc);
+  const answer     = audit?.answers && (
+    nc.pid ? audit.answers[nc.pid] : Object.values(audit.answers).find(a => a.q === nc.desc)
+  );
   /** @type {string[]} */
   const auditPhotos = answer?.photos || [];
 
