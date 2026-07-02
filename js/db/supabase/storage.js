@@ -820,6 +820,16 @@ async function _deleteStaleQualAudits(audits) {
 /**
  * Vérifie toutes les N secondes si des données ont changé dans Supabase
  * (modifications par d'autres sessions / utilisateurs).
+ *
+ * ⚠️ CORRIGÉ : `drafts` était récupéré mais jamais comparé dans
+ * `hasChanges` — un brouillon modifié par une autre session (ex :
+ * photo ajoutée depuis une tablette) n'était donc reflété ici que si
+ * une des AUTRES tables (audits/ncs/actions/alertes/qualAudits)
+ * changeait EN MÊME TEMPS, sinon `hasChanges` restait `false` et tout
+ * le bloc — y compris la mise à jour de DB.drafts pourtant déjà
+ * récupérée — était ignoré. Seul un rechargement complet de page
+ * (qui repasse par loadDB(), inconditionnel) permettait alors de voir
+ * le brouillon à jour.
  * @returns {Promise<void>} Callback exécuté à chaque tick de l'intervalle.
  */
 setInterval(async () => {
@@ -838,7 +848,8 @@ setInterval(async () => {
       JSON.stringify(ncs)        !== JSON.stringify(DB.ncs)        ||
       JSON.stringify(actions)    !== JSON.stringify(DB.actions)    ||
       JSON.stringify(alertes)    !== JSON.stringify(DB.alertes)    ||
-      JSON.stringify(qualAudits) !== JSON.stringify(DB.qualAudits);
+      JSON.stringify(qualAudits) !== JSON.stringify(DB.qualAudits) ||
+      JSON.stringify(drafts)     !== JSON.stringify(DB.drafts);
 
     if (!hasChanges) return;
 
@@ -861,6 +872,12 @@ setInterval(async () => {
  * Recherche l'élément `.page.active` dans le DOM et appelle la
  * fonction de rendu correspondante (renderAudits, renderNC, etc.),
  * si elle existe pour la page courante.
+ *
+ * ⚠️ CORRIGÉ : ajout de 'brouillons' → renderDrafts, absente de cette
+ * table alors que DB.drafts fait bien partie des données rafraîchies
+ * par le polling ci-dessus — la page Brouillons ne se mettait jamais
+ * à jour toute seule si elle était déjà affichée pendant qu'un autre
+ * appareil modifiait un brouillon.
  * @returns {void}
  */
 function _refreshActivePage() {
@@ -880,6 +897,7 @@ function _refreshActivePage() {
     actions:           renderActions,
     dashboard:         renderDash,
     'audit-qualimetre': renderQualAudits,
+    brouillons:        renderDrafts,
   };
 
   pageRefreshMap[pageId]?.();

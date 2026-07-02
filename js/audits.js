@@ -150,6 +150,15 @@ let _auditZones    = {};
 let _auditZoneKeys = [];
 /** @type {string | null} Référence vers Draft.id en cours de reprise, ou null si nouvel audit. */
 let _currentDraftId = null;
+/**
+ * Promesses des uploads de photo actuellement en cours (une par
+ * appel de handleAuditPhoto non encore terminé). Utilisée par
+ * pauseAudit() et submitAudit() pour attendre la fin de tout upload
+ * en cours avant de figer un instantané des réponses — voir la JSDoc
+ * de ces deux fonctions pour le bug que ce mécanisme corrige.
+ * @type {Promise<void>[]}
+ */
+let _pendingPhotoUploads = [];
 
 // ─────────────────────────────────────────────
 // 3. LISTE DES AUDITS
@@ -795,9 +804,24 @@ function _updateAuditTabBadges() {
  * manquantes en N/A, calcule le score pondéré, crée l'Audit, puis
  * crée automatiquement une NC + une Action corrective pour chaque
  * point répondu 'NC'. Supprime le brouillon lié si applicable.
- * @returns {void}
+ *
+ * ⚠️ CORRIGÉ : attend désormais la fin de tout upload de photo en
+ * cours (_pendingPhotoUploads, voir handleAuditPhoto) avant de
+ * finaliser l'audit — même bug et même correction que pauseAudit()
+ * (voir sa JSDoc) : valider l'audit pendant qu'une photo était
+ * encore en cours d'envoi produisait un audit définitif sans cette
+ * photo, de façon irréversible (contrairement à un brouillon, un
+ * audit validé ne se reprend pas).
+ * @returns {Promise<void>}
  */
-function submitAudit() {
+async function submitAudit() {
+  if (_pendingPhotoUploads.length) {
+    showToast('Envoi des photos en cours — merci de patienter…', 'warning');
+    if (el('a-next')) el('a-next').disabled = true;
+    await Promise.all(_pendingPhotoUploads);
+    if (el('a-next')) el('a-next').disabled = false;
+  }
+
   /** @type {string} */
   const mid    = v('a-mag');
   /** @type {string} */
@@ -929,6 +953,22 @@ function _showAuditCompletionScreen(storeName, rayon, date, score, ncCount) {
  * photo prise directement avec l'appareil photo est souvent à pleine
  * résolution (plusieurs Mo), ce qui rendait l'upload très lent sans
  * bénéfice réel pour une preuve visuelle d'audit.
+ *
+ * ⚠️ AJOUTÉ : s'enregistre dans _pendingPhotoUploads pendant toute la
+ * durée de l'upload (retiré dans le `finally`), pour que pauseAudit()
+ * et submitAudit() puissent attendre sa fin avant de figer un
+ * instantané des réponses — voir leur JSDoc pour le détail du bug
+ * corrigé (photo perdue si l'audit est mis en pause/validé pendant
+ * qu'un upload est encore en cours).
+ *
+ * ⚠️ AJOUTÉ : affiche un indicateur visuel (spinner + texte) dans le
+ * conteneur de miniatures pendant l'upload, remplacé par la vraie
+ * miniature une fois terminé. Avant cet ajout, rien ne signalait à
+ * l'utilisateur qu'un envoi était en cours — seul un `alert()`
+ * apparaissait en cas d'échec, ou un toast s'il cliquait Pause/Valider
+ * pendant l'attente (voir pauseAudit/submitAudit). Sur un réseau
+ * lent, l'utilisateur pouvait croire l'ajout de photo sans effet et
+ * réessayer inutilement.
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @param {HTMLInputElement} input - Élément `<input type="file" multiple>`.
  * @returns {Promise<void>}
@@ -936,29 +976,50 @@ function _showAuditCompletionScreen(storeName, rayon, date, score, ncCount) {
 async function handleAuditPhoto(pointId, input) {
   /** @type {File[]} */
   const files = [...input.files];
+  if (!files.length) return;
 
-  for (const file of files) {
-    /** @type {File | Blob} */
-    const compressed = await compressImageFile(file);
-    /** @type {string} */
-    const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
-    /** @type {string} */
-    const storagePath = `audits/${pointId}-${uid()}.${ext}`;
-    /** @type {string | null} */
-    const uploadedUrl = await sbUploadPhoto(compressed, storagePath);
-
-    if (uploadedUrl) {
-      auditAnswers[pointId].photos.push(uploadedUrl);
-    } else {
-      alert('Upload échoué — vérifiez votre connexion.');
-    }
+  /** @type {HTMLElement | null} */
+  const previewContainer = el('aphot-' + pointId);
+  /** @type {string} */
+  const spinnerId = 'aphot-spin-' + pointId;
+  if (previewContainer) {
+    previewContainer.insertAdjacentHTML('beforeend',
+      `<span id="${spinnerId}" class="tsm tm" style="display:flex;align-items:center;gap:5px">
+         <i class="ti ti-loader" style="animation:spin .8s linear infinite"></i> Envoi de la photo…
+       </span>`);
   }
 
-  const previewContainer = el('aphot-' + pointId);
-  if (previewContainer) {
-    previewContainer.innerHTML = auditAnswers[pointId].photos
-      .map(url => `<img src="${url}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`)
-      .join('');
+  /** @type {Promise<void>} */
+  const uploadTask = (async () => {
+    for (const file of files) {
+      /** @type {File | Blob} */
+      const compressed = await compressImageFile(file);
+      /** @type {string} */
+      const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
+      /** @type {string} */
+      const storagePath = `audits/${pointId}-${uid()}.${ext}`;
+      /** @type {string | null} */
+      const uploadedUrl = await sbUploadPhoto(compressed, storagePath);
+
+      if (uploadedUrl) {
+        auditAnswers[pointId].photos.push(uploadedUrl);
+      } else {
+        alert('Upload échoué — vérifiez votre connexion.');
+      }
+    }
+
+    if (previewContainer) {
+      previewContainer.innerHTML = auditAnswers[pointId].photos
+        .map(url => `<img src="${url}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`)
+        .join('');
+    }
+  })();
+
+  _pendingPhotoUploads.push(uploadTask);
+  try {
+    await uploadTask;
+  } finally {
+    _pendingPhotoUploads = _pendingPhotoUploads.filter(p => p !== uploadTask);
   }
 
   input.value = '';
@@ -992,9 +1053,29 @@ function openPhotoViewer(url) {
  * Met l'audit en cours en pause : sauvegarde l'état courant
  * (réponses incluses) comme Draft, persiste localement + pousse
  * vers Supabase, puis ferme la modale.
- * @returns {void}
+ *
+ * ⚠️ CORRIGÉ : attend désormais la fin de tout upload de photo en
+ * cours (_pendingPhotoUploads, voir handleAuditPhoto) avant de
+ * construire l'instantané `{ ...auditAnswers }`. Avant cette
+ * correction, mettre l'audit en pause PENDANT qu'une photo était
+ * encore en cours d'envoi (upload réseau non terminé) créait un
+ * brouillon sans cette photo : le `push()` de l'URL dans
+ * auditAnswers[pointId].photos se produit seulement après la fin de
+ * l'upload, donc après que le brouillon ait déjà été sérialisé et
+ * envoyé — la photo restait visible sur l'appareil resté ouvert sur
+ * l'audit (auditAnswers déjà à jour en mémoire), mais absente du
+ * brouillon persisté, donc invisible depuis un autre appareil/session
+ * qui reprend ce brouillon.
+ * @returns {Promise<void>}
  */
-function pauseAudit() {
+async function pauseAudit() {
+  if (_pendingPhotoUploads.length) {
+    showToast('Envoi des photos en cours — merci de patienter…', 'warning');
+    if (el('a-pause')) el('a-pause').disabled = true;
+    await Promise.all(_pendingPhotoUploads);
+    if (el('a-pause')) el('a-pause').disabled = false;
+  }
+
   /** @type {string} */
   const mid    = v('a-mag');
   /** @type {string} */
@@ -1038,13 +1119,43 @@ function pauseAudit() {
 /**
  * Reprend un brouillon d'audit FSQS : restaure le formulaire, les
  * réponses déjà saisies, et rouvre le wizard à l'étape questions.
+ *
+ * ⚠️ AJOUTÉ : récupère d'abord la version la plus fraîche du
+ * brouillon directement depuis Supabase (sbSelect('drafts')) avant
+ * de l'ouvrir, au lieu de se fier uniquement à DB.drafts en mémoire.
+ * DB.drafts n'est resynchronisé que toutes les SYNC_POLL_INTERVAL_MS
+ * (storage.js, polling en arrière-plan) ou au chargement complet de
+ * la page — insuffisant quand plusieurs utilisateurs travaillent sur
+ * le même brouillon (ex : une tablette ajoute des photos et met en
+ * pause, un autre poste reprend ce brouillon dans la foulée) : sans
+ * ce rafraîchissement explicite, la reprise pouvait afficher une
+ * version légèrement périmée pendant la fenêtre séparant deux cycles
+ * de polling. En cas d'échec réseau (hors-ligne), retombe sur la
+ * version déjà en mémoire — jamais de blocage total pour cette seule
+ * vérification.
  * @param {string} draftId - Référence vers Draft.id.
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function resumeDraft(draftId) {
+async function resumeDraft(draftId) {
   /** @type {Draft | undefined} */
-  const draft = DB.drafts.find(d => d.id === draftId);
+  let draft = DB.drafts.find(d => d.id === draftId);
   if (!draft) return;
+
+  try {
+    /** @type {Draft[]} */
+    const freshDrafts = await sbSelect('drafts');
+    /** @type {Draft | undefined} */
+    const freshDraft = freshDrafts?.find(d => d.id === draftId);
+    if (freshDraft) {
+      draft = freshDraft;
+      /** @type {number} */
+      const idx = DB.drafts.findIndex(d => d.id === draftId);
+      if (idx >= 0) DB.drafts[idx] = freshDraft; else DB.drafts.push(freshDraft);
+      _saveToLocalStorage();
+    }
+  } catch (_) {
+    // Supabase inaccessible (hors-ligne) — on continue avec la version en mémoire.
+  }
 
   _currentDraftId = draftId;
 
