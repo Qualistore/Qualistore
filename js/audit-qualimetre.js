@@ -358,6 +358,10 @@ function _applyQaRep(pid, r, btn) {
 /**
  * Upload une photo pour un point de contrôle Qualimètre vers
  * Supabase Storage (limite stricte de 2 photos par point).
+ *
+ * ⚠️ AJOUTÉ : la photo est redimensionnée/compressée côté navigateur
+ * (voir compressImageFile, ui.js) avant l'upload — même correction
+ * que handleAuditPhoto (audits.js), pour les mêmes raisons.
  * @param {string} pid - Référence vers GrillePoint.id.
  * @param {HTMLInputElement} input - Élément `<input type="file">` (un seul fichier).
  * @returns {Promise<void>}
@@ -370,10 +374,14 @@ async function handleQaPhoto(pid, input) {
   if (!ans.photos) ans.photos = [];
   if (ans.photos.length >= 2) { alert('2 photos maximum par point de contrôle.'); input.value = ''; return; }
 
+  /** @type {File | Blob} */
+  const compressed = await compressImageFile(file);
   /** @type {string} */
-  const path = `audits/qualimetre/qa-${pid}-${uid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
+  /** @type {string} */
+  const path = `audits/qualimetre/qa-${pid}-${uid()}.${ext}`;
   /** @type {string | null} */
-  const url = await sbUploadPhoto(file, path);
+  const url = await sbUploadPhoto(compressed, path);
   if (!url) { alert('Erreur upload photo. Vérifiez votre connexion.'); input.value = ''; return; }
   ans.photos.push(url);
   input.value = '';

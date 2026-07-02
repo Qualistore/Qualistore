@@ -923,6 +923,12 @@ function _showAuditCompletionScreen(storeName, rayon, date, score, ncCount) {
  * Upload une ou plusieurs photos pour un point de contrôle vers
  * Supabase Storage, ajoute les URLs résultantes à la réponse
  * correspondante, puis rafraîchit l'aperçu des miniatures.
+ *
+ * ⚠️ AJOUTÉ : chaque photo est redimensionnée/compressée côté
+ * navigateur (voir compressImageFile, ui.js) avant l'upload — une
+ * photo prise directement avec l'appareil photo est souvent à pleine
+ * résolution (plusieurs Mo), ce qui rendait l'upload très lent sans
+ * bénéfice réel pour une preuve visuelle d'audit.
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @param {HTMLInputElement} input - Élément `<input type="file" multiple>`.
  * @returns {Promise<void>}
@@ -932,10 +938,14 @@ async function handleAuditPhoto(pointId, input) {
   const files = [...input.files];
 
   for (const file of files) {
+    /** @type {File | Blob} */
+    const compressed = await compressImageFile(file);
     /** @type {string} */
-    const storagePath = `audits/${pointId}-${uid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
+    /** @type {string} */
+    const storagePath = `audits/${pointId}-${uid()}.${ext}`;
     /** @type {string | null} */
-    const uploadedUrl = await sbUploadPhoto(file, storagePath);
+    const uploadedUrl = await sbUploadPhoto(compressed, storagePath);
 
     if (uploadedUrl) {
       auditAnswers[pointId].photos.push(uploadedUrl);

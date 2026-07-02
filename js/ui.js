@@ -142,8 +142,88 @@ function v(id)         { return el(id).value; }
 function sv(id, value) { el(id).value = value; }
 
 // ─────────────────────────────────────────────
-// 3. HELPERS DE RENDU
+// PHOTOS — COMPRESSION AVANT UPLOAD
+// Utilisée par audits.js (handleAuditPhoto), audit-qualimetre.js
+// (handleQaPhoto) et alertes.js (handleAlertPhotos) — une seule
+// implémentation partagée pour éviter de dupliquer la même logique
+// dans les trois fichiers.
 // ─────────────────────────────────────────────
+
+/**
+ * Largeur maximale (px) appliquée aux photos avant upload (voir
+ * compressImageFile) — au-delà, l'image est redimensionnée en
+ * conservant ses proportions. Une photo prise directement avec
+ * l'appareil photo d'une tablette/téléphone est souvent à une
+ * définition largement supérieure à ce qui est utile pour une preuve
+ * visuelle d'audit/NC/alerte, d'où un temps d'upload inutilement long.
+ * @type {number}
+ */
+const PHOTO_MAX_WIDTH = 1600;
+
+/**
+ * Qualité JPEG (0 à 1) appliquée à la compression — voir
+ * compressImageFile.
+ * @type {number}
+ */
+const PHOTO_JPEG_QUALITY = 0.8;
+
+/**
+ * Redimensionne et compresse une image côté navigateur (via un
+ * `<canvas>` intermédiaire) avant upload, pour réduire le poids du
+ * fichier envoyé — sans changer le principe de stockage (toujours un
+ * vrai fichier image dans Supabase Storage, voir sbUploadPhoto,
+ * supabase.js), seulement sa taille.
+ *
+ * Ne redimensionne QUE si l'image dépasse PHOTO_MAX_WIDTH (jamais
+ * d'agrandissement d'une image déjà petite). Convertit toujours vers
+ * JPEG (PHOTO_JPEG_QUALITY) — y compris pour un PNG d'origine — la
+ * transparence n'a pas d'utilité pour une photo d'audit/NC/alerte.
+ *
+ * En cas d'échec (fichier non reconnu comme image, navigateur sans
+ * support Canvas, decode impossible...), retombe silencieusement sur
+ * le fichier d'origine tel quel : cette fonction ne doit jamais faire
+ * échouer un upload à cause d'une simple optimisation de poids.
+ * @param {File|Blob} file - Fichier image d'origine (typiquement issu d'un `<input type="file">`).
+ * @returns {Promise<File|Blob>} Image compressée (type 'image/jpeg'), ou le fichier d'origine si la compression échoue ou est inutile.
+ */
+function compressImageFile(file) {
+  return new Promise(resolve => {
+    if (!file || !file.type || !file.type.startsWith('image/')) { resolve(file); return; }
+
+    /** @type {string} */
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      /** @type {number} */
+      const scale  = img.width > PHOTO_MAX_WIDTH ? PHOTO_MAX_WIDTH / img.width : 1;
+      /** @type {number} */
+      const targetW = Math.round(img.width  * scale);
+      /** @type {number} */
+      const targetH = Math.round(img.height * scale);
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(file); return; }
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+
+      canvas.toBlob(
+        blob => resolve(blob || file),
+        'image/jpeg',
+        PHOTO_JPEG_QUALITY
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+    img.src = objectUrl;
+  });
+}
+
+// ─────────────────────────────────────────────
+// 3. HELPERS DE RENDU
 
 /**
  * Formate une date ISO 'YYYY-MM-DD' en 'DD/MM/YYYY'.

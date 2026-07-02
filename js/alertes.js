@@ -299,6 +299,13 @@ function _createActionFromAlert({ storeId, storeName, title, reporter, deadline,
  * Upload une ou plusieurs photos pour la nouvelle alerte vers
  * Supabase Storage ; si l'upload échoue (hors-ligne), bascule en
  * fallback base64 stocké directement en mémoire.
+ *
+ * ⚠️ AJOUTÉ : chaque photo est redimensionnée/compressée côté
+ * navigateur (voir compressImageFile, ui.js) avant l'upload — même
+ * correction que handleAuditPhoto (audits.js). Le fallback base64
+ * réutilise aussi la version compressée : une chaîne base64 plus
+ * légère limite le risque de dépasser les quotas de localStorage en
+ * mode hors-ligne.
  * @param {HTMLInputElement} input - Élément `<input type="file" multiple>`.
  * @returns {Promise<void>}
  */
@@ -307,17 +314,21 @@ async function handleAlertPhotos(input) {
   const files = [...input.files];
 
   for (const file of files) {
+    /** @type {File | Blob} */
+    const compressed = await compressImageFile(file);
     /** @type {string} */
-    const storagePath = `alertes/${uid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
+    /** @type {string} */
+    const storagePath = `alertes/${uid()}.${ext}`;
     /** @type {string | null} */
-    const uploadedUrl = await sbUploadPhoto(file, storagePath);
+    const uploadedUrl = await sbUploadPhoto(compressed, storagePath);
 
     if (uploadedUrl) {
       _alertPendingPhotos.push(uploadedUrl);
       _renderAlertPhotoPreviews();
     } else {
       // Fallback base64 si offline
-      _readFileAsBase64(file, base64 => {
+      _readFileAsBase64(compressed, base64 => {
         _alertPendingPhotos.push(base64);
         _renderAlertPhotoPreviews();
       });
@@ -330,7 +341,7 @@ async function handleAlertPhotos(input) {
 /**
  * Lit un fichier et le convertit en chaîne base64 (data URL), via
  * un callback asynchrone.
- * @param {File} file
+ * @param {File|Blob} file - Fichier d'origine, ou Blob compressé (voir compressImageFile, ui.js) — FileReader.readAsDataURL accepte les deux.
  * @param {(base64: string) => void} callback
  * @returns {void}
  */
