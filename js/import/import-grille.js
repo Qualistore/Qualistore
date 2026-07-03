@@ -1199,6 +1199,16 @@ const IMPORT_CONCEPT_LABELS = {
  * _onMappingConceptChanged pour le rejeu de la normalisation. Les
  * en-têtes non assignés à un concept sont listés en rappel
  * informatif (ils restent dans le champ `extra` de chaque ligne).
+ *
+ * ⚠️ CHANGÉ : présentation en grille compacte (2+ colonnes selon la
+ * largeur disponible) plutôt qu'une liste verticale d'une colonne —
+ * même contenu, même possibilité de tout corriger, mais deux fois
+ * moins de hauteur à l'écran. Chaque concept affiche désormais une
+ * icône d'état (mappé / non mappé) pour un repérage visuel immédiat,
+ * et 'point' (seul concept réellement requis pour qu'une ligne soit
+ * valide, voir _showImportPreview) est marqué d'un astérisque. Les
+ * en-têtes non utilisés sont affichés en badges plutôt qu'en liste
+ * texte, plus rapides à parcourir.
  * @param {DetectionResult} detection
  * @returns {string}
  */
@@ -1207,31 +1217,40 @@ function _buildMappingBlock(detection) {
   const allHeaders = _collectAllHeaders(_importRawRows);
 
   /** @type {string} */
-  const rows = Object.keys(IMPORT_CONCEPT_LABELS).map(concept => {
+  const fields = Object.keys(IMPORT_CONCEPT_LABELS).map(concept => {
     /** @type {string | null} */
     const assignedHeader = detection.mapping[concept];
+    /** @type {boolean} */
+    const isMapped = !!assignedHeader;
     /** @type {string} */
     const options = ['<option value="">— aucune —</option>']
       .concat(allHeaders.map(h => `<option value="${_escapeHtmlAttr(h)}" ${h === assignedHeader ? 'selected' : ''}>${_escapeHtml(h)}</option>`))
       .join('');
 
-    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
-      <span style="flex:0 0 160px;font-size:12px;color:var(--text2)">${IMPORT_CONCEPT_LABELS[concept]}</span>
-      <select class="form-control" style="flex:1;font-size:12px;padding:4px 8px" onchange="_onMappingConceptChanged('${concept}', this.value)">${options}</select>
+    return `<div>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);margin-bottom:4px">
+        <i class="ti ${isMapped ? 'ti-circle-check' : 'ti-circle-dashed'}" style="color:${isMapped ? 'var(--success)' : 'var(--text3)'};font-size:13px"></i>
+        ${IMPORT_CONCEPT_LABELS[concept]}${concept === 'point' ? ' <span style="color:var(--danger)" title="Requis">*</span>' : ''}
+      </label>
+      <select class="form-control" style="font-size:12px;padding:5px 8px" onchange="_onMappingConceptChanged('${concept}', this.value)">${options}</select>
     </div>`;
   }).join('');
 
   /** @type {string} */
-  const unmappedNotice = detection.unmappedHeaders.length
-    ? `<div style="margin-top:8px;font-size:11px;color:var(--text3)">Colonnes non utilisées (conservées dans le détail de chaque ligne) : ${detection.unmappedHeaders.map(_escapeHtml).join(', ')}</div>`
+  const unmappedChips = detection.unmappedHeaders.length
+    ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <span class="tsm tm">Colonnes non utilisées : </span>
+        ${detection.unmappedHeaders.map(h => `<span class="badge b-direction" style="margin:2px 3px 2px 0">${_escapeHtml(h)}</span>`).join('')}
+      </div>`
     : '';
 
-  return `<div style="background:var(--bg);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px">
-    <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text)">
-      <i class="ti ti-adjustments-horizontal"></i> Colonnes détectées <span style="color:var(--text3);font-weight:400">— corrigez si besoin</span>
+  return `<div style="background:var(--bg);border-radius:var(--radius);padding:14px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span class="tsm fw6" style="color:var(--text)"><i class="ti ti-adjustments-horizontal"></i> Colonnes détectées</span>
+      <span class="tsm tm">Corrigez si besoin</span>
     </div>
-    ${rows}
-    ${unmappedNotice}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px 14px">${fields}</div>
+    ${unmappedChips}
   </div>`;
 }
 

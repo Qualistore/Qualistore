@@ -882,45 +882,46 @@
            détecté une fois le fichier déposé (voir processImportFile,
            import-grille.js). Plus de sélection manuelle d'onglet :
            CSV/TSV, Excel et PDF sont tous acceptés directement, le
-           format réel est déterminé par l'extension du fichier. -->
-      <div style="background:var(--bg);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.9" id="imp-format-info">
-        <strong style="color:var(--text);font-size:13px">Déposez un fichier CSV, TSV, Excel (.xlsx/.xls) ou PDF</strong><br>
-        Le format est détecté automatiquement. Les colonnes sont reconnues quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
-        Le mapping détecté est affiché et modifiable avant import.
+           format réel est déterminé par l'extension du fichier.
+           ⚠️ RACCOURCI : 3 lignes → 1, le détail (colonnes, mapping
+           modifiable) est maintenant montré concrètement dans la
+           section Vérification plutôt qu'annoncé à l'avance en texte. -->
+      <div style="background:var(--bg);border-radius:var(--radius);padding:10px 14px;margin-bottom:18px;font-size:12px;color:var(--text2)" id="imp-format-info">
+        <i class="ti ti-sparkles" style="color:var(--primary)"></i> Colonnes reconnues automatiquement, quel que soit leur ordre ou intitulé — toujours modifiables avant import.
       </div>
 
-      <!-- Enseigne cible (FSQS uniquement) — l'import remplit la grille de base du rayon, héritée par tous les magasins de cette enseigne -->
-      <div class="form-group" id="imp-default-mags-group">
-        <label class="form-label">Enseigne <span style="color:var(--text2);font-size:11px">(optionnel — laisser vide pour la grille commune à tous)</span></label>
-        <select class="form-control" id="imp-default-enseigne-sel" onchange="_onImportDefaultEnseigneChanged()">
-          <option value="">— Grille commune (toutes enseignes) —</option>
-        </select>
+      <!-- Destination -->
+      <div class="tsm fw6" style="color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Destination</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="form-group" id="imp-default-mags-group" style="margin-bottom:0">
+          <label class="form-label">Enseigne <span class="tsm tm">(optionnel)</span></label>
+          <select class="form-control" id="imp-default-enseigne-sel" onchange="_onImportDefaultEnseigneChanged()">
+            <option value="">— Grille commune —</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Criticité par défaut</label>
+          <select class="form-control" id="imp-default-crit" onchange="_onDefaultCritChanged(this.value)">
+            <option value="Mineure">Mineure</option>
+            <option value="Majeure" selected>Majeure</option>
+            <option value="Critique">Critique</option>
+          </select>
+        </div>
       </div>
-
-      <!-- Rayon(s) cible(s) (FSQS uniquement) -->
       <div class="form-group" id="imp-default-rayons-group">
-        <label class="form-label">Rayon(s) cible(s) <span style="color:var(--text2);font-size:11px">(les libellés détectés dans le fichier deviennent des zones à l'intérieur du/des rayon(s) choisis ici)</span></label>
-        <div id="imp-default-rayon-cbs" class="cb-group" style="max-height:120px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
+        <label class="form-label">Rayon(s) cible(s) <span class="tsm tm">(les zones du fichier seront rattachées ici)</span></label>
+        <div id="imp-default-rayon-cbs" class="cb-group" style="max-height:110px;overflow-y:auto;background:var(--bg);border-radius:var(--radius);padding:10px 12px;border:1px solid var(--border)"></div>
       </div>
 
-      <!-- Criticité par défaut -->
-      <div class="form-group">
-        <label class="form-label">Criticité par défaut <span style="color:var(--text2);font-size:11px">(appliquée aux lignes sans criticité reconnue dans le fichier)</span></label>
-        <select class="form-control" id="imp-default-crit" onchange="_onDefaultCritChanged(this.value)">
-          <option value="Mineure">Mineure</option>
-          <option value="Majeure" selected>Majeure</option>
-          <option value="Critique">Critique</option>
-        </select>
-      </div>
-
-      <!-- Drop zone -->
-      <div id="imp-drop" style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:32px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s,padding .2s;background:var(--bg)"
+      <!-- Fichier -->
+      <div class="tsm fw6" style="color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px">Fichier</div>
+      <div id="imp-drop" style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:28px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s,padding .2s;background:var(--bg)"
         ondragover="event.preventDefault();this.style.borderColor='var(--primary-mid)';this.style.background='var(--primary-light)'"
         ondragleave="this.style.borderColor='var(--border)';this.style.background='var(--bg)'"
         ondrop="handleImportDrop(event)"
         onclick="el('imp-file-input').click()">
         <div id="imp-drop-empty">
-          <i class="ti ti-cloud-upload" style="font-size:40px;color:var(--text3);display:block;margin-bottom:10px"></i>
+          <i class="ti ti-cloud-upload" style="font-size:36px;color:var(--text3);display:block;margin-bottom:8px"></i>
           <div style="font-size:14px;font-weight:500;margin-bottom:4px">Glissez-déposez votre fichier ici</div>
           <div class="tsm tm">ou cliquez pour choisir un fichier</div>
           <div class="tsm" id="imp-accept-hint" style="color:var(--primary);margin-top:6px">.csv · .tsv · .xlsx · .xls · .pdf acceptés</div>
@@ -933,8 +934,17 @@
       </div>
       <input type="file" id="imp-file-input" accept=".csv,.tsv,.txt,.xlsx,.xls,.pdf" style="display:none" onchange="handleImportFile(this)">
 
-      <!-- Preview -->
-      <div id="imp-preview" style="display:none;margin-top:16px">
+      <!-- PDF special note — repositionnée juste sous la zone de dépôt
+           (⚠️ CHANGÉ : était auparavant après tout l'aperçu, donc
+           visible seulement en scrollant tout en bas — trop tard pour
+           orienter l'utilisateur au moment où ça compte). -->
+      <div id="pdf-note" style="display:none;margin-top:10px;background:var(--warning-light);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--warning-dark)">
+        <i class="ti ti-info-circle"></i> <strong>Import PDF :</strong> le texte est extrait automatiquement, puis les colonnes sont détectées comme pour un fichier CSV. Pour de meilleurs résultats, le PDF doit être un tableau avec des colonnes identifiables. Les PDF scannés (images) ne sont pas pris en charge.
+      </div>
+
+      <!-- Vérification / Preview -->
+      <div id="imp-preview" style="display:none;margin-top:20px">
+        <div class="tsm fw6" style="color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Vérification</div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <div style="font-size:13px;font-weight:600" id="imp-preview-title">Aperçu</div>
           <div style="display:flex;gap:8px;align-items:center">
@@ -970,11 +980,6 @@
           </table>
         </div>
         <div id="imp-warnings" style="margin-top:10px;font-size:12px;color:var(--orange)"></div>
-      </div>
-
-      <!-- PDF special note -->
-      <div id="pdf-note" style="display:none;margin-top:12px;background:var(--warning-light);border-radius:var(--radius);padding:12px 14px;font-size:12px;color:var(--warning-dark)">
-        <i class="ti ti-info-circle"></i> <strong>Import PDF :</strong> le texte est extrait automatiquement, puis les colonnes sont détectées comme pour un fichier CSV. Pour de meilleurs résultats, le PDF doit être un tableau avec des colonnes identifiables (zone, point de contrôle, criticité…). Les PDF scannés (images) ne sont pas pris en charge.
       </div>
     </div>
     <div class="modal-foot">
