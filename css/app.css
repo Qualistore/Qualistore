@@ -240,6 +240,19 @@ tbody tr:hover td{background:#f8faff}
   /* Désactiver pull-to-refresh sur mobile */
 body { overscroll-behavior-y: contain; }
 
+/* Croix de suppression sur les miniatures photo d'audit (voir
+   _buildAuditPhotoThumbHtml, audits.js) : cachée par défaut, visible
+   au survol pour les appareils avec souris ; toujours visible mais
+   discrète sur tactile (tablette), faute d'équivalent fiable au
+   survol au doigt. */
+.photo-thumb-del { opacity: 0; transition: opacity .15s; }
+@media (hover: hover) {
+  .photo-thumb:hover .photo-thumb-del { opacity: 1; }
+}
+@media (hover: none) {
+  .photo-thumb-del { opacity: .55; }
+}
+
 @media(max-width:600px){
   .stats-grid{grid-template-columns:1fr}
   .hdr-actions .btn{padding:6px 10px;font-size:12px}

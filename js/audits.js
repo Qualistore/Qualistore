@@ -642,11 +642,59 @@ function switchAuditZone(zone) {
 }
 
 /**
- * Construit le HTML d'une question d'audit (boutons de réponse +
- * zone de détail NC affichée conditionnellement).
- * @param {GrillePoint} point
+ * Construit le HTML d'une miniature de photo avec une croix de
+ * suppression superposée — visible au survol de la souris (les
+ * appareils sans souris, ex. tablette, l'affichent en permanence,
+ * discrètement, voir la règle CSS `@media (hover: none)` dans
+ * app.css, car il n'y a pas d'équivalent fiable au survol au doigt).
+ * Le clic sur la croix appelle removeAuditPhoto(pointId, index) sans
+ * déclencher d'autre action sur la miniature.
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {string} url - URL de la photo (Supabase Storage).
+ * @param {number} index - Position de cette photo dans auditAnswers[pointId].photos.
  * @returns {string}
  */
+function _buildAuditPhotoThumbHtml(pointId, url, index) {
+  return `<div class="photo-thumb" style="position:relative;width:52px;height:52px">
+    <img src="${url}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">
+    <button type="button" class="photo-thumb-del" title="Supprimer cette photo"
+            onclick="removeAuditPhoto('${pointId}',${index})"
+            style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;
+                   background:var(--danger);color:#fff;border:2px solid #fff;display:flex;
+                   align-items:center;justify-content:center;cursor:pointer;padding:0">
+      <i class="ti ti-x" style="font-size:11px"></i>
+    </button>
+  </div>`;
+}
+
+/**
+ * Supprime une photo déjà ajoutée à un point de contrôle NC, pendant
+ * la saisie de l'audit (avant validation) — retire l'URL de
+ * auditAnswers[pointId].photos à l'index donné, puis rafraîchit
+ * l'aperçu des miniatures.
+ *
+ * ⚠️ Ne supprime PAS le fichier du bucket Supabase Storage — seule
+ * la référence dans l'audit est retirée. Le fichier reste orphelin
+ * sur le stockage (pas de risque de casser une autre référence qui
+ * pointerait vers la même URL, mais un peu d'espace de stockage
+ * inutilisé s'accumule avec le temps).
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {number} index - Position de la photo à supprimer dans auditAnswers[pointId].photos.
+ * @returns {void}
+ */
+function removeAuditPhoto(pointId, index) {
+  if (!auditAnswers[pointId] || !auditAnswers[pointId].photos) return;
+  auditAnswers[pointId].photos.splice(index, 1);
+
+  /** @type {HTMLElement | null} */
+  const previewContainer = el('aphot-' + pointId);
+  if (previewContainer) {
+    previewContainer.innerHTML = auditAnswers[pointId].photos
+      .map((url, i) => _buildAuditPhotoThumbHtml(pointId, url, i))
+      .join('');
+  }
+}
+
 /**
  * Construit le HTML d'une question d'audit (intitulé, boutons de
  * réponse C/NC/NA, et bloc de détail NC avec commentaire + photos).
@@ -694,7 +742,7 @@ function _buildAuditQuestion(point) {
              placeholder="Commentaire NC…" value="${_escapeHtmlAttr(savedComment)}"
              oninput="auditAnswers['${point.id}'].cmt=this.value">
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aphot-${point.id}">${savedPhotos
-        .map(url => `<img src="${url}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`)
+        .map((url, i) => _buildAuditPhotoThumbHtml(point.id, url, i))
         .join('')}</div>
       <input type="file" accept="image/*" multiple style="display:none" id="aphi-${point.id}"
              onchange="handleAuditPhoto('${point.id}',this)">
@@ -1018,7 +1066,7 @@ async function handleAuditPhoto(pointId, input) {
 
     if (previewContainer) {
       previewContainer.innerHTML = auditAnswers[pointId].photos
-        .map(url => `<img src="${url}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:1px solid var(--border)">`)
+        .map((url, i) => _buildAuditPhotoThumbHtml(pointId, url, i))
         .join('');
     }
   })();
