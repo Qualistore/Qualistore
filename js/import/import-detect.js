@@ -94,6 +94,18 @@
 // Chaque liste de motifs est volontairement extensible : ajouter un
 // synonyme observé chez un client = ajouter une entrée à la liste,
 // jamais une réécriture du moteur de scoring ci-dessous.
+//
+// ⚠️ CORRIGÉ : 'categorie' reconnaît désormais aussi "Section" /
+// "Sous-section" (n'était reconnue par aucun concept auparavant).
+// 'methode' reconnaît désormais "Comment (le/la/les) vérifier"
+// (l'espace entre "comment" et "vérifier" empêchait le motif
+// d'origine de matcher). 'commentaire' ne matche plus le mot
+// interrogatif "comment" seul (uniquement "commentaire(s)") — ce
+// motif trop large volait à tort la colonne "Comment vérifier" au
+// concept 'methode', un cas concret rencontré sur le modèle
+// générique d'import fourni par le client (colonnes Zone /
+// Sous-section / Ce qu'il faut vérifier / Comment le vérifier /
+// Criticité / Poids).
 // ─────────────────────────────────────────────
 
 /**
@@ -162,8 +174,8 @@ const IMPORT_CONCEPT_DEFINITIONS = [
   {
     concept: 'methode',
     headerPatterns: [
-      /^(m[eé]thode|m[eé]thode de v[eé]rification|indication|modalit[eé]|pr[eé]cisions?)$/,
-      /m[eé]thode|indication|modalit[eé]|comment v[eé]rifier|protocole|pr[eé]cisions?|ce qu.{0,3}il faut v[eé]rifier|^[aà] v[eé]rifier|consigne/,
+      /^(m[eé]thode|m[eé]thode de v[eé]rification|indication|modalit[eé]|pr[eé]cisions?|comment (le |la |les )?v[eé]rifier)$/,
+      /m[eé]thode|indication|modalit[eé]|comment (le |la |les )?v[eé]rifier|protocole|pr[eé]cisions?|ce qu.{0,3}il faut v[eé]rifier|^[aà] v[eé]rifier|consigne/,
     ],
     contentScorer: null,
   },
@@ -178,16 +190,16 @@ const IMPORT_CONCEPT_DEFINITIONS = [
   {
     concept: 'commentaire',
     headerPatterns: [
-      /^(commentaire|remarque|note|observation)$/,
-      /comment|remarque|note|observ|detail|détail/,
+      /^(commentaires?|remarque|note|observation)$/,
+      /commentaires?|remarque|note|observ|detail|détail/,
     ],
     contentScorer: null,
   },
   {
     concept: 'categorie',
     headerPatterns: [
-      /^(cat[eé]gorie|sous-?cat[eé]gorie|famille|sous-?zone|th[eè]me)$/,
-      /cat[eé]gorie|famille|sous-?zone|sous-?rayon|th[eè]me/,
+      /^(cat[eé]gorie|sous-?cat[eé]gorie|famille|sous-?zone|sous-?section|th[eè]me)$/,
+      /cat[eé]gorie|famille|sous-?zone|sous-?rayon|sous-?section|th[eè]me/,
     ],
     contentScorer: null,
   },
