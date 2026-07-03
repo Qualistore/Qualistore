@@ -2,7 +2,7 @@
 // USERS — Gestion des utilisateurs
 // Dépend de : storage.js (DB, CU), auth.js (hasPerm), ui.js, config.js (PIDS, DPERMS)
 // ══════════════════════════════════════════════════════════════
- 
+
 // ─────────────────────────────────────────────
 // 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
 //    ⚠️ Déduits de l'usage dans ce fichier.
