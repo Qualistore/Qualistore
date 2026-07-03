@@ -350,16 +350,38 @@ function _buildAuditDetailNcs(ncs) {
 // ─────────────────────────────────────────────
 
 /**
- * Supprime un audit et ses NC liées, après confirmation utilisateur.
+ * Supprime un audit et ses NC/actions correctives liées, en local ET
+ * côté Supabase, après confirmation utilisateur.
+ *
+ * ⚠️ CORRIGÉ : ne supprimait auparavant que l'audit lui-même (local +
+ * Supabase) et ses NC en local uniquement — ni les actions
+ * correctives liées à ces NC, ni les NC côté Supabase, n'étaient
+ * supprimées. Les actions restaient donc orphelines dans l'onglet
+ * Actions correctives après suppression de l'audit d'origine, et les
+ * NC "supprimées" en local pouvaient même réapparaître au prochain
+ * cycle de synchronisation (polling, storage.js) puisqu'elles
+ * existaient toujours côté serveur. Reproduit ici le même cascade
+ * déjà utilisé ailleurs pour ce même besoin (voir deleteSelectedAudits,
+ * rapports-fsqs.js ; deleteRayonEverywhere, rayons.js).
  * @param {string} auditId - Référence vers Audit.id.
  * @returns {void}
  */
 function deleteAudit(auditId) {
-  if (!confirm('Supprimer cet audit ?')) return;
-  DB.audits = DB.audits.filter(a => a.id !== auditId);
+  if (!confirm('Supprimer cet audit et toutes ses NC/actions associées ?')) return;
+
+  /** @type {string[]} */
+  const linkedNcIds = DB.ncs.filter(nc => nc.aid === auditId).map(nc => nc.id);
+  linkedNcIds.forEach(ncId => {
+    sbDeleteWhere('actions', 'ncId', ncId);
+    DB.actions = DB.actions.filter(a => a.ncId !== ncId);
+  });
+
+  sbDeleteWhere('ncs',    'aid', auditId);
+  sbDeleteWhere('audits', 'id',  auditId);
   DB.ncs    = DB.ncs.filter(nc => nc.aid !== auditId);
+  DB.audits = DB.audits.filter(a => a.id  !== auditId);
+
   save();
-  sbDeleteWhere('audits', 'id', auditId);
   renderAudits();
 }
 

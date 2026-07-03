@@ -82,6 +82,13 @@
  * Affiche la liste des actions correctives en cours (statut différent
  * de 'Traitée'), filtrée par magasins visibles pour l'utilisateur
  * connecté et par les filtres UI (magasin, statut).
+ *
+ * ⚠️ AJOUTÉ : affiche une case à cocher par ligne et les boutons
+ * Tout/Aucun/Supprimer sélection pour les admins uniquement — voir
+ * deleteSelectedActions. Auparavant, aucune suppression manuelle
+ * d'action corrective n'était possible depuis cet onglet (seule la
+ * suppression en cascade d'un audit ou d'une NC entière le
+ * permettait, voir deleteAudit audits.js et deleteSelectedNC nc.js).
  * @returns {void}
  */
 function renderActions() {
@@ -114,16 +121,22 @@ function renderActions() {
 
   /** @type {boolean} */
   const canEdit = canEditNC();
+  /** @type {boolean} */
+  const isAdmin = CU && CU.role === 'admin';
   const tbody   = el('act-tb');
 
+  ['act-toggle-all-btn', 'act-toggle-none-btn', 'act-del-sel-btn'].forEach(id => {
+    if (el(id)) el(id).style.display = isAdmin ? '' : 'none';
+  });
+
   if (!actions.length) {
-    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
       <i class="ti ti-tool"></i><p>Aucune action corrective.</p>
     </div></td></tr>`;
     return;
   }
 
-  tbody.innerHTML = actions.map(action => _buildActionRow(action, canEdit)).join('');
+  tbody.innerHTML = actions.map(action => _buildActionRow(action, canEdit, isAdmin)).join('');
 }
 
 // ─────────────────────────────────────────────
@@ -132,11 +145,19 @@ function renderActions() {
 
 /**
  * Construit la ligne `<tr>` HTML pour une action corrective donnée.
+ *
+ * ⚠️ CORRIGÉ : le tableau avait un en-tête "NC" en trop (Qualistore.html)
+ * sans cellule correspondante ici — chaque ligne avait donc une colonne
+ * de décalage par rapport à son en-tête (ex : "Magasin" affichait en
+ * réalité "Responsable"). Remplacé par une vraie colonne case à cocher
+ * (admin uniquement, voir deleteSelectedActions), qui comble
+ * l'en-tête vide de la même largeur (32px) sans décalage.
  * @param {Action} action
  * @param {boolean} canEdit - Si vrai, affiche un éditeur de statut ; sinon un simple badge.
+ * @param {boolean} isAdmin - Si vrai, affiche la case à cocher de sélection (suppression).
  * @returns {string} HTML de la ligne de tableau.
  */
-function _buildActionRow(action, canEdit) {
+function _buildActionRow(action, canEdit, isAdmin) {
   /** @type {boolean} */
   const isOverdue  = overdue(action.ech) && action.statut !== 'Traitée';
   /** @type {NC | undefined} */
@@ -147,6 +168,9 @@ function _buildActionRow(action, canEdit) {
   const photosHtml  = _buildActionPhotosHtml(linkedNc, description);
 
   return `<tr style="${isOverdue ? 'background:#fff8f8' : ''}">
+    <td style="vertical-align:top;padding-top:14px;width:32px">
+      ${isAdmin ? `<input type="checkbox" class="act-cb" value="${action.id}" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer" checked>` : ''}
+    </td>
     <td style="max-width:200px;font-size:12px;vertical-align:top;padding-top:14px">
       <div style="color:var(--text)">${description.slice(0, 80)}${description.length > 80 ? '…' : ''}</div>
       ${photosHtml}
@@ -160,7 +184,9 @@ function _buildActionRow(action, canEdit) {
     <td style="vertical-align:top;padding-top:10px;min-width:160px">
       ${canEdit ? _buildStatusEditor(action) : _buildStatusDisplay(action)}
     </td>
-    <td style="vertical-align:top;padding-top:10px"></td>
+    <td style="vertical-align:top;padding-top:10px">
+      ${isAdmin ? `<button class="btn btn-secondary btn-sm" title="Supprimer" style="color:var(--danger)" onclick="deleteAction('${action.id}')"><i class="ti ti-trash"></i></button>` : ''}
+    </td>
   </tr>`;
 }
 
@@ -346,4 +372,58 @@ function _syncNcStatus(nc, action, newStatus) {
  */
 function closeAct(actionId) {
   changeActStatut(actionId, 'Traitée');
+}
+
+// ─────────────────────────────────────────────
+// 4. SUPPRESSION MANUELLE (ADMIN)
+// ─────────────────────────────────────────────
+
+/**
+ * Coche ou décoche toutes les cases de sélection des actions
+ * correctives affichées.
+ * @param {boolean} selectAll
+ * @returns {void}
+ */
+function toggleAllActions(selectAll) {
+  document.querySelectorAll('.act-cb').forEach(cb => { cb.checked = selectAll; });
+}
+
+/**
+ * Supprime une action corrective individuelle, après confirmation.
+ *
+ * Ne supprime PAS la NC liée (voir deleteSelectedNC, nc.js, pour
+ * supprimer NC + action ensemble depuis l'onglet Non-conformités) —
+ * seule l'action de suivi disparaît ; la NC reste visible dans
+ * l'onglet Non-conformités, simplement sans action corrective
+ * associée. C'est un état déjà toléré ailleurs dans le code (voir
+ * reopenNC, nc.js, qui vérifie l'existence de l'action liée avant
+ * de la mettre à jour).
+ * @param {string} actionId - Référence vers Action.id.
+ * @returns {void}
+ */
+function deleteAction(actionId) {
+  if (!confirm('Supprimer cette action corrective ? La non-conformité associée ne sera pas supprimée.')) return;
+  DB.actions = DB.actions.filter(a => a.id !== actionId);
+  sbDeleteWhere('actions', 'id', actionId);
+  save(['actions']);
+  renderActions();
+}
+
+/**
+ * Supprime les actions correctives sélectionnées via les cases à
+ * cocher, après confirmation. Ne supprime PAS les NC liées — voir
+ * deleteAction.
+ * @returns {void}
+ */
+function deleteSelectedActions() {
+  /** @type {string[]} */
+  const selectedIds = [...document.querySelectorAll('.act-cb:checked')].map(cb => cb.value);
+  if (!selectedIds.length) { alert('Sélectionnez au moins une action.'); return; }
+  if (!confirm(`Supprimer ${selectedIds.length} action(s) corrective(s) ? Les non-conformités associées ne seront pas supprimées.`)) return;
+
+  selectedIds.forEach(id => sbDeleteWhere('actions', 'id', id));
+  DB.actions = DB.actions.filter(a => !selectedIds.includes(a.id));
+
+  save(['actions']);
+  renderActions();
 }

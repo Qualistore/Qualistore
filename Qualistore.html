@@ -220,10 +220,15 @@
             <select class="form-control" style="width:auto" id="flt-act-mag" onchange="renderActions()"><option value="">Tous les magasins</option></select>
             <select class="form-control" style="width:auto" id="flt-act-stat" onchange="renderActions()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
           </div>
-          <span class="tsm tm" id="act-cnt"></span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="tsm tm" id="act-cnt"></span>
+            <button class="btn btn-secondary btn-sm" id="act-toggle-all-btn" style="display:none" onclick="toggleAllActions(true)"><i class="ti ti-check-all"></i> Tout</button>
+            <button class="btn btn-secondary btn-sm" id="act-toggle-none-btn" style="display:none" onclick="toggleAllActions(false)"><i class="ti ti-x"></i> Aucun</button>
+            <button class="btn btn-danger btn-sm" id="act-del-sel-btn" style="display:none" onclick="deleteSelectedActions()"><i class="ti ti-trash"></i> Supprimer sélection</button>
+          </div>
         </div>
         <div class="card">
-          <div class="tbl-wrap"><table><thead><tr><th>NC</th><th>Description</th><th>Magasin</th><th>Responsable</th><th>Échéance</th><th>Priorité</th><th>Statut</th><th></th></tr></thead><tbody id="act-tb"></tbody></table></div>
+          <div class="tbl-wrap"><table><thead><tr><th style="width:32px"></th><th>Description</th><th>Magasin</th><th>Responsable</th><th>Échéance</th><th>Priorité</th><th>Statut</th><th></th></tr></thead><tbody id="act-tb"></tbody></table></div>
         </div>
       </div>
 
