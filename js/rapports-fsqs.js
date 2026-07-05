@@ -39,6 +39,9 @@
  * @property {string} aid
  * @property {string} desc
  * @property {string} [pid] - Référence vers GrillePoint.id d'origine (définition canonique dans nc.js) — absente sur les NC créées avant ce champ.
+ * @property {string} [zone] - Zone d'origine (définition canonique et résolution avec repli dans nc.js, voir resolveNcZone) — absente sur les NC créées avant ce champ.
+ * @property {string} [mid] - Référence vers Magasin.id, utilisée par resolveNcZone en repli.
+ * @property {string} [rayon] - Utilisé par resolveNcZone en repli.
  * @property {string} crit
  * @property {'Ouverte'|'En cours'|'Clôturée'} statut
  * @property {string} [cmt]
@@ -310,11 +313,29 @@ function _buildAuditCard(audit) {
 
 /**
  * Construit le tableau HTML des NC liées à un audit, dans le rapport.
+ *
+ * ⚠️ AJOUTÉ : regroupement par zone (voir resolveNcZone, nc.js),
+ * cohérent avec le même regroupement dans l'onglet Non-conformités
+ * (renderNC, nc.js) et Actions correctives (renderActions,
+ * actions.js). Cette fonction alimente à la fois l'aperçu à l'écran
+ * (#rap-preview) et l'export PDF final — une seule modification
+ * couvre les deux.
  * @param {NC[]} ncs
  * @param {Audit} audit
  * @returns {string}
  */
 function _buildNcTable(ncs, audit) {
+  /** @type {Map<string, NC[]>} */
+  const byZone = new Map();
+  ncs.forEach(nc => {
+    /** @type {string} */
+    const zone = resolveNcZone(nc);
+    if (!byZone.has(zone)) byZone.set(zone, []);
+    byZone.get(zone).push(nc);
+  });
+  /** @type {string[]} */
+  const sortedZones = _sortZoneLabels([...byZone.keys()]);
+
   return `<div style="font-size:12px;font-weight:700;color:#b91c1c;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:6px">
     <span style="display:inline-block;width:16px;height:16px;background:#e53935;border-radius:50%;color:#fff;font-size:10px;text-align:center;line-height:16px">!</span>
     Non-conformités (${ncs.length})
@@ -329,7 +350,10 @@ function _buildNcTable(ncs, audit) {
       </tr>
     </thead>
     <tbody>
-      ${ncs.map(nc => _buildNcTableRow(nc, audit)).join('')}
+      ${sortedZones.map(zone => `
+        <tr><td colspan="4" style="padding:6px 10px;background:#eef1f6;font-size:10px;font-weight:700;color:#5a6070;text-transform:uppercase;letter-spacing:.4px;border:1px solid #e2e6ef">${zone} (${byZone.get(zone).length})</td></tr>
+        ${byZone.get(zone).map(nc => _buildNcTableRow(nc, audit)).join('')}
+      `).join('')}
     </tbody>
   </table>`;
 }

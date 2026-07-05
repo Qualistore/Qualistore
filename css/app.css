@@ -240,6 +240,10 @@ tbody tr:hover td{background:#f8faff}
   /* Désactiver pull-to-refresh sur mobile */
 body { overscroll-behavior-y: contain; }
 
+/* Ligne d'en-tête de groupe (regroupement par zone) — voir renderNC
+   (nc.js), renderActions (actions.js). */
+.tbl-group-row td { background:var(--bg); font-size:12px; font-weight:700; color:var(--text2); padding:8px 12px !important; border-bottom:1px solid var(--border); }
+
 /* Croix de suppression sur les miniatures photo d'audit (voir
    _buildAuditPhotoThumbHtml, audits.js) : cachée par défaut, visible
    au survol pour les appareils avec souris ; toujours visible mais

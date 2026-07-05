@@ -38,8 +38,18 @@
  * @property {string} [cmt] - Commentaire de suivi/clôture.
  * @property {string} aid - Référence polymorphe vers Audit.id (ou Alerte.id si isAlert).
  * @property {string} [pid] - Référence vers GrillePoint.id d'origine (voir submitAudit, audits.js) — absente sur les NC créées avant ce champ, ou issues d'une alerte (isAlert). Permet de retrouver sans ambiguïté la bonne réponse/photo dans Audit.answers même quand plusieurs points de contrôle partagent un intitulé identique (voir _buildNcPhotosHtml) ; à défaut, retombe sur une recherche par texte (`desc`), plus fragile en cas de doublon.
+ * @property {string} [zone] - Zone d'origine du point de contrôle (voir submitAudit, audits.js ; résolution avec repli dans resolveNcZone) — absente sur les NC créées avant ce champ.
  * @property {boolean} [isAlert] - Vrai si la NC provient d'une alerte terrain plutôt que d'un audit planifié.
  * @property {string | null} [closedDate] - Date de clôture ; null après réouverture (reopenNC), absent/undefined avant toute clôture.
+ */
+
+/**
+ * Point de contrôle d'une grille (définition canonique dans
+ * config.js / grille.js). Seules .id et .zone sont accédées dans ce
+ * fichier (voir resolveNcZone).
+ * @typedef {Object} GrillePoint
+ * @property {string} id
+ * @property {string} [zone]
  */
 
 /**
@@ -134,9 +144,64 @@ function canEditNC() {
 // ─────────────────────────────────────────────
 
 /**
+ * Trie une liste de libellés de zone par ordre alphabétique (locale
+ * française), en poussant systématiquement
+ * IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE ('Non classé') en dernier —
+ * cohérent avec getZonesForRayon (rayons.js). Réutilisée par
+ * renderNC, renderActions (actions.js) et le rapport FSQS
+ * (rapports-fsqs.js) pour un tri identique partout où NC/actions
+ * sont regroupées par zone.
+ * @param {string[]} zones
+ * @returns {string[]}
+ */
+function _sortZoneLabels(zones) {
+  return [...zones].sort((a, b) => {
+    if (a === IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) return 1;
+    if (b === IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) return -1;
+    return a.localeCompare(b, 'fr');
+  });
+}
+
+/**
+ * Résout la zone d'origine d'une NC, avec repli progressif pour les
+ * NC créées avant l'ajout du champ `zone` (voir submitAudit,
+ * audits.js) — réutilisée par actions.js et rapports-fsqs.js pour
+ * regrouper NC et actions correctives par zone de façon cohérente
+ * partout dans l'application.
+ *
+ * Ordre de résolution :
+ * 1) `nc.zone` si déjà présent (toute NC créée après ce correctif) ;
+ * 2) sinon, une recherche du point d'origine (`nc.pid`) dans la
+ *    grille ACTUELLE du rayon — peut différer de la grille au moment
+ *    de l'audit si des points ont été modifiés depuis, mais reste la
+ *    meilleure estimation disponible ;
+ * 3) sinon, le libellé générique IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE
+ *    (rayons.js) — jamais de zone inventée.
+ * @param {NC} nc
+ * @returns {string}
+ */
+function resolveNcZone(nc) {
+  if (nc.zone) return nc.zone;
+
+  if (nc.pid && nc.rayon) {
+    /** @type {GrillePoint | undefined} */
+    const point = getGrille(nc.rayon, nc.mid).find(p => p.id === nc.pid);
+    if (point?.zone) return point.zone;
+  }
+
+  return IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE;
+}
+
+/**
  * Affiche la liste des NC actives (statut différent de 'Clôturée'),
  * filtrée par magasins visibles et par les filtres UI, puis
  * déclenche le rendu des archives.
+ *
+ * ⚠️ CHANGÉ : les NC sont désormais regroupées par zone (voir
+ * resolveNcZone) avec un en-tête de groupe par zone, plutôt
+ * qu'affichées en une liste plate. Les zones sont triées
+ * alphabétiquement, IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE ('Non
+ * classé') toujours en dernier.
  * @returns {void}
  */
 function renderNC() {
@@ -180,7 +245,22 @@ function renderNC() {
     return;
   }
 
-  tbody.innerHTML = activeNcs.map(nc => _buildNcRow(nc, isAdmin)).join('');
+  /** @type {Map<string, NC[]>} */
+  const byZone = new Map();
+  activeNcs.forEach(nc => {
+    /** @type {string} */
+    const zone = resolveNcZone(nc);
+    if (!byZone.has(zone)) byZone.set(zone, []);
+    byZone.get(zone).push(nc);
+  });
+
+  /** @type {string[]} */
+  const sortedZones = _sortZoneLabels([...byZone.keys()]);
+
+  tbody.innerHTML = sortedZones.map(zone => `
+    <tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm tm">(${byZone.get(zone).length})</span></td></tr>
+    ${byZone.get(zone).map(nc => _buildNcRow(nc, isAdmin)).join('')}
+  `).join('');
   renderNCArchives(filterMag, filterRay, filterCrit);
 }
 

@@ -90,6 +90,7 @@
  * @property {string} date - Date de l'audit d'origine.
  * @property {string} desc - Intitulé du point de contrôle (copié depuis GrillePoint.q).
  * @property {string} [pid] - Référence vers GrillePoint.id d'origine — absente sur les NC créées avant ce champ.
+ * @property {string} [zone] - Zone d'origine du point de contrôle (copiée depuis GrillePoint.zone au moment de l'audit, jamais recalculée) — absente sur les NC créées avant ce champ, voir resolveNcZone (nc.js) pour le repli utilisé dans ce cas.
  * @property {string} crit - Criticité (copiée depuis GrillePoint.c).
  * @property {string} resp - Nom du responsable (copié depuis l'auditeur).
  * @property {string} dl - Date d'échéance (deadline).
@@ -958,7 +959,8 @@ async function submitAudit() {
     /** @type {NC} */
     DB.ncs.push({
       id: ncId, mid, mag: store.nom || '', rayon, date,
-      desc: point.q, pid: point.id, crit: point.c, resp: aud, dl: deadline,
+      desc: point.q, pid: point.id, zone: (point.zone && point.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE,
+      crit: point.c, resp: aud, dl: deadline,
       statut: 'Ouverte', cmt: auditAnswers[point.id].cmt, aid: auditId,
     });
     /** @type {Action} */

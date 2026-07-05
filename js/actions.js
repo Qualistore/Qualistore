@@ -52,6 +52,7 @@
  * @property {string} [mid] - Référence vers Magasin.id (vu dans magasins.js).
  * @property {string} desc - Description / intitulé de la non-conformité.
  * @property {string} [pid] - Référence vers GrillePoint.id d'origine (voir submitAudit, audits.js ; définition canonique dans nc.js) — absente sur les NC créées avant ce champ ou issues d'une alerte. Utilisée par _buildActionPhotosHtml pour retrouver sans ambiguïté la bonne photo.
+ * @property {string} [zone] - Zone d'origine du point de contrôle (définition canonique et résolution avec repli dans nc.js, voir resolveNcZone) — absente sur les NC créées avant ce champ.
  * @property {'Ouverte'|'En cours'|'Clôturée'} statut
  * @property {boolean} [isAlert] - Vrai si la NC provient d'une alerte terrain plutôt que d'un audit planifié.
  * @property {string} [closedDate] - Date de clôture (format produit par today()).
@@ -136,7 +137,29 @@ function renderActions() {
     return;
   }
 
-  tbody.innerHTML = actions.map(action => _buildActionRow(action, canEdit, isAdmin)).join('');
+  // ⚠️ AJOUTÉ : regroupement par zone (voir resolveNcZone, nc.js),
+  // cohérent avec le même regroupement dans renderNC (nc.js) et le
+  // rapport FSQS (rapports-fsqs.js). La zone est résolue via la NC
+  // liée ; une action sans NC retrouvée (cas normalement impossible
+  // en usage normal) retombe sous IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE.
+  /** @type {Map<string, Action[]>} */
+  const byZone = new Map();
+  actions.forEach(action => {
+    /** @type {NC | undefined} */
+    const linkedNc = DB.ncs.find(nc => nc.id === action.ncId);
+    /** @type {string} */
+    const zone = linkedNc ? resolveNcZone(linkedNc) : IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE;
+    if (!byZone.has(zone)) byZone.set(zone, []);
+    byZone.get(zone).push(action);
+  });
+
+  /** @type {string[]} */
+  const sortedZones = _sortZoneLabels([...byZone.keys()]);
+
+  tbody.innerHTML = sortedZones.map(zone => `
+    <tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm tm">(${byZone.get(zone).length})</span></td></tr>
+    ${byZone.get(zone).map(action => _buildActionRow(action, canEdit, isAdmin)).join('')}
+  `).join('');
 }
 
 // ─────────────────────────────────────────────
