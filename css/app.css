@@ -250,7 +250,7 @@ tbody tr:hover td{background:#f8faff}
    alertes.js/toggleUrgentAlerts) : cloche + compteur seulement, largeur
    auto (pas de bandeau pleine largeur). Le chevron pivote a l'ouverture
    du panneau detaille (classe .expanded). */
-.urgent-alerts-toggle{display:inline-flex;align-items:center;gap:8px;background:var(--danger-dark);color:#fff;border:none;border-radius:999px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(185,28,28,.35);transition:transform .15s,box-shadow .15s}
+.urgent-alerts-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;background:var(--danger-dark);color:#fff;border:none;border-radius:var(--radius-lg);padding:12px 20px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(185,28,28,.35);transition:transform .15s,box-shadow .15s}
 .urgent-alerts-toggle:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(185,28,28,.45)}
 .urgent-alerts-toggle i{font-size:16px}
 .urgent-alerts-toggle i:last-child{font-size:14px;transition:transform .2s}

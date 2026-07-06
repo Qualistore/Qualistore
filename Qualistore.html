@@ -76,8 +76,10 @@
              active est de gravité 'Critique'. -->
         <div class="mb-6" id="d-urgent-alerts" style="display:none">
           <button type="button" class="urgent-alerts-toggle" id="d-urgent-toggle" onclick="toggleUrgentAlerts()" aria-expanded="false" aria-controls="d-alerts-panel">
-            <i class="ti ti-bell-ringing"></i>
-            <strong id="d-alert-cnt">0 alerte(s) active(s)</strong>
+            <span style="display:inline-flex;align-items:center;gap:8px">
+              <i class="ti ti-bell-ringing"></i>
+              <strong id="d-alert-cnt">0 alerte(s) active(s)</strong>
+            </span>
             <i class="ti ti-chevron-down"></i>
           </button>
           <div class="card" id="d-alerts-panel" style="display:none;margin-top:8px;border-color:var(--danger);box-shadow:0 4px 18px rgba(229,57,53,.15)">
