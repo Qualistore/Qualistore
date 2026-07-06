@@ -224,6 +224,14 @@ tbody tr:hover td{background:#f8faff}
   0%,100% { box-shadow: 0 0 0 3px rgba(251,191,36,.45), 0 3px 12px rgba(251,191,36,.5); }
   50%      { box-shadow: 0 0 0 7px rgba(251,191,36,.2),  0 4px 20px rgba(251,191,36,.7); }
 }
+@keyframes pulse-danger {
+  0%,100% { box-shadow: 0 0 0 0 rgba(229,57,53,.45), 0 4px 18px rgba(229,57,53,.28); }
+  50%      { box-shadow: 0 0 0 7px rgba(229,57,53,.18), 0 6px 24px rgba(229,57,53,.45); }
+}
+/* Cadre "alertes terrain" du dashboard (#d-urgent-alerts, dashboard.js/alertes.js) :
+   pulsation reservee aux alertes actives de gravite 'Critique' (voir renderAlertsDash,
+   alertes.js), pour ne pas banaliser l'effet sur des alertes moins graves. */
+.d-urgent-alerts-critical{animation:pulse-danger 1.8s ease-in-out infinite}
 .sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99}
 
 @media(max-width:900px){

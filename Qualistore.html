@@ -67,6 +67,22 @@
 
       <!-- DASHBOARD -->
       <div class="page" id="page-dashboard">
+        <!-- ALERTES TERRAIN URGENTES — au-dessus des onglets FSQS/Qualimètre
+             pour rester visible quel que soit l'onglet actif. Masqué par
+             renderAlertsDash() (alertes.js) tant qu'aucune alerte n'est
+             active ; pulse (voir .d-urgent-alerts-critical, app.css) si
+             au moins une alerte active est de gravité 'Critique'. -->
+        <div class="card mb-6" id="d-urgent-alerts" style="display:none;overflow:hidden;border-color:var(--danger);box-shadow:0 4px 18px rgba(229,57,53,.28)">
+          <div class="alert-card-inner" style="background:var(--danger-dark)">
+            <div class="alert-card-icon"><i class="ti ti-bell-ringing"></i></div>
+            <div class="alert-card-text">
+              <strong id="d-alert-cnt">0 alerte(s) active(s)</strong>
+              <span>Alertes terrain nécessitant une action</span>
+            </div>
+          </div>
+          <div class="card-body" id="d-alerts-list"></div>
+        </div>
+
         <!-- Sélecteur de vue -->
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
           <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">
@@ -94,15 +110,6 @@
           <div class="card mb-4">
             <div class="card-hdr"><div class="card-title"><i class="ti ti-clipboard-list" style="color:var(--primary)"></i> Derniers audits FSQS</div><button class="btn btn-secondary btn-sm" onclick="navigate('audits')">Voir tout</button></div>
             <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th></th></tr></thead><tbody id="d-last"></tbody></table></div>
-          </div>
-          <div class="card mt-4">
-            <div class="card-hdr">
-              <div class="card-title"><i class="ti ti-bell-ringing" style="color:var(--danger-dark)"></i> Alertes terrain récentes</div>
-              <span class="tsm tm" id="d-alert-cnt"></span>
-            </div>
-            <div class="card-body" id="d-alerts-list">
-              <div class="empty-state" style="padding:24px"><i class="ti ti-bell" style="font-size:28px"></i><p>Aucune alerte</p></div>
-            </div>
           </div>
         </div>
 

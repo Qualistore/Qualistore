@@ -382,23 +382,46 @@ function _renderAlertPhotoPreviews() {
 // ─────────────────────────────────────────────
 
 /**
- * Affiche la liste des alertes actives (max 8) dans le widget
- * dashboard.
+ * Affiche le cadre "alertes terrain urgentes" en haut du tableau de
+ * bord (#d-urgent-alerts, Qualistore.html), avec la liste des
+ * alertes actives (max 8, les plus récentes en premier — même ordre
+ * de stockage que DB.alertes, jamais retrié ici).
+ *
+ * ⚠️ CHANGÉ : le cadre est désormais entièrement masqué s'il n'y a
+ * aucune alerte ACTIVE (auparavant, un état vide "Aucune alerte"
+ * restait visible en permanence en bas du dashboard FSQS). Ce
+ * changement de comportement est volontaire : un encart à l'allure
+ * urgente en haut de page, affiché même sans rien à signaler,
+ * banaliserait le signal et nuirait à sa visibilité le jour où une
+ * alerte réelle survient.
+ *
+ * Le cadre pulse (classe .d-urgent-alerts-critical, app.css) si au
+ * moins une alerte active est de gravité 'Critique', pour distinguer
+ * visuellement une urgence réelle d'une simple alerte à traiter.
  * @returns {void}
  */
 function renderAlertsDash() {
   if (!DB.alertes) return;
 
+  /** @type {HTMLElement | null} */
+  const urgentCard = el('d-urgent-alerts');
+  if (!urgentCard) return;
+
   /** @type {Alerte[]} */
   const activeAlerts = DB.alertes.filter(a => a.statut === 'Active');
-  el('d-alert-cnt').textContent = `${activeAlerts.length} alerte(s) active(s)`;
 
-  if (!DB.alertes.length) {
-    el('d-alerts-list').innerHTML = `<div class="empty-state" style="padding:24px">
-      <i class="ti ti-bell" style="font-size:28px"></i><p>Aucune alerte</p>
-    </div>`;
+  if (!activeAlerts.length) {
+    urgentCard.style.display = 'none';
+    urgentCard.classList.remove('d-urgent-alerts-critical');
     return;
   }
+
+  urgentCard.style.display = '';
+  el('d-alert-cnt').textContent = `${activeAlerts.length} alerte(s) active(s)`;
+
+  /** @type {boolean} */
+  const hasCritical = activeAlerts.some(a => a.gravite === 'Critique');
+  urgentCard.classList.toggle('d-urgent-alerts-critical', hasCritical);
 
   el('d-alerts-list').innerHTML = activeAlerts
     .slice(0, 8)
