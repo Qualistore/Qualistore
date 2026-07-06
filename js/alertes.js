@@ -257,6 +257,30 @@ function saveAlert() {
         cmt: comment, photos: [..._alertPendingPhotos],
         documents: [..._alertPendingDocuments],
       });
+
+      // Répercute sur la NC/Action générées à la création (mêmes champs
+      // que _createNcFromAlert/_createActionFromAlert), pour que les
+      // pages NC et Actions reflètent la modification immédiatement.
+      // ⚠️ L'échéance (dl/ech) n'est volontairement PAS recalculée ici,
+      // même si la gravité change : décaler une échéance déjà fixée en
+      // silence serait surprenant pour l'utilisateur qui la suit.
+      /** @type {NC | undefined} */
+      const linkedNc = DB.ncs.find(nc => nc.aid === existing.id);
+      if (linkedNc) {
+        Object.assign(linkedNc, {
+          mid: storeId, mag: store.nom || '', rayon: type,
+          desc: `[Alerte ${type}] ${title}${comment ? ' — ' + comment : ''}`,
+          crit: gravity, resp: reporter,
+        });
+      }
+      /** @type {Action | undefined} */
+      const linkedAction = DB.actions.find(a => a.alertId === existing.id);
+      if (linkedAction) {
+        Object.assign(linkedAction, {
+          desc: `Traiter l'alerte : ${title}`,
+          mag: store.nom || '', resp: reporter, prio: gravity,
+        });
+      }
     }
   } else {
     /** @type {string} */
@@ -290,6 +314,11 @@ function saveAlert() {
   _alertPendingDocuments = [];
   _editingAlertId = null;
 
+  // Rafraîchit toute page déjà ouverte pouvant afficher cette alerte
+  // (via sa NC/Action liée) ou l'alerte elle-même, pour une mise à
+  // jour immédiate sans rechargement manuel.
+  if (el('page-nc')?.classList.contains('active'))      renderNC();
+  if (el('page-actions')?.classList.contains('active')) renderActions();
   renderDash();
 }
 

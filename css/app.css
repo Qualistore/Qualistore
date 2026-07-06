@@ -203,6 +203,13 @@ tbody tr:hover td{background:#f8faff}
 .doc-chip .doc-size{color:var(--text3);flex-shrink:0}
 .doc-chip button{background:none;border:none;cursor:pointer;color:var(--text3);flex-shrink:0;display:flex;align-items:center}
 .doc-chip button:hover{color:var(--danger)}
+/* Cadre alertes urgentes du dashboard (#d-alerts-list, alertes.js) :
+   hauteur limitee a ~1 alerte visible, defilement pour le reste.
+   Ajustez --urgent-alert-visible-height si besoin de plus/moins de place. */
+:root{--urgent-alert-visible-height:130px}
+#d-alerts-list{max-height:var(--urgent-alert-visible-height);overflow-y:auto}
+#d-alerts-list::-webkit-scrollbar{width:6px}
+#d-alerts-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 /* AUDIT */
 .aq{background:var(--bg);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;border:1px solid transparent;transition:border-color .15s}
 .aq.is-nc{background:#fff5f5;border-color:#fca5a5}

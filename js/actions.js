@@ -226,6 +226,7 @@ function _buildActionRow(action, canEdit, isAdmin) {
       ${canEdit ? _buildStatusEditor(action) : _buildStatusDisplay(action)}
     </td>
     <td style="vertical-align:top;padding-top:10px">
+      ${action.alertId ? `<button class="btn btn-secondary btn-sm" title="Modifier l'alerte terrain liée" onclick="openAlertModal('${action.alertId}')"><i class="ti ti-pencil"></i></button>` : ''}
       ${isAdmin ? `<button class="btn btn-secondary btn-sm" title="Supprimer" style="color:var(--danger)" onclick="deleteAction('${action.id}')"><i class="ti ti-trash"></i></button>` : ''}
     </td>
   </tr>`;
