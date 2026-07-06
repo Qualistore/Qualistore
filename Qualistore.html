@@ -9,7 +9,7 @@
 </head>
 </head>
 <body>
- 
+
 <!-- LOGIN -->
 <div class="login-wrap" id="login-screen">
   <div class="login-box">
@@ -70,17 +70,19 @@
         <!-- ALERTES TERRAIN URGENTES — au-dessus des onglets FSQS/Qualimètre
              pour rester visible quel que soit l'onglet actif. Masqué par
              renderAlertsDash() (alertes.js) tant qu'aucune alerte n'est
-             active ; pulse (voir .d-urgent-alerts-critical, app.css) si
-             au moins une alerte active est de gravité 'Critique'. -->
-        <div class="card mb-6" id="d-urgent-alerts" style="display:none;overflow:hidden;border-color:var(--danger);box-shadow:0 4px 18px rgba(229,57,53,.28)">
-          <div class="alert-card-inner" style="background:var(--danger-dark)">
-            <div class="alert-card-icon"><i class="ti ti-bell-ringing"></i></div>
-            <div class="alert-card-text">
-              <strong id="d-alert-cnt">0 alerte(s) active(s)</strong>
-              <span>Alertes terrain nécessitant une action</span>
-            </div>
+             active. Bouton compact (cloche + compteur) qui déplie/replie
+             le détail via toggleUrgentAlerts() ; pulse (voir
+             .d-urgent-alerts-critical, app.css) si au moins une alerte
+             active est de gravité 'Critique'. -->
+        <div class="mb-6" id="d-urgent-alerts" style="display:none">
+          <button type="button" class="urgent-alerts-toggle" id="d-urgent-toggle" onclick="toggleUrgentAlerts()" aria-expanded="false" aria-controls="d-alerts-panel">
+            <i class="ti ti-bell-ringing"></i>
+            <strong id="d-alert-cnt">0 alerte(s) active(s)</strong>
+            <i class="ti ti-chevron-down"></i>
+          </button>
+          <div class="card" id="d-alerts-panel" style="display:none;margin-top:8px;border-color:var(--danger);box-shadow:0 4px 18px rgba(229,57,53,.15)">
+            <div class="card-body" id="d-alerts-list"></div>
           </div>
-          <div class="card-body" id="d-alerts-list"></div>
         </div>
 
         <!-- Sélecteur de vue -->

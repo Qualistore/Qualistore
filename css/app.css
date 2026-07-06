@@ -204,10 +204,8 @@ tbody tr:hover td{background:#f8faff}
 .doc-chip button{background:none;border:none;cursor:pointer;color:var(--text3);flex-shrink:0;display:flex;align-items:center}
 .doc-chip button:hover{color:var(--danger)}
 /* Cadre alertes urgentes du dashboard (#d-alerts-list, alertes.js) :
-   hauteur limitee a ~1 alerte visible, defilement pour le reste.
-   Ajustez --urgent-alert-visible-height si besoin de plus/moins de place. */
-:root{--urgent-alert-visible-height:130px}
-#d-alerts-list{max-height:var(--urgent-alert-visible-height);overflow-y:auto}
+   panneau depliable, hauteur max 320px avec defilement au-dela. */
+#d-alerts-list{max-height:320px;overflow-y:auto}
 #d-alerts-list::-webkit-scrollbar{width:6px}
 #d-alerts-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 /* AUDIT */
@@ -248,6 +246,15 @@ tbody tr:hover td{background:#f8faff}
    pulsation reservee aux alertes actives de gravite 'Critique' (voir renderAlertsDash,
    alertes.js), pour ne pas banaliser l'effet sur des alertes moins graves. */
 .d-urgent-alerts-critical{animation:pulse-danger 1.8s ease-in-out infinite}
+/* Bouton compact du bandeau alertes urgentes (id=d-urgent-toggle,
+   alertes.js/toggleUrgentAlerts) : cloche + compteur seulement, largeur
+   auto (pas de bandeau pleine largeur). Le chevron pivote a l'ouverture
+   du panneau detaille (classe .expanded). */
+.urgent-alerts-toggle{display:inline-flex;align-items:center;gap:8px;background:var(--danger-dark);color:#fff;border:none;border-radius:999px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(185,28,28,.35);transition:transform .15s,box-shadow .15s}
+.urgent-alerts-toggle:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(185,28,28,.45)}
+.urgent-alerts-toggle i{font-size:16px}
+.urgent-alerts-toggle i:last-child{font-size:14px;transition:transform .2s}
+.urgent-alerts-toggle.expanded i:last-child{transform:rotate(180deg)}
 .sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99}
 
 @media(max-width:900px){

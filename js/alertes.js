@@ -666,33 +666,86 @@ async function downloadDocument(url, name) {
  * dashboard.
  * @returns {void}
  */
+/**
+ * Etat d'expansion du panneau détaillé des alertes actives (survit
+ * aux re-rendus du dashboard, mais pas à un rechargement de page).
+ * @type {boolean}
+ */
+let _urgentAlertsExpanded = false;
+
+/**
+ * Ouvre/replie le panneau détaillé sous le bouton compact
+ * "cloche + compteur" du dashboard. Purement visuel, ne modifie
+ * aucune donnée.
+ * @returns {void}
+ */
+function toggleUrgentAlerts() {
+  _urgentAlertsExpanded = !_urgentAlertsExpanded;
+  _applyUrgentAlertsExpanded();
+}
+
+/**
+ * Applique l'état d'expansion courant (_urgentAlertsExpanded) au DOM :
+ * affichage du panneau, rotation du chevron (classe .expanded) et
+ * aria-expanded pour l'accessibilité.
+ * @returns {void}
+ */
+function _applyUrgentAlertsExpanded() {
+  /** @type {HTMLElement | null} */
+  const panel = el('d-alerts-panel');
+  /** @type {HTMLElement | null} */
+  const toggle = el('d-urgent-toggle');
+  if (!panel || !toggle) return;
+
+  panel.style.display = _urgentAlertsExpanded ? '' : 'none';
+  toggle.classList.toggle('expanded', _urgentAlertsExpanded);
+  toggle.setAttribute('aria-expanded', String(_urgentAlertsExpanded));
+}
+
+/**
+ * Affiche le bouton compact "alertes urgentes" en haut du tableau de
+ * bord (#d-urgent-alerts, Qualistore.html) avec le décompte des
+ * alertes actives, et alimente le panneau détaillé (masqué par
+ * défaut — voir toggleUrgentAlerts) avec la liste (max 8, les plus
+ * récentes en premier — même ordre de stockage que DB.alertes, jamais
+ * retrié ici).
+ *
+ * Le bouton est entièrement masqué s'il n'y a aucune alerte ACTIVE.
+ * Il pulse (classe .d-urgent-alerts-critical, app.css) si au moins
+ * une alerte active est de gravité 'Critique'.
+ * @returns {void}
+ */
 function renderAlertsDash() {
   if (!DB.alertes) return;
 
   /** @type {HTMLElement | null} */
-  const urgentCard = el('d-urgent-alerts');
-  if (!urgentCard) return;
+  const wrapper = el('d-urgent-alerts');
+  /** @type {HTMLElement | null} */
+  const toggle  = el('d-urgent-toggle');
+  if (!wrapper || !toggle) return;
 
   /** @type {Alerte[]} */
   const activeAlerts = DB.alertes.filter(a => a.statut === 'Active');
 
   if (!activeAlerts.length) {
-    urgentCard.style.display = 'none';
-    urgentCard.classList.remove('d-urgent-alerts-critical');
+    wrapper.style.display = 'none';
+    toggle.classList.remove('d-urgent-alerts-critical');
     return;
   }
 
-  urgentCard.style.display = '';
+  wrapper.style.display = '';
   el('d-alert-cnt').textContent = `${activeAlerts.length} alerte(s) active(s)`;
 
   /** @type {boolean} */
   const hasCritical = activeAlerts.some(a => a.gravite === 'Critique');
-  urgentCard.classList.toggle('d-urgent-alerts-critical', hasCritical);
+  toggle.classList.toggle('d-urgent-alerts-critical', hasCritical);
 
   el('d-alerts-list').innerHTML = activeAlerts
     .slice(0, 8)
     .map(alert => _buildAlertItem(alert))
     .join('');
+
+  _applyUrgentAlertsExpanded();
 }
 
 /**
