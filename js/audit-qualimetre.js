@@ -381,7 +381,7 @@ async function handleQaPhoto(pid, input) {
   /** @type {string} */
   const path = `audits/qualimetre/qa-${pid}-${uid()}.${ext}`;
   /** @type {string | null} */
-  const url = await sbUploadPhoto(compressed, path);
+  const url = await uploadPhotoWithRetry(compressed, path);
   if (!url) { alert('Erreur upload photo. Vérifiez votre connexion.'); input.value = ''; return; }
   ans.photos.push(url);
   input.value = '';

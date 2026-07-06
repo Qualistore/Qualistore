@@ -222,6 +222,29 @@ function compressImageFile(file) {
   });
 }
 
+/**
+ * Upload une photo avec nouvelle(s) tentative(s) automatique(s) en
+ * cas d'échec — pertinent spécifiquement pour les connexions
+ * instables (coupures momentanées), la cause la plus fréquente d'un
+ * premier échec ponctuel (voir sbUploadPhoto, supabase.js). N'insiste
+ * pas indéfiniment : après `attempts` essais, retourne null comme
+ * sbUploadPhoto (l'appelant garde la responsabilité de prévenir
+ * l'utilisateur).
+ * @param {File|Blob} file
+ * @param {string} storagePath
+ * @param {number} [attempts] - Nombre total de tentatives (défaut 2).
+ * @returns {Promise<string|null>}
+ */
+async function uploadPhotoWithRetry(file, storagePath, attempts = 2) {
+  for (let i = 0; i < attempts; i++) {
+    /** @type {string | null} */
+    const url = await sbUploadPhoto(file, storagePath);
+    if (url) return url;
+    if (i < attempts - 1) await new Promise(resolve => setTimeout(resolve, 800));
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────
 // 3. HELPERS DE RENDU
 

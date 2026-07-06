@@ -136,28 +136,46 @@ async function sbDeleteWhere(table, column, value) {
 /**
  * Upload une photo dans le bucket Supabase Storage.
  * Retourne l'URL publique de la photo, ou null en cas d'échec.
+ *
+ * ⚠️ CORRIGÉ : le fetch est désormais entouré d'un try/catch — une
+ * connexion instable (coupure momentanée, perte de paquets) fait
+ * lever une exception AVANT même de recevoir une réponse HTTP
+ * (`TypeError: Failed to fetch`), distincte d'une réponse HTTP en
+ * erreur (`!response.ok`, déjà gérée). Sans ce correctif, cette
+ * exception remontait telle quelle jusqu'à l'appelant (handleAuditPhoto,
+ * audits.js ; handleQaPhoto, audit-qualimetre.js ; handleAlertPhotos,
+ * alertes.js), qui n'avait pas non plus de try/catch autour de la
+ * boucle d'upload de plusieurs photos — une seule photo en échec
+ * réseau interrompait alors la boucle entière, sautant même
+ * l'affichage de l'alerte d'échec et le rafraîchissement de l'aperçu.
  * @param {File|Blob} file - Fichier image à uploader (doit exposer `.type`).
  * @param {string} storagePath - Chemin de destination dans le bucket 'photos'.
  * @returns {Promise<string|null>}
  */
 async function sbUploadPhoto(file, storagePath) {
-  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/photos/${storagePath}`, {
-    method:  'POST',
-    headers: {
-      'apikey':        SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type':  file.type,
-      'x-upsert':      'true',
-    },
-    body: file,
-  });
+  try {
+    /** @type {Response} */
+    const response = await fetch(`${SUPABASE_URL}/storage/v1/object/photos/${storagePath}`, {
+      method:  'POST',
+      headers: {
+        'apikey':        SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type':  file.type,
+        'x-upsert':      'true',
+      },
+      body: file,
+    });
 
-  if (!response.ok) {
-    console.error('Upload photo échoué pour :', storagePath);
+    if (!response.ok) {
+      console.error('Upload photo échoué (HTTP) pour :', storagePath);
+      return null;
+    }
+
+    return `${SUPABASE_URL}/storage/v1/object/public/photos/${storagePath}`;
+  } catch (err) {
+    console.error('Upload photo échoué (réseau) pour :', storagePath, err);
     return null;
   }
-
-  return `${SUPABASE_URL}/storage/v1/object/public/photos/${storagePath}`;
 }
 
 /**

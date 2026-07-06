@@ -91,6 +91,7 @@
  * @property {string} desc - Intitulé du point de contrôle (copié depuis GrillePoint.q).
  * @property {string} [pid] - Référence vers GrillePoint.id d'origine — absente sur les NC créées avant ce champ.
  * @property {string} [zone] - Zone d'origine du point de contrôle (copiée depuis GrillePoint.zone au moment de l'audit, jamais recalculée) — absente sur les NC créées avant ce champ, voir resolveNcZone (nc.js) pour le repli utilisé dans ce cas.
+ * @property {string} [cat] - Sous-section d'origine du point de contrôle (copiée depuis GrillePoint.cat) — chaîne vide si le point n'en avait pas, absente sur les NC créées avant ce champ. Voir resolveNcCategorie (nc.js) pour le repli utilisé dans ce cas.
  * @property {string} crit - Criticité (copiée depuis GrillePoint.c).
  * @property {string} resp - Nom du responsable (copié depuis l'auditeur).
  * @property {string} dl - Date d'échéance (deadline).
@@ -959,7 +960,9 @@ async function submitAudit() {
     /** @type {NC} */
     DB.ncs.push({
       id: ncId, mid, mag: store.nom || '', rayon, date,
-      desc: point.q, pid: point.id, zone: (point.zone && point.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE,
+      desc: point.q, pid: point.id,
+      zone: (point.zone && point.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE,
+      cat: (point.cat && point.cat.trim()) || '',
       crit: point.c, resp: aud, dl: deadline,
       statut: 'Ouverte', cmt: auditAnswers[point.id].cmt, aid: auditId,
     });
@@ -1072,19 +1075,30 @@ async function handleAuditPhoto(pointId, input) {
   /** @type {Promise<void>} */
   const uploadTask = (async () => {
     for (const file of files) {
-      /** @type {File | Blob} */
-      const compressed = await compressImageFile(file);
-      /** @type {string} */
-      const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
-      /** @type {string} */
-      const storagePath = `audits/${pointId}-${uid()}.${ext}`;
-      /** @type {string | null} */
-      const uploadedUrl = await sbUploadPhoto(compressed, storagePath);
+      // ⚠️ CORRIGÉ : chaque photo est désormais isolée dans son
+      // propre try/catch — auparavant, une exception réseau sur une
+      // seule photo (connexion instable) interrompait la boucle
+      // entière : les photos suivantes du même lot n'étaient même
+      // jamais tentées, sans qu'aucune alerte n'apparaisse (voir
+      // sbUploadPhoto, supabase.js, pour le détail du bug corrigé).
+      try {
+        /** @type {File | Blob} */
+        const compressed = await compressImageFile(file);
+        /** @type {string} */
+        const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
+        /** @type {string} */
+        const storagePath = `audits/${pointId}-${uid()}.${ext}`;
+        /** @type {string | null} */
+        const uploadedUrl = await uploadPhotoWithRetry(compressed, storagePath);
 
-      if (uploadedUrl) {
-        auditAnswers[pointId].photos.push(uploadedUrl);
-      } else {
-        alert('Upload échoué — vérifiez votre connexion.');
+        if (uploadedUrl) {
+          auditAnswers[pointId].photos.push(uploadedUrl);
+        } else {
+          alert('Upload échoué pour une photo (connexion instable ?) — réessayez de l\'ajouter.');
+        }
+      } catch (err) {
+        console.error('Erreur inattendue lors de l\'upload d\'une photo :', err);
+        alert('Une erreur inattendue est survenue pour une photo — réessayez de l\'ajouter.');
       }
     }
 

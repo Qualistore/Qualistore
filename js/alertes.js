@@ -321,7 +321,7 @@ async function handleAlertPhotos(input) {
     /** @type {string} */
     const storagePath = `alertes/${uid()}.${ext}`;
     /** @type {string | null} */
-    const uploadedUrl = await sbUploadPhoto(compressed, storagePath);
+    const uploadedUrl = await uploadPhotoWithRetry(compressed, storagePath);
 
     if (uploadedUrl) {
       _alertPendingPhotos.push(uploadedUrl);
