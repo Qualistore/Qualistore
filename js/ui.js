@@ -827,6 +827,22 @@ function _getPageRenderer(pageId) {
  * @param {PageId | string} pageId
  * @returns {void}
  */
+/**
+ * Navigue vers une page depuis une carte statistique cliquable du
+ * tableau de bord (voir dashboard.js / Qualistore.html) — ne fait
+ * rien si l'utilisateur n'a pas accès à cette page. Réutilise le fait
+ * que buildSidebar() ne génère un `#nav-{pageId}` que pour les pages
+ * autorisées : pas besoin de dupliquer une logique de permission
+ * séparée ici, l'absence de l'élément suffit à savoir que l'accès est
+ * refusé.
+ * @param {PageId | string} pageId
+ * @returns {void}
+ */
+function navigateFromStat(pageId) {
+  if (!el(`nav-${pageId}`)) return;
+  navigate(pageId);
+}
+
 function navigate(pageId) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));

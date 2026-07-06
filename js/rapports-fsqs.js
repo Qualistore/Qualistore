@@ -218,7 +218,7 @@ function _buildRapportHtml(audits, avgScore, allNcs) {
  * @returns {string}
  */
 function _buildRapportHeader(auditCount, avgScore) {
-  return `<div style="border-bottom:3px solid #1a4fa0;padding-bottom:16px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start">
+  return `<div class="pdf-block" style="border-bottom:3px solid #1a4fa0;padding-bottom:16px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start">
     <div>
       <h2 style="color:#1a4fa0;margin:0;font-size:20px">Rapport FSQS</h2>
       <div style="font-size:12px;color:#5a6070;margin-top:4px">
@@ -257,7 +257,7 @@ function _buildRapportSummaryGrid(allNcs) {
   /** @type {number} */
   const closedCount    = allNcs.filter(n => n.statut === 'Clôturée').length;
 
-  return `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px">
+  return `<div class="pdf-block" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px">
     <div style="background:#e8f0fc;border-radius:8px;padding:12px;text-align:center">
       <div style="font-size:22px;font-weight:700;color:#1a4fa0">${allNcs.length + 1 - 1}</div>
       <div style="font-size:11px;color:#5a6070">NC totales</div>
@@ -280,6 +280,21 @@ function _buildRapportSummaryGrid(allNcs) {
 /**
  * Construit la carte HTML d'un audit dans le rapport (en-tête,
  * commentaire général, tableau des NC liées ou message "aucune NC").
+ *
+ * ⚠️ CHANGÉ : ce qui formait auparavant UN seul bloc HTML (tout
+ * l'audit, en-tête + tableau NC entier) est désormais éclaté en
+ * plusieurs éléments marqués `.pdf-block` : l'en-tête magasin, puis
+ * UN bloc par zone (voir _buildNcTable). Visuellement, rien ne
+ * change à l'écran (les bordures s'alignent pour recréer une seule
+ * carte continue) — mais à l'export PDF, chaque zone peut désormais
+ * démarrer sur une nouvelle page si besoin, sans jamais couper une
+ * zone en plein milieu. Sans ce découpage, un rapport portant sur un
+ * seul magasin (cas le plus courant) formait un bloc unique presque
+ * toujours plus grand qu'une page, retombant systématiquement sur le
+ * repli de découpage brutal (voir _sliceOversizedBlockAcrossPages,
+ * rapport-qualimetre.js) — celui-ci reste utilisé, mais seulement
+ * pour une zone qui, à elle seule, dépasserait une page entière (bien
+ * plus rare qu'un audit entier).
  * @param {Audit} audit
  * @returns {string}
  */
@@ -294,7 +309,8 @@ function _buildAuditCard(audit) {
     : audit.score >= 70 ? 'À améliorer'
     : 'Non conforme';
 
-  return `<div style="border:1px solid #e2e6ef;border-radius:10px;margin-bottom:20px;overflow:hidden">
+  /** @type {string} */
+  const headerBlock = `<div class="pdf-block" style="border:1px solid #e2e6ef;border-bottom:none;border-radius:10px 10px 0 0;overflow:hidden">
     <div style="background:linear-gradient(90deg,#e8f0fc,#f3f5f9);padding:12px 18px;display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-size:14px;font-weight:700;color:#1a4fa0">${audit.mag}</div>
@@ -305,20 +321,41 @@ function _buildAuditCard(audit) {
         <div style="font-size:11px;color:#5a6070">${scoreLabel}</div>
       </div>
     </div>
-    <div style="padding:14px 18px">
-      ${audit.cmt ? `<div style="font-style:italic;color:#5a6070;font-size:13px;margin-bottom:10px;padding:8px 12px;background:#f9fafb;border-radius:6px">${audit.cmt}</div>` : ''}
-      ${linkedNcs.length ? _buildNcTable(linkedNcs, audit) : '<div style="color:#16a34a;font-size:13px;font-weight:500">✓ Aucune non-conformité détectée</div>'}
-    </div>
+    ${audit.cmt ? `<div style="font-style:italic;color:#5a6070;font-size:13px;padding:8px 18px 12px;background:#fff">${audit.cmt}</div>` : ''}
+    ${linkedNcs.length ? `<div style="font-size:12px;font-weight:700;color:#b91c1c;padding:${audit.cmt ? '0' : '10px'} 18px 12px;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:6px;background:#fff">
+      <span style="display:inline-block;width:16px;height:16px;background:#e53935;border-radius:50%;color:#fff;font-size:10px;text-align:center;line-height:16px">!</span>
+      Non-conformités (${linkedNcs.length})
+    </div>` : '<div style="height:8px;background:#fff"></div>'}
   </div>`;
+
+  if (!linkedNcs.length) {
+    return headerBlock + `<div class="pdf-block" style="border:1px solid #e2e6ef;border-top:none;border-radius:0 0 10px 10px;margin-bottom:20px;padding:14px 18px;color:#16a34a;font-size:13px;font-weight:500">✓ Aucune non-conformité détectée</div>`;
+  }
+
+  return headerBlock + _buildNcTable(linkedNcs, audit);
 }
 
 /**
- * Construit le tableau HTML des NC liées à un audit, dans le rapport.
+ * Construit les blocs HTML des NC liées à un audit, dans le rapport
+ * — un `<div class="pdf-block">` par zone, chacun avec son propre
+ * mini-tableau (en-têtes de colonnes répétés, puis les sous-sections
+ * et leurs NC).
  *
- * ⚠️ CHANGÉ : regroupement à deux niveaux, Zone puis Sous-section
- * (voir resolveNcZone / resolveNcCategorie, nc.js), cohérent avec le
- * même regroupement dans l'onglet Non-conformités (renderNC, nc.js)
- * et Actions correctives (renderActions, actions.js). Cette fonction
+ * ⚠️ CHANGÉ : auparavant un unique `<table>` monolithique contenant
+ * toutes les zones comme simples lignes — un seul bloc de pagination
+ * PDF pour tout l'audit, presque toujours plus grand qu'une page
+ * pour un rapport portant sur un seul magasin (cas le plus courant),
+ * ce qui retombait systématiquement sur le découpage brutal (voir
+ * _sliceOversizedBlockAcrossPages, rapport-qualimetre.js). Découpé
+ * ici en un bloc PDF PAR ZONE : la pagination peut désormais changer
+ * de page entre deux zones, sans jamais couper une zone en plein
+ * milieu (sauf si une zone à elle seule dépasse une page entière —
+ * bien plus rare qu'un audit entier, repli alors géré comme avant).
+ *
+ * Regroupement à deux niveaux, Zone puis Sous-section conservé (voir
+ * resolveNcZone / resolveNcCategorie, nc.js), cohérent avec le même
+ * regroupement dans l'onglet Non-conformités (renderNC, nc.js) et
+ * Actions correctives (renderActions, actions.js). Cette fonction
  * alimente à la fois l'aperçu à l'écran (#rap-preview) et l'export
  * PDF final — une seule modification couvre les deux.
  * @param {NC[]} ncs
@@ -342,33 +379,35 @@ function _buildNcTable(ncs, audit) {
   /** @type {string[]} */
   const sortedZones = _sortZoneLabels([...byZone.keys()]);
 
-  return `<div style="font-size:12px;font-weight:700;color:#b91c1c;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:6px">
-    <span style="display:inline-block;width:16px;height:16px;background:#e53935;border-radius:50%;color:#fff;font-size:10px;text-align:center;line-height:16px">!</span>
-    Non-conformités (${ncs.length})
-  </div>
-  <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px">
-    <thead>
-      <tr style="background:#f8f8f8">
-        <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Description</th>
-        <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px;width:110px">Criticité</th>
-        <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px;width:90px">Statut</th>
-        <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#1a4fa0;font-size:10px;text-transform:uppercase;letter-spacing:.4px;background:#eef3fb">💬 Suivi</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${sortedZones.map(zone => {
-        /** @type {Map<string, NC[]>} */
-        const byCat = byZone.get(zone);
-        /** @type {string[]} */
-        const sortedCats = _sortZoneLabels([...byCat.keys()], IMPORT_UNCLASSIFIED_CAT_LABEL);
-        return `<tr><td colspan="4" style="padding:7px 10px;background:#dbe6f7;font-size:10px;font-weight:700;color:#1a4fa0;text-transform:uppercase;letter-spacing:.4px;border:1px solid #e2e6ef">${zone}</td></tr>
+  /** @type {string} */
+  const colHeadersHtml = `<tr style="background:#f8f8f8">
+    <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Description</th>
+    <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px;width:110px">Criticité</th>
+    <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.4px;width:90px">Statut</th>
+    <th style="padding:7px 10px;border:1px solid #e2e6ef;text-align:left;color:#1a4fa0;font-size:10px;text-transform:uppercase;letter-spacing:.4px;background:#eef3fb">💬 Suivi</th>
+  </tr>`;
+
+  return sortedZones.map((zone, zoneIndex) => {
+    /** @type {boolean} */
+    const isLastZone = zoneIndex === sortedZones.length - 1;
+    /** @type {Map<string, NC[]>} */
+    const byCat = byZone.get(zone);
+    /** @type {string[]} */
+    const sortedCats = _sortZoneLabels([...byCat.keys()], IMPORT_UNCLASSIFIED_CAT_LABEL);
+
+    return `<div class="pdf-block" style="border:1px solid #e2e6ef;border-top:none;${isLastZone ? 'border-radius:0 0 10px 10px;margin-bottom:20px;' : ''}padding:8px 18px ${isLastZone ? '14px' : '4px'}">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>${colHeadersHtml}</thead>
+        <tbody>
+          <tr><td colspan="4" style="padding:7px 10px;background:#dbe6f7;font-size:10px;font-weight:700;color:#1a4fa0;text-transform:uppercase;letter-spacing:.4px;border:1px solid #e2e6ef">${zone}</td></tr>
           ${sortedCats.map(cat => `
             <tr><td colspan="4" style="padding:5px 10px 5px 20px;background:#eef1f6;font-size:10px;font-weight:600;color:#5a6070;border:1px solid #e2e6ef">${cat}</td></tr>
             ${byCat.get(cat).map(nc => _buildNcTableRow(nc, audit)).join('')}
-          `).join('')}`;
-      }).join('')}
-    </tbody>
-  </table>`;
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }).join('');
 }
 
 /**

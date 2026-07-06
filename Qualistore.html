@@ -82,10 +82,10 @@
         <!-- STATS FSQS -->
         <div id="dash-fsqs">
           <div class="stats-grid">
-            <div class="stat-card blue"><div class="stat-lbl"><i class="ti ti-clipboard-check"></i> Audits FSQS</div><div class="stat-val" id="d-audits">0</div><div class="stat-sub">Total</div></div>
-            <div class="stat-card orange"><div class="stat-lbl"><i class="ti ti-alert-triangle"></i> NC ouvertes</div><div class="stat-val" id="d-nc">0</div><div class="stat-sub">À traiter</div></div>
-            <div class="stat-card red"><div class="stat-lbl"><i class="ti ti-clock"></i> Actions en retard</div><div class="stat-val" id="d-ret">0</div><div class="stat-sub">Délai dépassé</div></div>
-            <div class="stat-card green"><div class="stat-lbl"><i class="ti ti-shield-check"></i> Score moyen FSQS</div><div class="stat-val" id="d-score">–</div><div class="stat-sub">Tous magasins</div></div>
+            <div class="stat-card blue" onclick="navigateFromStat('audits')" title="Voir les audits FSQS"><div class="stat-lbl"><i class="ti ti-clipboard-check"></i> Audits FSQS</div><div class="stat-val" id="d-audits">0</div><div class="stat-sub">Total</div></div>
+            <div class="stat-card orange" onclick="navigateFromStat('nc')" title="Voir les non-conformités"><div class="stat-lbl"><i class="ti ti-alert-triangle"></i> NC ouvertes</div><div class="stat-val" id="d-nc">0</div><div class="stat-sub">À traiter</div></div>
+            <div class="stat-card red" onclick="navigateFromStat('actions')" title="Voir les actions correctives"><div class="stat-lbl"><i class="ti ti-clock"></i> Actions en retard</div><div class="stat-val" id="d-ret">0</div><div class="stat-sub">Délai dépassé</div></div>
+            <div class="stat-card green" onclick="navigateFromStat('stats-audits')" title="Voir les statistiques d'audit"><div class="stat-lbl"><i class="ti ti-shield-check"></i> Score moyen FSQS</div><div class="stat-val" id="d-score">–</div><div class="stat-sub">Tous magasins</div></div>
           </div>
           <div class="grid-2 mb-6">
             <div class="card"><div class="card-hdr"><div class="card-title"><i class="ti ti-building-store" style="color:var(--primary)"></i> Par magasin</div></div><div class="card-body" id="d-mag"></div></div>
@@ -109,10 +109,10 @@
         <!-- STATS QUALIMÈTRE -->
         <div id="dash-qual" style="display:none">
           <div class="stats-grid">
-            <div class="stat-card" style="border-left:4px solid var(--qual)"><div class="stat-lbl"><i class="ti ti-rosette" style="color:var(--qual)"></i> Audits Qualimètre</div><div class="stat-val" style="color:var(--qual)" id="dq-audits">0</div><div class="stat-sub">Total</div></div>
-            <div class="stat-card" style="border-left:4px solid var(--warning)"><div class="stat-lbl"><i class="ti ti-alert-circle" style="color:var(--warning)"></i> Points NC</div><div class="stat-val" style="color:var(--warning)" id="dq-nc">0</div><div class="stat-sub">Non conformes</div></div>
-            <div class="stat-card" style="border-left:4px solid var(--success)"><div class="stat-lbl"><i class="ti ti-circle-check" style="color:var(--success)"></i> Score moyen</div><div class="stat-val" style="color:var(--success)" id="dq-score">–</div><div class="stat-sub">Tous magasins</div></div>
-            <div class="stat-card" style="border-left:4px solid var(--primary)"><div class="stat-lbl"><i class="ti ti-building-store" style="color:var(--primary)"></i> Magasins audités</div><div class="stat-val" style="color:var(--primary)" id="dq-mags">0</div><div class="stat-sub">Actifs</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--qual)" onclick="navigateFromStat('audit-qualimetre')" title="Voir les audits Qualimètre"><div class="stat-lbl"><i class="ti ti-rosette" style="color:var(--qual)"></i> Audits Qualimètre</div><div class="stat-val" style="color:var(--qual)" id="dq-audits">0</div><div class="stat-sub">Total</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--warning)" onclick="navigateFromStat('audit-qualimetre')" title="Voir les audits Qualimètre"><div class="stat-lbl"><i class="ti ti-alert-circle" style="color:var(--warning)"></i> Points NC</div><div class="stat-val" style="color:var(--warning)" id="dq-nc">0</div><div class="stat-sub">Non conformes</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--success)" onclick="navigateFromStat('rapport-qualimetre')" title="Voir le rapport Qualimètre"><div class="stat-lbl"><i class="ti ti-circle-check" style="color:var(--success)"></i> Score moyen</div><div class="stat-val" style="color:var(--success)" id="dq-score">–</div><div class="stat-sub">Tous magasins</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--primary)" onclick="navigateFromStat('magasins')" title="Voir les magasins"><div class="stat-lbl"><i class="ti ti-building-store" style="color:var(--primary)"></i> Magasins audités</div><div class="stat-val" style="color:var(--primary)" id="dq-mags">0</div><div class="stat-sub">Actifs</div></div>
           </div>
           <div class="grid-2 mb-6">
             <div class="card">

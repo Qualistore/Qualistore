@@ -208,7 +208,7 @@ function _buildQualRapportHtml(audits, avgScore) {
  * @returns {string}
  */
 function _buildQualRapportHeader(auditCount, avgScore) {
-  return `<div style="border-bottom:3px solid #7c3aed;padding-bottom:16px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start">
+  return `<div class="pdf-block" style="border-bottom:3px solid #7c3aed;padding-bottom:16px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start">
     <div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
         <div style="width:38px;height:38px;background:linear-gradient(135deg,#fbbf24,#f59e0b);border-radius:50%;display:flex;align-items:center;justify-content:center">
@@ -227,7 +227,18 @@ function _buildQualRapportHeader(auditCount, avgScore) {
 
 /**
  * Construit la carte HTML d'un audit Qualimètre dans le rapport
- * (en-tête, commentaire, résumé de score, sections NC/conformes).
+ * (en-tête + résumé de score, puis sections NC/conformes).
+ *
+ * ⚠️ CHANGÉ : éclaté en plusieurs éléments marqués `.pdf-block` (en-tête
+ * + résumé, section NC, section conformes) au lieu d'un seul bloc —
+ * même principe et même raison que _buildAuditCard (rapports-fsqs.js) :
+ * un rapport portant sur un seul magasin (cas le plus courant) formait
+ * un unique bloc presque toujours plus grand qu'une page, retombant
+ * systématiquement sur le découpage brutal (voir
+ * _sliceOversizedBlockAcrossPages). Désormais, la pagination peut
+ * changer de page entre l'en-tête, la section NC et la section
+ * conformes, sans jamais les couper en plein milieu (sauf si l'une
+ * d'elles, à elle seule, dépasse une page entière — plus rare).
  * @param {QualAudit} audit
  * @returns {string}
  */
@@ -242,8 +253,15 @@ function _buildQualAuditCard(audit) {
   const naItems    = allAnswers.filter(a => a.rep === 'NA');
   /** @type {boolean} */
   const hasPhotos  = ncItems.some(a => a.photos?.length > 0);
+  /** @type {boolean} */
+  const hasNc      = ncItems.length > 0;
+  /** @type {boolean} */
+  const hasConform = conformItems.length > 0;
+  /** @type {boolean} Vrai si aucune section ne suit l'en-tête — celui-ci ferme alors seul la carte (coins arrondis complets). */
+  const isHeaderOnly = !hasNc && !hasConform;
 
-  return `<div style="border:1px solid #e2e6ef;border-radius:10px;margin-bottom:24px;overflow:hidden;page-break-inside:avoid">
+  /** @type {string} */
+  const headerBlock = `<div class="pdf-block" style="border:1px solid #e2e6ef;overflow:hidden;${isHeaderOnly ? 'border-radius:10px;margin-bottom:20px' : 'border-bottom:none;border-radius:10px 10px 0 0'}">
     <div style="background:linear-gradient(90deg,#f5f3ff,#ede9fe);padding:12px 18px;display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-size:14px;font-weight:700;color:#6d28d9">${audit.mag}</div>
@@ -253,10 +271,20 @@ function _buildQualAuditCard(audit) {
     <div style="padding:16px 18px">
       ${audit.cmt ? `<div style="font-style:italic;color:#5a6070;font-size:13px;margin-bottom:14px;padding:8px 12px;background:#f9fafb;border-radius:6px">${audit.cmt}</div>` : ''}
       ${_buildQualScoreSummary(audit.score, ncItems.length, conformItems.length, naItems.length, hasPhotos)}
-      ${ncItems.length    ? _buildQualNcSection(ncItems)      : ''}
-      ${conformItems.length ? _buildQualConformSection(conformItems) : ''}
     </div>
   </div>`;
+
+  /** @type {string} */
+  const ncBlock = hasNc ? `<div class="pdf-block" style="border:1px solid #e2e6ef;border-top:none;${!hasConform ? 'border-radius:0 0 10px 10px;margin-bottom:20px;' : ''}padding:14px 18px ${!hasConform ? '16px' : '4px'}">
+    ${_buildQualNcSection(ncItems)}
+  </div>` : '';
+
+  /** @type {string} */
+  const conformBlock = hasConform ? `<div class="pdf-block" style="border:1px solid #e2e6ef;border-top:none;border-radius:0 0 10px 10px;margin-bottom:20px;padding:${hasNc ? '4px' : '14px'} 18px 16px">
+    ${_buildQualConformSection(conformItems)}
+  </div>` : '';
+
+  return headerBlock + ncBlock + conformBlock;
 }
 
 /**
@@ -329,20 +357,34 @@ function _buildQualConformSection(conformItems) {
 // ─────────────────────────────────────────────
 
 /**
- * Capture un conteneur HTML avec html2canvas et l'exporte en PDF portrait.
- * Réutilisé pour FSQS et Qualimètre.
+ * Exporte un rapport (FSQS ou Qualimètre) en PDF portrait, avec une
+ * pagination "intelligente" : chaque bloc de haut niveau du rapport
+ * (en-tête, résumé chiffré, une carte par magasin/audit — voir
+ * _buildRapportHtml, rapports-fsqs.js, et son équivalent Qualimètre)
+ * est capturé et placé sur la page indépendamment des autres. Un
+ * changement de page n'intervient JAMAIS au milieu d'un bloc, sauf
+ * si ce bloc à lui seul dépasse la hauteur d'une page entière (repli
+ * exceptionnel sur un découpage en tranches, uniquement pour ce
+ * bloc-là — voir _sliceOversizedBlockAcrossPages).
+ *
+ * ⚠️ CORRIGÉ : remplace l'ancienne approche (une seule capture
+ * d'écran de tout le rapport, découpée en tranches de hauteur fixe
+ * sans se soucier du contenu) qui pouvait couper un tableau de NC ou
+ * une carte de magasin en plein milieu, à cheval sur deux pages —
+ * peu lisible et peu professionnel pour un rapport destiné à être
+ * imprimé/partagé.
  * @param {string} containerId - Id de l'élément DOM source dont le innerHTML sera exporté.
  * @param {string} filename - Nom de fichier sans extension (le '.pdf' est ajouté automatiquement).
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function exportPDF(containerId, filename) {
+async function exportPDF(containerId, filename) {
+  /** @type {HTMLElement | null} */
   const source = el(containerId);
   if (!source?.innerHTML.trim()) {
     alert('Aucun rapport à exporter. Générez d\'abord l\'aperçu.');
     return;
   }
 
-  // Feedback visuel sur le bouton déclencheur
   /** @type {HTMLButtonElement | null} */
   const triggerButton = _findExportButton(filename);
   /** @type {string} */
@@ -360,20 +402,29 @@ function exportPDF(containerId, filename) {
   wrapper.querySelectorAll('button, select, input, textarea, .btn').forEach(el => el.remove());
   document.body.appendChild(wrapper);
 
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    html2canvas(wrapper, {
-      scale: 2, useCORS: true, backgroundColor: '#ffffff',
-      scrollX: 0, scrollY: 0, width: 794, windowWidth: 858,
-    }).then(canvas => {
-      document.body.removeChild(wrapper);
-      _renderCanvasToPDF(canvas, filename);
-      _restoreExportButton(triggerButton, originalLabel);
-    }).catch(error => {
-      if (document.body.contains(wrapper)) document.body.removeChild(wrapper);
-      _restoreExportButton(triggerButton, originalLabel);
-      alert('Erreur génération PDF : ' + error.message);
-    });
-  }));
+  // Laisser le navigateur peindre le contenu avant toute capture.
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  try {
+    // ⚠️ CHANGÉ : les unités de pagination sont désormais les
+    // éléments marqués `.pdf-block` (voir _buildAuditCard /
+    // _buildNcTable, rapports-fsqs.js — même principe à prévoir côté
+    // Qualimètre), quel que soit leur niveau d'imbrication réel dans
+    // le HTML. Un rapport qui n'utilise pas encore ce marqueur
+    // retombe sur l'ancien comportement (enfants directs du wrapper)
+    // pour ne rien casser.
+    /** @type {Element[]} */
+    let blocks = [...wrapper.querySelectorAll('.pdf-block')];
+    if (!blocks.length) {
+      blocks = wrapper.firstElementChild ? [...wrapper.firstElementChild.children] : [wrapper];
+    }
+    await _renderBlocksToPDF(blocks, filename);
+  } catch (error) {
+    alert('Erreur génération PDF : ' + error.message);
+  } finally {
+    document.body.removeChild(wrapper);
+    _restoreExportButton(triggerButton, originalLabel);
+  }
 }
 
 /**
@@ -419,36 +470,102 @@ function _restoreExportButton(btn, originalLabel) {
 }
 
 /**
- * Découpe un canvas haute résolution en tranches paginées et les
- * insère dans un PDF portrait via jsPDF, puis déclenche le
- * téléchargement.
- * @param {HTMLCanvasElement} canvas
+ * Capture chaque bloc l'un après l'autre (html2canvas) et les place
+ * séquentiellement dans un PDF portrait, en ne changeant de page
+ * qu'entre deux blocs — voir la JSDoc d'exportPDF pour le principe
+ * général. Un bloc qui ne rentre pas dans l'espace restant de la
+ * page courante démarre une nouvelle page ; un bloc plus grand
+ * qu'une page entière est délégué à
+ * _sliceOversizedBlockAcrossPages.
+ * @param {Element[]} blocks - Éléments de haut niveau à capturer indépendamment, dans l'ordre du rapport.
  * @param {string} filename - Nom de fichier sans extension.
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function _renderCanvasToPDF(canvas, filename) {
-  const { jsPDF }  = window.jspdf;
+async function _renderBlocksToPDF(blocks, filename) {
+  const { jsPDF } = window.jspdf;
   /** @type {Object} Instance jsPDF — API non typée en détail ici. */
-  const pdf        = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+  const pdf     = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   /** @type {number} */
-  const pdfW       = pdf.internal.pageSize.getWidth();
+  const pdfW    = pdf.internal.pageSize.getWidth();
   /** @type {number} */
-  const pdfH       = pdf.internal.pageSize.getHeight();
+  const pdfH    = pdf.internal.pageSize.getHeight();
   /** @type {number} */
-  const margin     = 32;
+  const margin  = 32;
   /** @type {number} */
-  const usableW    = pdfW - margin * 2;
+  const usableW = pdfW - margin * 2;
   /** @type {number} */
-  const ratio      = usableW / (canvas.width / 2);
+  const usableH = pdfH - margin * 2;
+  /** @type {number} Espace vertical laissé entre deux blocs consécutifs sur une même page. */
+  const gap     = 14;
+
+  /** @type {number} Position verticale courante sur la page (haut de la prochaine image à placer). */
+  let cursorY = margin;
+  /** @type {boolean} Vrai dès qu'au moins un bloc a été placé — évite d'ajouter une page vide inutile en tout début de document. */
+  let started = false;
+
+  for (const block of blocks) {
+    if (!(block instanceof HTMLElement)) continue;
+
+    /** @type {HTMLCanvasElement} */
+    const canvas = await html2canvas(block, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    /** @type {number} */
+    const ratio  = usableW / (canvas.width / 2);
+    /** @type {number} */
+    const blockH = (canvas.height / 2) * ratio;
+    if (blockH <= 0) continue; // bloc vide (ex : résumé sans NC) — rien à dessiner
+
+    if (!started) {
+      started = true;
+    } else if (cursorY + blockH > margin + usableH) {
+      pdf.addPage();
+      cursorY = margin;
+    }
+
+    if (blockH > usableH) {
+      // Bloc à lui seul plus grand qu'une page entière (ex : un
+      // magasin avec énormément de NC) — repli exceptionnel sur un
+      // découpage en tranches, seulement pour ce bloc.
+      cursorY = _sliceOversizedBlockAcrossPages(pdf, canvas, ratio, margin, usableW, usableH, cursorY);
+    } else {
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, cursorY, usableW, blockH);
+      cursorY += blockH + gap;
+    }
+  }
+
+  pdf.save(`${filename}.pdf`);
+}
+
+/**
+ * Repli exceptionnel pour un bloc dont la hauteur dépasse à elle
+ * seule une page A4 entière — découpe ce bloc (et seulement lui) en
+ * tranches de hauteur `usableH`, une par page, en démarrant toujours
+ * sur une page neuve pour lui laisser toute la place disponible.
+ * Après ce repli, le bloc suivant démarre systématiquement sur une
+ * nouvelle page (valeur de retour volontairement au-delà de toute
+ * hauteur de page, voir son usage dans _renderBlocksToPDF) plutôt que
+ * de tenter un calcul précis de l'espace restant sur la dernière
+ * tranche — cas rare, simplification jugée raisonnable.
+ * @param {Object} pdf - Instance jsPDF.
+ * @param {HTMLCanvasElement} canvas - Capture du bloc entier (non découpée).
+ * @param {number} ratio - Facteur de conversion pixels → points PDF pour ce bloc.
+ * @param {number} margin
+ * @param {number} usableW
+ * @param {number} usableH
+ * @param {number} cursorY - Position verticale courante (utilisée pour savoir si une nouvelle page est nécessaire avant de commencer).
+ * @returns {number} Une valeur volontairement supérieure à toute page, pour forcer le bloc suivant à démarrer sur une page neuve.
+ */
+function _sliceOversizedBlockAcrossPages(pdf, canvas, ratio, margin, usableW, usableH, cursorY) {
+  if (cursorY > margin) pdf.addPage();
+
   /** @type {number} */
-  const totalH     = (canvas.height / 2) * ratio;
-  /** @type {number} */
-  const usableH    = pdfH - margin * 2;
-  let   yOffset    = 0;
-  let   pageIndex  = 0;
+  const totalH = (canvas.height / 2) * ratio;
+  let yOffset  = 0;
+  let first    = true;
 
   while (yOffset < totalH) {
-    if (pageIndex > 0) pdf.addPage();
+    if (!first) pdf.addPage();
+    first = false;
+
     /** @type {number} */
     const slicePt = Math.min(usableH, totalH - yOffset);
     /** @type {number} */
@@ -456,17 +573,16 @@ function _renderCanvasToPDF(canvas, filename) {
     /** @type {number} */
     const startPx = Math.round((yOffset / ratio) * 2);
 
-    const slice   = document.createElement('canvas');
-    slice.width   = canvas.width;
-    slice.height  = slicePx;
+    const slice  = document.createElement('canvas');
+    slice.width  = canvas.width;
+    slice.height = slicePx;
     slice.getContext('2d').drawImage(canvas, 0, startPx, canvas.width, slicePx, 0, 0, canvas.width, slicePx);
     pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, usableW, slicePt);
 
     yOffset += usableH;
-    pageIndex++;
   }
 
-  pdf.save(`${filename}.pdf`);
+  return Infinity;
 }
 
 // ─────────────────────────────────────────────

@@ -910,6 +910,11 @@ function _refreshActivePage() {
 /**
  * Relance une synchronisation Supabase dès que la connexion réseau
  * est rétablie, si des modifications locales étaient en attente.
+ *
+ * ⚠️ AJOUTÉ : déclenche aussi le vidage de la file d'attente photos
+ * hors-ligne (voir section 13, flushPendingPhotoQueue) — même
+ * déclencheur 'online' que la synchronisation Supabase, pas la peine
+ * d'ajouter un second listener séparé pour ça.
  * @param {Event} _event - Événement DOM 'online' (non utilisé).
  * @returns {void}
  */
@@ -918,6 +923,7 @@ window.addEventListener('online', () => {
     console.log('🔄 Reconnexion détectée — synchronisation Supabase…');
     _pushToSupabase();
   }
+  flushPendingPhotoQueue();
 });
 
 // ─────────────────────────────────────────────
@@ -981,3 +987,214 @@ function importBackup(input) {
   reader.readAsText(file);
   input.value = '';
 }
+
+// ─────────────────────────────────────────────
+// 13. FILE D'ATTENTE PHOTOS HORS-LIGNE (IndexedDB)
+//
+// Quand l'upload d'une photo échoue malgré les tentatives
+// automatiques (voir uploadPhotoWithRetry, ui.js) — typiquement une
+// connexion terrain instable — la photo n'est plus perdue : elle est
+// mise en file d'attente ici, puis renvoyée automatiquement dès que
+// la connexion revient (voir la section 11 ci-dessus) ou toutes les
+// 30 secondes tant qu'on est en ligne.
+//
+// IndexedDB plutôt que localStorage : les photos (même compressées,
+// voir compressImageFile, ui.js) font plusieurs centaines de Ko —
+// largement de quoi saturer les 5-10 Mo habituels de localStorage
+// pour tout le site, ce qui casserait aussi la sauvegarde des
+// audits/brouillons. IndexedDB n'a pas cette limite pratique.
+//
+// Générique et réutilisable par contexte (seul 'audit-fsqs' existe
+// pour l'instant, voir audits.js) : chaque contexte enregistre sa
+// propre fonction de réconciliation via registerPhotoQueueReconciler,
+// appelée avec l'entrée en attente et l'URL réelle une fois l'upload
+// réussi — à elle de décider où replacer cette URL (réponse d'audit
+// encore ouverte en mémoire, ou brouillon déjà sauvegardé sur disque).
+// ─────────────────────────────────────────────
+
+/**
+ * Entrée de la file d'attente photos hors-ligne.
+ * @typedef {Object} PendingPhotoEntry
+ * @property {string} id - Identifiant généré (préfixé 'pq-').
+ * @property {string} context - Contexte d'origine (ex : 'audit-fsqs'), détermine quel réconciliateur est appelé après envoi réussi.
+ * @property {string} pointId - Référence vers GrillePoint.id, pour que le réconciliateur sache où placer l'URL obtenue.
+ * @property {string} [draftId] - Référence vers Draft.id, si un brouillon existait déjà au moment de la mise en attente (voir _ensureDraftSnapshotForCurrentAudit, audits.js).
+ * @property {Blob} blob - Photo déjà compressée (voir compressImageFile, ui.js), prête à être envoyée telle quelle.
+ * @property {string} storagePath - Chemin de destination dans le bucket Supabase Storage 'photos', déjà calculé au moment de la mise en attente.
+ * @property {number} createdAt - Horodatage (Date.now()) de la mise en attente.
+ */
+
+/** @type {string} */
+const PHOTO_QUEUE_DB_NAME = 'qualistore-photo-queue';
+/** @type {number} */
+const PHOTO_QUEUE_DB_VERSION = 1;
+/** @type {string} */
+const PHOTO_QUEUE_STORE = 'pending';
+
+/** @type {Object<string, (entry: PendingPhotoEntry, url: string) => void>} */
+const _photoQueueReconcilers = {};
+
+/**
+ * Enregistre la fonction appelée après l'envoi réussi d'une photo
+ * précédemment mise en file d'attente pour un contexte donné.
+ * @param {string} context - Ex : 'audit-fsqs'.
+ * @param {(entry: PendingPhotoEntry, url: string) => void} reconciler
+ * @returns {void}
+ */
+function registerPhotoQueueReconciler(context, reconciler) {
+  _photoQueueReconcilers[context] = reconciler;
+}
+
+/**
+ * Ouvre (et crée si besoin) la base IndexedDB de la file d'attente.
+ * @returns {Promise<IDBDatabase>}
+ */
+function _openPhotoQueueDb() {
+  return new Promise((resolve, reject) => {
+    /** @type {IDBOpenDBRequest} */
+    const request = indexedDB.open(PHOTO_QUEUE_DB_NAME, PHOTO_QUEUE_DB_VERSION);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(PHOTO_QUEUE_STORE)) {
+        request.result.createObjectStore(PHOTO_QUEUE_STORE, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror   = () => reject(request.error);
+  });
+}
+
+/**
+ * Met une photo en file d'attente locale après échec définitif de
+ * l'upload (voir uploadPhotoWithRetry, ui.js). En cas d'échec de
+ * l'écriture IndexedDB elle-même (navigateur en mode privé strict,
+ * quota plein...), n'interrompt rien d'autre : la photo sera
+ * simplement perdue comme avant ce correctif, sans faire planter
+ * l'appelant.
+ * @param {Omit<PendingPhotoEntry, 'id'|'createdAt'>} entry
+ * @returns {Promise<string>} L'id généré pour cette entrée.
+ */
+async function queuePendingPhoto(entry) {
+  /** @type {string} */
+  const id = 'pq-' + uid();
+  /** @type {PendingPhotoEntry} */
+  const record = { ...entry, id, createdAt: Date.now() };
+  try {
+    /** @type {IDBDatabase} */
+    const db = await _openPhotoQueueDb();
+    await new Promise((resolve, reject) => {
+      /** @type {IDBTransaction} */
+      const tx = db.transaction(PHOTO_QUEUE_STORE, 'readwrite');
+      tx.objectStore(PHOTO_QUEUE_STORE).put(record);
+      tx.oncomplete = resolve;
+      tx.onerror    = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error("Impossible de mettre la photo en file d'attente locale :", err);
+  }
+  return id;
+}
+
+/**
+ * Liste toutes les photos actuellement en file d'attente.
+ * @returns {Promise<PendingPhotoEntry[]>}
+ */
+async function getPendingPhotos() {
+  try {
+    /** @type {IDBDatabase} */
+    const db = await _openPhotoQueueDb();
+    return await new Promise((resolve, reject) => {
+      /** @type {IDBTransaction} */
+      const tx = db.transaction(PHOTO_QUEUE_STORE, 'readonly');
+      /** @type {IDBRequest} */
+      const request = tx.objectStore(PHOTO_QUEUE_STORE).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror   = () => reject(request.error);
+    });
+  } catch (err) {
+    console.error("Impossible de lire la file d'attente locale :", err);
+    return [];
+  }
+}
+
+/**
+ * Retire une entrée de la file d'attente (après envoi réussi).
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+async function removePendingPhoto(id) {
+  try {
+    /** @type {IDBDatabase} */
+    const db = await _openPhotoQueueDb();
+    await new Promise((resolve, reject) => {
+      /** @type {IDBTransaction} */
+      const tx = db.transaction(PHOTO_QUEUE_STORE, 'readwrite');
+      tx.objectStore(PHOTO_QUEUE_STORE).delete(id);
+      tx.oncomplete = resolve;
+      tx.onerror    = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error("Impossible de retirer l'entrée de la file d'attente :", err);
+  }
+}
+
+/**
+ * Compte les photos actuellement en attente pour un contexte donné —
+ * utilisée pour afficher un indicateur (ex : badge dans la modale
+ * d'audit) sans avoir à charger les Blob complets.
+ * @param {string} [context] - Si fourni, ne compte que ce contexte.
+ * @returns {Promise<number>}
+ */
+async function countPendingPhotos(context) {
+  /** @type {PendingPhotoEntry[]} */
+  const pending = await getPendingPhotos();
+  return context ? pending.filter(p => p.context === context).length : pending.length;
+}
+
+/** @type {boolean} */
+let _photoQueueFlushing = false;
+
+/**
+ * Tente d'envoyer toutes les photos actuellement en file d'attente.
+ * Pour chaque entrée envoyée avec succès, appelle le réconciliateur
+ * enregistré pour son contexte (voir registerPhotoQueueReconciler)
+ * puis retire l'entrée de la file. Les entrées qui échouent encore
+ * restent en file pour la prochaine tentative (déclenchée au retour
+ * en ligne, section 11, ou par la minuterie ci-dessous).
+ *
+ * Un seul vidage à la fois (_photoQueueFlushing) pour éviter des
+ * envois en double si plusieurs déclencheurs se chevauchent (retour
+ * en ligne + minuterie périodique, par exemple).
+ * @returns {Promise<void>}
+ */
+async function flushPendingPhotoQueue() {
+  if (_photoQueueFlushing || !navigator.onLine) return;
+  _photoQueueFlushing = true;
+  try {
+    /** @type {PendingPhotoEntry[]} */
+    const pending = await getPendingPhotos();
+    for (const entry of pending) {
+      /** @type {string | null} */
+      const url = await uploadPhotoWithRetry(entry.blob, entry.storagePath, 1);
+      if (!url) continue; // toujours pas de réseau fiable, on réessaiera plus tard
+
+      await removePendingPhoto(entry.id);
+      /** @type {((entry: PendingPhotoEntry, url: string) => void) | undefined} */
+      const reconciler = _photoQueueReconcilers[entry.context];
+      if (reconciler) {
+        try { reconciler(entry, url); } catch (err) { console.error('Erreur de réconciliation photo :', err); }
+      }
+    }
+  } finally {
+    _photoQueueFlushing = false;
+  }
+}
+
+// Nouvelle tentative périodique tant que l'onglet reste ouvert, en
+// plus du déclenchement immédiat au retour en ligne (section 11) —
+// utile si la connexion est instable plutôt que franchement coupée
+// (l'événement 'online' ne se déclenche pas dans ce cas).
+setInterval(flushPendingPhotoQueue, 30_000);
+
+// Tentative dès le chargement de la page, au cas où des photos
+// seraient restées en attente d'une session précédente.
+flushPendingPhotoQueue();

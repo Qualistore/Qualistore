@@ -75,6 +75,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .card-body{padding:20px}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px;box-shadow:var(--shadow)}
+
+/* Cartes statistiques cliquables du tableau de bord (voir
+   navigateFromStat, ui.js) — retour visuel au survol pour signaler
+   que la carte mène vers l'onglet correspondant. */
+.stat-card[onclick]{cursor:pointer;transition:transform .15s,box-shadow .15s}
+.stat-card[onclick]:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.08)}
 .stat-lbl{font-size:12px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .stat-lbl i{font-size:16px}
 .stat-val{font-size:28px;font-weight:700;line-height:1}

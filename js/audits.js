@@ -133,6 +133,17 @@
  * @property {'qualimetre'|string} [type] - Type de brouillon ; lu dans ce fichier (_buildDraftRow) mais jamais écrit ici — probablement renseigné par qualimetre.js (non fourni).
  */
 
+/**
+ * Entrée de la file d'attente photos hors-ligne. Définition
+ * canonique dans storage.js (section 13) — seules .id, .pointId et
+ * .draftId sont accédées dans ce fichier (voir le réconciliateur
+ * enregistré en bas de ce fichier).
+ * @typedef {Object} PendingPhotoEntry
+ * @property {string} id
+ * @property {string} pointId
+ * @property {string} [draftId]
+ */
+
 // ─────────────────────────────────────────────
 // 1. CONSTANTES
 // ─────────────────────────────────────────────
@@ -169,6 +180,19 @@ let _currentDraftId = null;
  * @type {Promise<void>[]}
  */
 let _pendingPhotoUploads = [];
+/**
+ * Aperçus locaux (Object URL) des photos actuellement en file
+ * d'attente hors-ligne (voir queuePendingPhoto, storage.js), indexés
+ * par GrillePoint.id. Purement pour l'affichage de la session en
+ * cours — jamais persisté (ni dans un brouillon, ni sur Supabase) :
+ * un Object URL ne survit pas à un rechargement de page. La vraie
+ * persistance de la photo elle-même se fait dans IndexedDB via
+ * queuePendingPhoto ; ceci n'est qu'un miroir pratique pour savoir
+ * quoi afficher et quoi retirer de l'écran une fois la vraie URL
+ * obtenue (voir le réconciliateur enregistré en bas de ce fichier).
+ * @type {Object<string, {queueId: string, localUrl: string}[]>}
+ */
+let _pendingAuditPhotoPreviews = {};
 
 // ─────────────────────────────────────────────
 // 3. LISTE DES AUDITS
@@ -666,6 +690,127 @@ function switchAuditZone(zone) {
 }
 
 /**
+ * Construit le HTML combiné des miniatures d'un point de contrôle :
+ * les photos déjà envoyées (auditAnswers[pointId].photos) suivies des
+ * aperçus encore en attente d'envoi (_pendingAuditPhotoPreviews,
+ * connexion instable — voir _queueAuditPhotoForLaterUpload). Utilisée
+ * à la fois pour le rendu initial (_buildAuditQuestion) et pour
+ * rafraîchir un conteneur déjà affiché (_refreshAuditPhotoThumbs).
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @returns {string}
+ */
+function _buildAuditPhotoThumbsHtml(pointId) {
+  /** @type {string[]} */
+  const realPhotos = (auditAnswers[pointId] && auditAnswers[pointId].photos) || [];
+  /** @type {{queueId: string, localUrl: string}[]} */
+  const pending = _pendingAuditPhotoPreviews[pointId] || [];
+
+  return realPhotos.map((url, i) => _buildAuditPhotoThumbHtml(pointId, url, i)).join('')
+       + pending.map(p => _buildPendingAuditPhotoThumbHtml(pointId, p.localUrl, p.queueId)).join('');
+}
+
+/**
+ * Rafraîchit le conteneur de miniatures (#aphot-{pointId}) déjà
+ * présent dans le DOM, avec le contenu combiné à jour (voir
+ * _buildAuditPhotoThumbsHtml). Ne fait rien si le point n'est plus
+ * affiché (zone changée entre-temps) — pas une erreur, juste un
+ * rafraîchissement devenu inutile.
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @returns {void}
+ */
+function _refreshAuditPhotoThumbs(pointId) {
+  /** @type {HTMLElement | null} */
+  const container = el('aphot-' + pointId);
+  if (container) container.innerHTML = _buildAuditPhotoThumbsHtml(pointId);
+}
+
+/**
+ * Construit le HTML d'une miniature "en attente d'envoi" : bordure en
+ * pointillés, léger flou d'opacité, badge horloge, et une croix pour
+ * annuler purement et simplement cette photo (voir
+ * removePendingAuditPhotoPreview) plutôt que de la supprimer une fois
+ * envoyée (voir removeAuditPhoto, pour les photos déjà réussies).
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {string} localUrl - Object URL locale (URL.createObjectURL), valide uniquement pour la session en cours.
+ * @param {string} queueId - Référence vers PendingPhotoEntry.id (storage.js).
+ * @returns {string}
+ */
+function _buildPendingAuditPhotoThumbHtml(pointId, localUrl, queueId) {
+  return `<div class="photo-thumb" style="position:relative;width:52px;height:52px" title="En attente d'envoi (connexion instable) — envoi automatique dès que possible">
+    <img src="${localUrl}" style="width:52px;height:52px;border-radius:7px;object-fit:cover;border:2px dashed var(--warning-mid, #d97706);opacity:.7">
+    <span style="position:absolute;bottom:-4px;left:-4px;background:var(--warning-light);color:#92400e;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:9px;border:2px solid #fff">
+      <i class="ti ti-clock"></i>
+    </span>
+    <button type="button" class="photo-thumb-del" title="Annuler l'envoi de cette photo"
+            onclick="removePendingAuditPhotoPreview('${pointId}','${queueId}')"
+            style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;
+                   background:var(--danger);color:#fff;border:2px solid #fff;display:flex;
+                   align-items:center;justify-content:center;cursor:pointer;padding:0">
+      <i class="ti ti-x" style="font-size:11px"></i>
+    </button>
+  </div>`;
+}
+
+/**
+ * Met une photo en file d'attente hors-ligne après échec définitif de
+ * l'upload (voir uploadPhotoWithRetry, ui.js) — au lieu de la perdre
+ * purement et simplement. Garantit d'abord qu'un brouillon existe
+ * (voir _snapshotCurrentAuditAsDraft) pour que le réconciliateur
+ * (enregistré en bas de ce fichier) sache où replacer la vraie URL
+ * une fois l'upload réussi, même si l'utilisateur ferme l'onglet
+ * avant que la connexion ne revienne.
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {Blob} blob - Photo déjà compressée, prête à être envoyée telle quelle.
+ * @param {string} storagePath - Chemin de destination déjà calculé dans le bucket 'photos'.
+ * @returns {Promise<void>}
+ */
+async function _queueAuditPhotoForLaterUpload(pointId, blob, storagePath) {
+  _snapshotCurrentAuditAsDraft();
+
+  /** @type {string} */
+  const queueId = await queuePendingPhoto({
+    context:  'audit-fsqs',
+    pointId,
+    draftId:  _currentDraftId,
+    blob,
+    storagePath,
+  });
+
+  /** @type {string} */
+  const localUrl = URL.createObjectURL(blob);
+  if (!_pendingAuditPhotoPreviews[pointId]) _pendingAuditPhotoPreviews[pointId] = [];
+  _pendingAuditPhotoPreviews[pointId].push({ queueId, localUrl });
+
+  _refreshAuditPhotoThumbs(pointId);
+  showToast('Connexion instable — photo mise en attente, envoi automatique dès que possible', 'warning');
+}
+
+/**
+ * Annule l'envoi d'une photo encore en attente (avant qu'elle n'ait
+ * réussi à s'envoyer) — la retire de la file d'attente hors-ligne
+ * (IndexedDB) et de l'aperçu local, après confirmation puisque la
+ * photo est alors définitivement perdue.
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {string} queueId - Référence vers PendingPhotoEntry.id (storage.js).
+ * @returns {Promise<void>}
+ */
+async function removePendingAuditPhotoPreview(pointId, queueId) {
+  if (!confirm("Annuler l'envoi de cette photo ? Elle sera définitivement perdue.")) return;
+
+  /** @type {{queueId: string, localUrl: string}[]} */
+  const pending = _pendingAuditPhotoPreviews[pointId] || [];
+  /** @type {number} */
+  const idx = pending.findIndex(p => p.queueId === queueId);
+  if (idx >= 0) {
+    URL.revokeObjectURL(pending[idx].localUrl);
+    pending.splice(idx, 1);
+  }
+
+  await removePendingPhoto(queueId);
+  _refreshAuditPhotoThumbs(pointId);
+}
+
+/**
  * Construit le HTML d'une miniature de photo avec une croix de
  * suppression superposée — visible au survol de la souris (les
  * appareils sans souris, ex. tablette, l'affichent en permanence,
@@ -709,14 +854,7 @@ function _buildAuditPhotoThumbHtml(pointId, url, index) {
 function removeAuditPhoto(pointId, index) {
   if (!auditAnswers[pointId] || !auditAnswers[pointId].photos) return;
   auditAnswers[pointId].photos.splice(index, 1);
-
-  /** @type {HTMLElement | null} */
-  const previewContainer = el('aphot-' + pointId);
-  if (previewContainer) {
-    previewContainer.innerHTML = auditAnswers[pointId].photos
-      .map((url, i) => _buildAuditPhotoThumbHtml(pointId, url, i))
-      .join('');
-  }
+  _refreshAuditPhotoThumbs(pointId);
 }
 
 /**
@@ -750,8 +888,6 @@ function _buildAuditQuestion(point) {
   const savedAnswer = auditAnswers[point.id];
   /** @type {string} */
   const savedComment = savedAnswer?.cmt || '';
-  /** @type {string[]} */
-  const savedPhotos = savedAnswer?.photos || [];
 
   return `<div class="aq" id="aaq-${point.id}" style="margin-bottom:8px">
     <div class="qt">${critBdg(point.c)} ${point.q}</div>
@@ -765,9 +901,7 @@ function _buildAuditQuestion(point) {
       <input type="text" class="form-control" style="font-size:12px;margin-top:6px"
              placeholder="Commentaire NC…" value="${_escapeHtmlAttr(savedComment)}"
              oninput="auditAnswers['${point.id}'].cmt=this.value">
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aphot-${point.id}">${savedPhotos
-        .map((url, i) => _buildAuditPhotoThumbHtml(point.id, url, i))
-        .join('')}</div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aphot-${point.id}">${_buildAuditPhotoThumbsHtml(point.id)}</div>
       <input type="file" accept="image/*" multiple style="display:none" id="aphi-${point.id}"
              onchange="handleAuditPhoto('${point.id}',this)">
       <input type="file" accept="image/*" capture="environment" style="display:none" id="aphic-${point.id}"
@@ -1052,6 +1186,12 @@ function _showAuditCompletionScreen(storeName, rayon, date, score, ncCount) {
  * pendant l'attente (voir pauseAudit/submitAudit). Sur un réseau
  * lent, l'utilisateur pouvait croire l'ajout de photo sans effet et
  * réessayer inutilement.
+ *
+ * ⚠️ AJOUTÉ : en cas d'échec définitif de l'upload (connexion
+ * instable), la photo n'est plus perdue — elle est mise en file
+ * d'attente hors-ligne (voir _queueAuditPhotoForLaterUpload,
+ * storage.js section 13) et renvoyée automatiquement dès que la
+ * connexion revient, avec un aperçu local immédiat entre-temps.
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @param {HTMLInputElement} input - Élément `<input type="file" multiple>`.
  * @returns {Promise<void>}
@@ -1094,7 +1234,11 @@ async function handleAuditPhoto(pointId, input) {
         if (uploadedUrl) {
           auditAnswers[pointId].photos.push(uploadedUrl);
         } else {
-          alert('Upload échoué pour une photo (connexion instable ?) — réessayez de l\'ajouter.');
+          // ⚠️ CHANGÉ : la photo n'est plus simplement perdue — elle
+          // est mise en file d'attente hors-ligne (voir
+          // _queueAuditPhotoForLaterUpload) et renvoyée automatiquement
+          // dès que la connexion revient (storage.js, section 13).
+          await _queueAuditPhotoForLaterUpload(pointId, compressed, storagePath);
         }
       } catch (err) {
         console.error('Erreur inattendue lors de l\'upload d\'une photo :', err);
@@ -1103,9 +1247,7 @@ async function handleAuditPhoto(pointId, input) {
     }
 
     if (previewContainer) {
-      previewContainer.innerHTML = auditAnswers[pointId].photos
-        .map((url, i) => _buildAuditPhotoThumbHtml(pointId, url, i))
-        .join('');
+      _refreshAuditPhotoThumbs(pointId);
     }
   })();
 
@@ -1162,14 +1304,18 @@ function openPhotoViewer(url) {
  * qui reprend ce brouillon.
  * @returns {Promise<void>}
  */
-async function pauseAudit() {
-  if (_pendingPhotoUploads.length) {
-    showToast('Envoi des photos en cours — merci de patienter…', 'warning');
-    if (el('a-pause')) el('a-pause').disabled = true;
-    await Promise.all(_pendingPhotoUploads);
-    if (el('a-pause')) el('a-pause').disabled = false;
-  }
-
+/**
+ * Sauvegarde un instantané du brouillon de l'audit en cours (magasin,
+ * rayon, réponses actuelles) en local ET sur Supabase, sans rien
+ * changer à l'affichage — utilisée par pauseAudit() (qui enchaîne
+ * ensuite la fermeture de la modale) et par handleAuditPhoto (pour
+ * garantir qu'un brouillon existe toujours vers lequel réconcilier
+ * une photo mise en file d'attente hors-ligne une fois l'upload
+ * réussi, même si l'utilisateur n'a jamais cliqué sur "Mettre en
+ * pause" lui-même).
+ * @returns {Draft} Le brouillon sauvegardé.
+ */
+function _snapshotCurrentAuditAsDraft() {
   /** @type {string} */
   const mid    = v('a-mag');
   /** @type {string} */
@@ -1201,6 +1347,19 @@ async function pauseAudit() {
 
   save(['drafts']);
   sbUpsert('drafts', [draft]);
+
+  return draft;
+}
+
+async function pauseAudit() {
+  if (_pendingPhotoUploads.length) {
+    showToast('Envoi des photos en cours — merci de patienter…', 'warning');
+    if (el('a-pause')) el('a-pause').disabled = true;
+    await Promise.all(_pendingPhotoUploads);
+    if (el('a-pause')) el('a-pause').disabled = false;
+  }
+
+  _snapshotCurrentAuditAsDraft();
   closeModal('m-audit');
 
   auditStep       = 0;
@@ -1370,3 +1529,57 @@ function _buildDraftRow(draft) {
     </td>
   </tr>`;
 }
+
+// ─────────────────────────────────────────────
+// 13. RÉCONCILIATION DE LA FILE D'ATTENTE PHOTOS HORS-LIGNE
+// Voir storage.js section 13 (queuePendingPhoto, flushPendingPhotoQueue)
+// pour le fonctionnement général de la file d'attente.
+// ─────────────────────────────────────────────
+
+/**
+ * Réconciliateur appelé par flushPendingPhotoQueue (storage.js) après
+ * l'envoi réussi d'une photo d'audit FSQS auparavant mise en attente
+ * (voir _queueAuditPhotoForLaterUpload). Deux cas possibles :
+ * 1) L'audit est toujours ouvert dans cette session (auditAnswers
+ *    contient encore ce point) : la vraie URL est ajoutée directement
+ *    à la réponse en mémoire, et l'aperçu local (Object URL) est
+ *    retiré et libéré.
+ * 2) L'audit n'est plus ouvert (page rechargée, audit mis en pause
+ *    puis fermé...) : la vraie URL est injectée directement dans le
+ *    brouillon persisté (DB.drafts), identifié par entry.draftId.
+ * Dans les deux cas, aucune perte : soit la session en cours est mise
+ * à jour, soit le brouillon l'est — les deux cas s'excluent
+ * mutuellement (l'audit ne peut pas être à la fois ouvert en mémoire
+ * ET absent du DOM), donc jamais de risque de mettre à jour le
+ * mauvais endroit.
+ * @param {PendingPhotoEntry} entry
+ * @param {string} url - URL publique réelle (Supabase Storage) obtenue après envoi réussi.
+ * @returns {void}
+ */
+registerPhotoQueueReconciler('audit-fsqs', (entry, url) => {
+  /** @type {{queueId: string, localUrl: string}[]} */
+  const pending = _pendingAuditPhotoPreviews[entry.pointId] || [];
+  /** @type {number} */
+  const idx = pending.findIndex(p => p.queueId === entry.id);
+  if (idx >= 0) {
+    URL.revokeObjectURL(pending[idx].localUrl);
+    pending.splice(idx, 1);
+  }
+
+  if (auditAnswers[entry.pointId]) {
+    // Audit toujours ouvert dans cette session.
+    auditAnswers[entry.pointId].photos.push(url);
+    _refreshAuditPhotoThumbs(entry.pointId);
+  } else if (entry.draftId) {
+    // Audit non ouvert : on injecte directement dans le brouillon persisté.
+    /** @type {Draft | undefined} */
+    const draft = DB.drafts.find(d => d.id === entry.draftId);
+    if (draft && draft.answers && draft.answers[entry.pointId]) {
+      draft.answers[entry.pointId].photos.push(url);
+      save(['drafts']);
+      sbUpsert('drafts', [draft]);
+    }
+  }
+
+  showToast('Photo en attente envoyée avec succès ✓', 'success');
+});
