@@ -40,6 +40,7 @@
  * @property {string} desc
  * @property {string} [pid] - Référence vers GrillePoint.id d'origine (définition canonique dans nc.js) — absente sur les NC créées avant ce champ.
  * @property {string} [zone] - Zone d'origine (définition canonique et résolution avec repli dans nc.js, voir resolveNcZone) — absente sur les NC créées avant ce champ.
+ * @property {string} [cat] - Sous-section d'origine (définition canonique et résolution avec repli dans nc.js, voir resolveNcCategorie) — absente ou vide sur les NC créées avant ce champ.
  * @property {string} [mid] - Référence vers Magasin.id, utilisée par resolveNcZone en repli.
  * @property {string} [rayon] - Utilisé par resolveNcZone en repli.
  * @property {string} crit
@@ -314,24 +315,29 @@ function _buildAuditCard(audit) {
 /**
  * Construit le tableau HTML des NC liées à un audit, dans le rapport.
  *
- * ⚠️ AJOUTÉ : regroupement par zone (voir resolveNcZone, nc.js),
- * cohérent avec le même regroupement dans l'onglet Non-conformités
- * (renderNC, nc.js) et Actions correctives (renderActions,
- * actions.js). Cette fonction alimente à la fois l'aperçu à l'écran
- * (#rap-preview) et l'export PDF final — une seule modification
- * couvre les deux.
+ * ⚠️ CHANGÉ : regroupement à deux niveaux, Zone puis Sous-section
+ * (voir resolveNcZone / resolveNcCategorie, nc.js), cohérent avec le
+ * même regroupement dans l'onglet Non-conformités (renderNC, nc.js)
+ * et Actions correctives (renderActions, actions.js). Cette fonction
+ * alimente à la fois l'aperçu à l'écran (#rap-preview) et l'export
+ * PDF final — une seule modification couvre les deux.
  * @param {NC[]} ncs
  * @param {Audit} audit
  * @returns {string}
  */
 function _buildNcTable(ncs, audit) {
-  /** @type {Map<string, NC[]>} */
+  /** @type {Map<string, Map<string, NC[]>>} */
   const byZone = new Map();
   ncs.forEach(nc => {
     /** @type {string} */
     const zone = resolveNcZone(nc);
-    if (!byZone.has(zone)) byZone.set(zone, []);
-    byZone.get(zone).push(nc);
+    /** @type {string} */
+    const cat  = resolveNcCategorie(nc);
+    if (!byZone.has(zone)) byZone.set(zone, new Map());
+    /** @type {Map<string, NC[]>} */
+    const byCat = byZone.get(zone);
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(nc);
   });
   /** @type {string[]} */
   const sortedZones = _sortZoneLabels([...byZone.keys()]);
@@ -350,10 +356,17 @@ function _buildNcTable(ncs, audit) {
       </tr>
     </thead>
     <tbody>
-      ${sortedZones.map(zone => `
-        <tr><td colspan="4" style="padding:6px 10px;background:#eef1f6;font-size:10px;font-weight:700;color:#5a6070;text-transform:uppercase;letter-spacing:.4px;border:1px solid #e2e6ef">${zone} (${byZone.get(zone).length})</td></tr>
-        ${byZone.get(zone).map(nc => _buildNcTableRow(nc, audit)).join('')}
-      `).join('')}
+      ${sortedZones.map(zone => {
+        /** @type {Map<string, NC[]>} */
+        const byCat = byZone.get(zone);
+        /** @type {string[]} */
+        const sortedCats = _sortZoneLabels([...byCat.keys()], IMPORT_UNCLASSIFIED_CAT_LABEL);
+        return `<tr><td colspan="4" style="padding:7px 10px;background:#dbe6f7;font-size:10px;font-weight:700;color:#1a4fa0;text-transform:uppercase;letter-spacing:.4px;border:1px solid #e2e6ef">${zone}</td></tr>
+          ${sortedCats.map(cat => `
+            <tr><td colspan="4" style="padding:5px 10px 5px 20px;background:#eef1f6;font-size:10px;font-weight:600;color:#5a6070;border:1px solid #e2e6ef">${cat}</td></tr>
+            ${byCat.get(cat).map(nc => _buildNcTableRow(nc, audit)).join('')}
+          `).join('')}`;
+      }).join('')}
     </tbody>
   </table>`;
 }

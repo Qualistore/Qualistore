@@ -53,6 +53,7 @@
  * @property {string} desc - Description / intitulé de la non-conformité.
  * @property {string} [pid] - Référence vers GrillePoint.id d'origine (voir submitAudit, audits.js ; définition canonique dans nc.js) — absente sur les NC créées avant ce champ ou issues d'une alerte. Utilisée par _buildActionPhotosHtml pour retrouver sans ambiguïté la bonne photo.
  * @property {string} [zone] - Zone d'origine du point de contrôle (définition canonique et résolution avec repli dans nc.js, voir resolveNcZone) — absente sur les NC créées avant ce champ.
+ * @property {string} [cat] - Sous-section d'origine du point de contrôle (définition canonique et résolution avec repli dans nc.js, voir resolveNcCategorie) — absente ou vide sur les NC créées avant ce champ.
  * @property {'Ouverte'|'En cours'|'Clôturée'} statut
  * @property {boolean} [isAlert] - Vrai si la NC provient d'une alerte terrain plutôt que d'un audit planifié.
  * @property {string} [closedDate] - Date de clôture (format produit par today()).
@@ -137,29 +138,46 @@ function renderActions() {
     return;
   }
 
-  // ⚠️ AJOUTÉ : regroupement par zone (voir resolveNcZone, nc.js),
-  // cohérent avec le même regroupement dans renderNC (nc.js) et le
-  // rapport FSQS (rapports-fsqs.js). La zone est résolue via la NC
+  // ⚠️ CHANGÉ : regroupement à deux niveaux, Zone puis Sous-section
+  // (voir resolveNcZone / resolveNcCategorie, nc.js), cohérent avec
+  // le même regroupement dans renderNC (nc.js) et le rapport FSQS
+  // (rapports-fsqs.js). La zone/sous-section est résolue via la NC
   // liée ; une action sans NC retrouvée (cas normalement impossible
-  // en usage normal) retombe sous IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE.
-  /** @type {Map<string, Action[]>} */
+  // en usage normal) retombe sous les libellés génériques "non
+  // classé(e)".
+  /** @type {Map<string, Map<string, Action[]>>} */
   const byZone = new Map();
   actions.forEach(action => {
     /** @type {NC | undefined} */
     const linkedNc = DB.ncs.find(nc => nc.id === action.ncId);
     /** @type {string} */
     const zone = linkedNc ? resolveNcZone(linkedNc) : IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE;
-    if (!byZone.has(zone)) byZone.set(zone, []);
-    byZone.get(zone).push(action);
+    /** @type {string} */
+    const cat  = linkedNc ? resolveNcCategorie(linkedNc) : IMPORT_UNCLASSIFIED_CAT_LABEL;
+    if (!byZone.has(zone)) byZone.set(zone, new Map());
+    /** @type {Map<string, Action[]>} */
+    const byCat = byZone.get(zone);
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(action);
   });
 
   /** @type {string[]} */
   const sortedZones = _sortZoneLabels([...byZone.keys()]);
 
-  tbody.innerHTML = sortedZones.map(zone => `
-    <tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm tm">(${byZone.get(zone).length})</span></td></tr>
-    ${byZone.get(zone).map(action => _buildActionRow(action, canEdit, isAdmin)).join('')}
-  `).join('');
+  tbody.innerHTML = sortedZones.map(zone => {
+    /** @type {Map<string, Action[]>} */
+    const byCat = byZone.get(zone);
+    /** @type {string[]} */
+    const sortedCats = _sortZoneLabels([...byCat.keys()], IMPORT_UNCLASSIFIED_CAT_LABEL);
+    /** @type {number} */
+    const zoneTotal = [...byCat.values()].reduce((sum, acts) => sum + acts.length, 0);
+
+    return `<tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm" style="text-transform:none;font-weight:400">(${zoneTotal})</span></td></tr>
+      ${sortedCats.map(cat => `
+        <tr class="tbl-subgroup-row"><td colspan="8">${cat} <span class="tsm tm">(${byCat.get(cat).length})</span></td></tr>
+        ${byCat.get(cat).map(action => _buildActionRow(action, canEdit, isAdmin)).join('')}
+      `).join('')}`;
+  }).join('');
 }
 
 // ─────────────────────────────────────────────

@@ -39,17 +39,19 @@
  * @property {string} aid - Référence polymorphe vers Audit.id (ou Alerte.id si isAlert).
  * @property {string} [pid] - Référence vers GrillePoint.id d'origine (voir submitAudit, audits.js) — absente sur les NC créées avant ce champ, ou issues d'une alerte (isAlert). Permet de retrouver sans ambiguïté la bonne réponse/photo dans Audit.answers même quand plusieurs points de contrôle partagent un intitulé identique (voir _buildNcPhotosHtml) ; à défaut, retombe sur une recherche par texte (`desc`), plus fragile en cas de doublon.
  * @property {string} [zone] - Zone d'origine du point de contrôle (voir submitAudit, audits.js ; résolution avec repli dans resolveNcZone) — absente sur les NC créées avant ce champ.
+ * @property {string} [cat] - Sous-section d'origine du point de contrôle (voir submitAudit, audits.js ; résolution avec repli dans resolveNcCategorie) — absente ou vide sur les NC créées avant ce champ.
  * @property {boolean} [isAlert] - Vrai si la NC provient d'une alerte terrain plutôt que d'un audit planifié.
  * @property {string | null} [closedDate] - Date de clôture ; null après réouverture (reopenNC), absent/undefined avant toute clôture.
  */
 
 /**
  * Point de contrôle d'une grille (définition canonique dans
- * config.js / grille.js). Seules .id et .zone sont accédées dans ce
- * fichier (voir resolveNcZone).
+ * config.js / grille.js). Seules .id, .zone et .cat sont accédées
+ * dans ce fichier (voir resolveNcZone, resolveNcCategorie).
  * @typedef {Object} GrillePoint
  * @property {string} id
  * @property {string} [zone]
+ * @property {string} [cat]
  */
 
 /**
@@ -144,20 +146,29 @@ function canEditNC() {
 // ─────────────────────────────────────────────
 
 /**
- * Trie une liste de libellés de zone par ordre alphabétique (locale
- * française), en poussant systématiquement
- * IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE ('Non classé') en dernier —
- * cohérent avec getZonesForRayon (rayons.js). Réutilisée par
- * renderNC, renderActions (actions.js) et le rapport FSQS
- * (rapports-fsqs.js) pour un tri identique partout où NC/actions
- * sont regroupées par zone.
- * @param {string[]} zones
+ * Libellé de repli pour une sous-section (GrillePoint.cat) absente
+ * ou non résolue — pendant féminin de
+ * IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE (rayons.js), pour un accord
+ * grammatical correct ("sous-section non classée").
+ * @type {string}
+ */
+const IMPORT_UNCLASSIFIED_CAT_LABEL = 'Non classée';
+
+/**
+ * Trie une liste de libellés de groupe par ordre alphabétique (locale
+ * française), en poussant systématiquement le libellé de repli
+ * (`unclassifiedLabel`) en dernier. Réutilisée par renderNC,
+ * renderActions (actions.js) et le rapport FSQS (rapports-fsqs.js)
+ * pour un tri identique partout où NC/actions sont regroupées par
+ * zone ou par sous-section.
+ * @param {string[]} labels
+ * @param {string} [unclassifiedLabel] - Libellé à toujours pousser en dernier (défaut : IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE, pour les appels existants qui trient des zones).
  * @returns {string[]}
  */
-function _sortZoneLabels(zones) {
-  return [...zones].sort((a, b) => {
-    if (a === IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) return 1;
-    if (b === IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) return -1;
+function _sortZoneLabels(labels, unclassifiedLabel = IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) {
+  return [...labels].sort((a, b) => {
+    if (a === unclassifiedLabel) return 1;
+    if (b === unclassifiedLabel) return -1;
     return a.localeCompare(b, 'fr');
   });
 }
@@ -190,6 +201,27 @@ function resolveNcZone(nc) {
   }
 
   return IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE;
+}
+
+/**
+ * Résout la sous-section (GrillePoint.cat) d'origine d'une NC, avec
+ * le même repli progressif que resolveNcZone (voir sa JSDoc pour le
+ * détail) : `nc.cat` si présent et non vide, sinon recherche dans la
+ * grille actuelle par `nc.pid`, sinon IMPORT_UNCLASSIFIED_CAT_LABEL
+ * ('Non classée').
+ * @param {NC} nc
+ * @returns {string}
+ */
+function resolveNcCategorie(nc) {
+  if (nc.cat) return nc.cat;
+
+  if (nc.pid && nc.rayon) {
+    /** @type {GrillePoint | undefined} */
+    const point = getGrille(nc.rayon, nc.mid).find(p => p.id === nc.pid);
+    if (point?.cat) return point.cat;
+  }
+
+  return IMPORT_UNCLASSIFIED_CAT_LABEL;
 }
 
 /**
@@ -245,22 +277,37 @@ function renderNC() {
     return;
   }
 
-  /** @type {Map<string, NC[]>} */
+  /** @type {Map<string, Map<string, NC[]>>} */
   const byZone = new Map();
   activeNcs.forEach(nc => {
     /** @type {string} */
     const zone = resolveNcZone(nc);
-    if (!byZone.has(zone)) byZone.set(zone, []);
-    byZone.get(zone).push(nc);
+    /** @type {string} */
+    const cat  = resolveNcCategorie(nc);
+    if (!byZone.has(zone)) byZone.set(zone, new Map());
+    /** @type {Map<string, NC[]>} */
+    const byCat = byZone.get(zone);
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(nc);
   });
 
   /** @type {string[]} */
   const sortedZones = _sortZoneLabels([...byZone.keys()]);
 
-  tbody.innerHTML = sortedZones.map(zone => `
-    <tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm tm">(${byZone.get(zone).length})</span></td></tr>
-    ${byZone.get(zone).map(nc => _buildNcRow(nc, isAdmin)).join('')}
-  `).join('');
+  tbody.innerHTML = sortedZones.map(zone => {
+    /** @type {Map<string, NC[]>} */
+    const byCat = byZone.get(zone);
+    /** @type {string[]} */
+    const sortedCats = _sortZoneLabels([...byCat.keys()], IMPORT_UNCLASSIFIED_CAT_LABEL);
+    /** @type {number} */
+    const zoneTotal = [...byCat.values()].reduce((sum, ncs) => sum + ncs.length, 0);
+
+    return `<tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm" style="text-transform:none;font-weight:400">(${zoneTotal})</span></td></tr>
+      ${sortedCats.map(cat => `
+        <tr class="tbl-subgroup-row"><td colspan="8">${cat} <span class="tsm tm">(${byCat.get(cat).length})</span></td></tr>
+        ${byCat.get(cat).map(nc => _buildNcRow(nc, isAdmin)).join('')}
+      `).join('')}`;
+  }).join('');
   renderNCArchives(filterMag, filterRay, filterCrit);
 }
 

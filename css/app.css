@@ -241,8 +241,16 @@ tbody tr:hover td{background:#f8faff}
 body { overscroll-behavior-y: contain; }
 
 /* Ligne d'en-tête de groupe (regroupement par zone) — voir renderNC
-   (nc.js), renderActions (actions.js). */
-.tbl-group-row td { background:var(--bg); font-size:12px; font-weight:700; color:var(--text2); padding:8px 12px !important; border-bottom:1px solid var(--border); }
+   (nc.js), renderActions (actions.js).
+   ⚠️ CHANGÉ : contraste renforcé (fond bleu clair, bordure gauche
+   colorée, majuscules) — la version précédente (fond gris très pâle)
+   passait inaperçue à l'usage, au point de sembler ne rien changer. */
+.tbl-group-row td { background:var(--primary-light); font-size:12px; font-weight:700; color:var(--primary); padding:9px 12px !important; border-bottom:1px solid var(--border); border-left:3px solid var(--primary); text-transform:uppercase; letter-spacing:.03em; }
+
+/* Ligne de sous-en-tête de groupe (regroupement par sous-section, à
+   l'intérieur d'une zone) — même endroits que .tbl-group-row, niveau
+   visuel volontairement plus discret pour marquer la hiérarchie. */
+.tbl-subgroup-row td { background:var(--bg); font-size:11px; font-weight:600; color:var(--text2); padding:6px 12px 6px 28px !important; border-bottom:1px solid var(--border); }
 
 /* Croix de suppression sur les miniatures photo d'audit (voir
    _buildAuditPhotoThumbHtml, audits.js) : cachée par défaut, visible
