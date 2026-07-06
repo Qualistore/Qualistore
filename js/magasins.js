@@ -353,6 +353,7 @@ const _deleteHandlers = {
 
   alert: (id) => {
     _deleteAlertPhotos(id);
+    _deleteAlertDocuments(id);
     DB.alertes = DB.alertes.filter(a => a.id !== id);
     save(['alertes']);
     sbDeleteWhere('alertes', 'id', id);
@@ -384,6 +385,27 @@ function _deleteAlertPhotos(alertId) {
     if (!url.includes('/storage/v1/object/public/photos/')) return;
     /** @type {string} */
     const storagePath = url.split('/storage/v1/object/public/photos/')[1];
+    sbDeletePhoto(storagePath);
+  });
+}
+
+/**
+ * Supprime les documents (AlertDocument, voir alertes.js) associés à
+ * une alerte depuis Supabase Storage — même principe que
+ * _deleteAlertPhotos, sur le même bucket 'photos' (voir
+ * handleAlertDocuments, alertes.js pour le choix de réutiliser ce bucket).
+ * @param {string} alertId - Référence vers Alerte.id.
+ * @returns {void}
+ */
+function _deleteAlertDocuments(alertId) {
+  /** @type {Alerte | undefined} */
+  const alert = DB.alertes.find(a => a.id === alertId);
+  if (!alert?.documents) return;
+
+  alert.documents.forEach(doc => {
+    if (!doc.url.includes('/storage/v1/object/public/photos/')) return;
+    /** @type {string} */
+    const storagePath = doc.url.split('/storage/v1/object/public/photos/')[1];
     sbDeletePhoto(storagePath);
   });
 }

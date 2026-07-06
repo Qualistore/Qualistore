@@ -732,7 +732,7 @@
 <div class="modal-ov" id="m-alert">
   <div class="modal">
     <div class="modal-hdr">
-      <div class="modal-title" style="color:var(--danger-dark)"><i class="ti ti-bell-ringing"></i> Nouvelle alerte terrain</div>
+      <div class="modal-title" style="color:var(--danger-dark)" id="m-alert-title"><i class="ti ti-bell-ringing"></i> Nouvelle alerte terrain</div>
       <button class="btn-x" onclick="closeModal('m-alert')">&times;</button>
     </div>
     <div class="modal-body">
@@ -785,10 +785,17 @@
           <button class="btn btn-secondary btn-sm" onclick="el('al-photo-camera').click()"><i class="ti ti-camera"></i> Appareil photo</button>
         </div>
       </div>
+      <div class="form-group">
+        <label class="form-label">Document(s) — avis de passage, rapport, facture...</label>
+        <div id="al-docs-prev" style="margin-bottom:8px"></div>
+        <input type="file" id="al-doc-input" multiple style="display:none" onchange="handleAlertDocuments(this)">
+        <button class="btn btn-secondary btn-sm" onclick="el('al-doc-input').click()"><i class="ti ti-paperclip"></i> Ajouter un document</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Le fichier est stocké tel quel, sans aucune modification — pour consultation et téléchargement uniquement.</div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" onclick="closeModal('m-alert')">Annuler</button>
-      <button class="btn btn-danger" onclick="saveAlert()"><i class="ti ti-bell-ringing"></i> Envoyer l'alerte</button>
+      <button class="btn btn-danger" id="al-save-btn" onclick="saveAlert()"><i class="ti ti-bell-ringing"></i> Envoyer l'alerte</button>
     </div>
   </div>
 </div>

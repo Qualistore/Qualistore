@@ -194,6 +194,15 @@ tbody tr:hover td{background:#f8faff}
 .photo-thumb{width:72px;height:72px;border-radius:8px;object-fit:cover;border:1px solid var(--border)}
 .photo-add{width:72px;height:72px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);transition:border-color .15s;background:var(--bg)}
 .photo-add:hover{border-color:var(--primary-mid);color:var(--primary)}
+/* Documents joints a une alerte (m-alert, alertes.js) : stockage brut,
+   liste de fichiers cliquables + bouton de suppression, meme esprit que .photo-preview. */
+.doc-chip{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);margin-bottom:6px;font-size:12px}
+.doc-chip i{font-size:18px;color:var(--text2);flex-shrink:0}
+.doc-chip .doc-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.doc-chip .doc-name:hover{text-decoration:underline;color:var(--primary)}
+.doc-chip .doc-size{color:var(--text3);flex-shrink:0}
+.doc-chip button{background:none;border:none;cursor:pointer;color:var(--text3);flex-shrink:0;display:flex;align-items:center}
+.doc-chip button:hover{color:var(--danger)}
 /* AUDIT */
 .aq{background:var(--bg);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;border:1px solid transparent;transition:border-color .15s}
 .aq.is-nc{background:#fff5f5;border-color:#fca5a5}

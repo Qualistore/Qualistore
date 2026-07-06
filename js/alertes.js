@@ -46,8 +46,21 @@
  * @property {string} signale - Nom de la personne ayant signalé l'alerte.
  * @property {string} cmt - Commentaire, chaîne vide possible.
  * @property {string[]} photos - URLs Supabase Storage, ou chaînes base64 (data:image/...) en fallback hors-ligne.
+ * @property {AlertDocument[]} [documents] - Documents joints (avis de passage, rapport, facture...), stockage brut sans traitement. Absent sur les alertes créées avant ce champ.
  * @property {string} date - Date de création (format produit par today()).
  * @property {AlertStatut} statut
+ */
+
+/**
+ * Document joint à une alerte terrain — stockage brut, sans traitement
+ * ni conversion. Sert uniquement à consultation/téléchargement.
+ * @typedef {Object} AlertDocument
+ * @property {string} id - Identifiant généré ('doc-' + uid()).
+ * @property {string} nom - Nom de fichier d'origine (perdu côté stockage, qui utilise un nom généré — voir handleAlertDocuments).
+ * @property {string} url - URL Supabase Storage (bucket 'photos', réutilisé — voir handleAlertDocuments), ou data URL base64 en fallback hors-ligne.
+ * @property {string} mime - Type MIME d'origine (file.type), utilisé pour l'icône et le mode d'aperçu.
+ * @property {number} taille - Taille en octets (file.size), affichage informatif seulement.
+ * @property {number} ajoutLe - Horodatage (Date.now()) de l'ajout.
  */
 
 /**
@@ -130,24 +143,51 @@ const ALERT_TYPE_ICONS = {
  */
 let _alertPendingPhotos = [];
 
+/**
+ * Documents sélectionnés pour l'alerte en cours (création ou modification).
+ * @type {AlertDocument[]}
+ */
+let _alertPendingDocuments = [];
+
+/**
+ * Id de l'alerte en cours de modification, ou null en création.
+ * @type {string | null}
+ */
+let _editingAlertId = null;
+
 // ─────────────────────────────────────────────
 // 3. MODAL NOUVELLE ALERTE
 // ─────────────────────────────────────────────
 
 /**
- * Ouvre la modale de création d'une nouvelle alerte terrain,
- * réinitialise le formulaire et peuple le select de magasins
- * visibles et actifs.
+ * Ouvre la modale d'alerte terrain, en mode création (sans argument)
+ * ou modification (avec l'id d'une alerte existante). Réutilise la
+ * même modale pour les deux modes, comme openMagModal (magasins.js)
+ * et openUserModal (users.js) — le titre et le bouton d'action sont
+ * adaptés en conséquence.
+ *
+ * ⚠️ AJOUTÉ : le mode modification ne recrée pas la NC/l'Action liée
+ * (voir saveAlert) — seule l'Alerte elle-même est mise à jour. Permet
+ * notamment d'ajouter des documents (avis de passage, rapport,
+ * facture...) après la création initiale de l'alerte.
+ * @param {string} [alertId] - Référence vers Alerte.id ; absent = création.
  * @returns {void}
  */
-function openAlertModal() {
+function openAlertModal(alertId) {
+  /** @type {Alerte | undefined} */
+  const alert = alertId ? DB.alertes.find(a => a.id === alertId) : undefined;
+  _editingAlertId = alert ? alert.id : null;
+
   el('al-err').classList.remove('show');
-  ['al-titre', 'al-cmt'].forEach(id => sv(id, ''));
-  sv('al-signale', CU ? CU.nom : '');
-  el('al-type').value    = '';
-  el('al-gravite').value = '';
-  _alertPendingPhotos = [];
+  sv('al-titre', alert ? alert.titre : '');
+  sv('al-cmt', alert ? (alert.cmt || '') : '');
+  sv('al-signale', alert ? alert.signale : (CU ? CU.nom : ''));
+  el('al-type').value    = alert ? alert.type    : '';
+  el('al-gravite').value = alert ? alert.gravite : '';
+  _alertPendingPhotos    = alert ? [...(alert.photos    || [])] : [];
+  _alertPendingDocuments = alert ? [...(alert.documents || [])] : [];
   _renderAlertPhotoPreviews();
+  _renderAlertDocumentPreviews();
 
   const select = el('al-mag');
   select.innerHTML =
@@ -156,13 +196,31 @@ function openAlertModal() {
       .filter(m => visibleMids().includes(m.id) && m.statut === 'actif')
       .map(m => `<option value="${m.id}">${m.nom}</option>`)
       .join('');
+  if (alert) select.value = alert.mid;
+
+  /** @type {HTMLElement | null} */
+  const titleEl = el('m-alert-title');
+  if (titleEl) titleEl.innerHTML = alert
+    ? '<i class="ti ti-bell-ringing"></i> Modifier l\'alerte'
+    : '<i class="ti ti-bell-ringing"></i> Nouvelle alerte terrain';
+
+  /** @type {HTMLElement | null} */
+  const saveBtn = el('al-save-btn');
+  if (saveBtn) saveBtn.innerHTML = alert
+    ? '<i class="ti ti-device-floppy"></i> Enregistrer'
+    : '<i class="ti ti-bell-ringing"></i> Envoyer l\'alerte';
 
   openModal('m-alert');
 }
 
 /**
- * Valide et sauvegarde une nouvelle alerte terrain : crée l'Alerte,
- * puis automatiquement une NC et une Action corrective liées.
+ * Valide et sauvegarde l'alerte terrain de la modale. En création :
+ * crée l'Alerte puis automatiquement une NC et une Action correctives
+ * liées. En modification (_editingAlertId défini) : met à jour
+ * l'Alerte existante uniquement — la NC/Action déjà créées lors de
+ * la création initiale ne sont PAS régénérées ni resynchronisées
+ * (limite connue : un changement de titre/gravité ici ne se répercute
+ * pas sur leur description).
  * @returns {void}
  */
 function saveAlert() {
@@ -187,33 +245,50 @@ function saveAlert() {
   }
 
   /** @type {Magasin | {}} */
-  const store      = DB.magasins.find(m => m.id === storeId) || {};
-  /** @type {string} */
-  const alertId    = 'AL-' + uid();
-  /** @type {string} */
-  const deadline   = _computeDeadline(gravity);
-  /** @type {string} */
-  const description = `[Alerte ${type}] ${title}${comment ? ' — ' + comment : ''}`;
+  const store = DB.magasins.find(m => m.id === storeId) || {};
 
-  if (!DB.alertes) DB.alertes = [];
+  if (_editingAlertId) {
+    /** @type {Alerte | undefined} */
+    const existing = DB.alertes.find(a => a.id === _editingAlertId);
+    if (existing) {
+      Object.assign(existing, {
+        mid: storeId, mag: store.nom || '',
+        titre: title, type, gravite: gravity, signale: reporter,
+        cmt: comment, photos: [..._alertPendingPhotos],
+        documents: [..._alertPendingDocuments],
+      });
+    }
+  } else {
+    /** @type {string} */
+    const alertId    = 'AL-' + uid();
+    /** @type {string} */
+    const deadline   = _computeDeadline(gravity);
+    /** @type {string} */
+    const description = `[Alerte ${type}] ${title}${comment ? ' — ' + comment : ''}`;
 
-  /** @type {Alerte} */
-  DB.alertes.push({
-    id: alertId, mid: storeId, mag: store.nom || '',
-    titre: title, type, gravite: gravity, signale: reporter,
-    cmt: comment, photos: [..._alertPendingPhotos],
-    date: today(), statut: 'Active',
-  });
+    if (!DB.alertes) DB.alertes = [];
 
-  _createNcFromAlert({ storeId, storeName: store.nom || '', type, gravity, reporter, deadline, description, alertId });
-  _createActionFromAlert({ storeId: storeId, storeName: store.nom || '', title, reporter, deadline, gravity, alertId });
+    /** @type {Alerte} */
+    DB.alertes.push({
+      id: alertId, mid: storeId, mag: store.nom || '',
+      titre: title, type, gravite: gravity, signale: reporter,
+      cmt: comment, photos: [..._alertPendingPhotos],
+      documents: [..._alertPendingDocuments],
+      date: today(), statut: 'Active',
+    });
+
+    _createNcFromAlert({ storeId, storeName: store.nom || '', type, gravity, reporter, deadline, description, alertId });
+    _createActionFromAlert({ storeId: storeId, storeName: store.nom || '', title, reporter, deadline, gravity, alertId });
+
+    const ncBadge = el('nc-bdg');
+    if (ncBadge) ncBadge.textContent = DB.ncs.filter(nc => nc.statut === 'Ouverte').length;
+  }
 
   save();
   closeModal('m-alert');
-  _alertPendingPhotos = [];
-
-  const ncBadge = el('nc-bdg');
-  if (ncBadge) ncBadge.textContent = DB.ncs.filter(nc => nc.statut === 'Ouverte').length;
+  _alertPendingPhotos    = [];
+  _alertPendingDocuments = [];
+  _editingAlertId = null;
 
   renderDash();
 }
@@ -378,50 +453,203 @@ function _renderAlertPhotoPreviews() {
 }
 
 // ─────────────────────────────────────────────
+// 4bis. GESTION DES DOCUMENTS (stockage brut)
+// ─────────────────────────────────────────────
+
+/**
+ * Icônes par type MIME approximatif, pour l'aperçu des documents.
+ * @type {Record<string, string>}
+ */
+const ALERT_DOC_ICONS = {
+  pdf: 'ti-file-type-pdf', word: 'ti-file-type-doc', sheet: 'ti-file-type-xls', excel: 'ti-file-type-xls',
+};
+
+/**
+ * Détermine l'icône Tabler à afficher pour un document, selon son
+ * type MIME. Repli générique si le type ne correspond à rien de connu.
+ * @param {string} mime
+ * @returns {string}
+ */
+function _alertDocumentIcon(mime) {
+  if (!mime) return 'ti-file';
+  if (mime.startsWith('image/')) return 'ti-photo';
+  for (const key in ALERT_DOC_ICONS) if (mime.includes(key)) return ALERT_DOC_ICONS[key];
+  return 'ti-file';
+}
+
+/**
+ * Ajoute un ou plusieurs documents à l'alerte en cours (création ou
+ * modification). STOCKAGE BRUT UNIQUEMENT : contrairement aux photos
+ * (handleAlertPhotos), le fichier n'est ni compressé ni converti — il
+ * est envoyé tel quel, pour consultation/téléchargement fidèle à
+ * l'original (avis de passage, rapport, facture...).
+ *
+ * Réutilise sbUploadPhoto / le bucket Storage 'photos' : la création
+ * d'un bucket dédié 'documents' n'est pas possible via l'API REST à
+ * clé anonyme utilisée par ce projet. Un bucket Supabase accepte
+ * n'importe quel type de fichier quel que soit son nom — seul le
+ * préfixe de chemin ('alertes-documents/' plutôt que 'alertes/')
+ * distingue les documents des photos pour un nettoyage sélectif (voir
+ * _deleteAlertDocuments, magasins.js).
+ * @param {HTMLInputElement} input - Élément `<input type="file" multiple>`.
+ * @returns {Promise<void>}
+ */
+async function handleAlertDocuments(input) {
+  /** @type {File[]} */
+  const files = [...input.files];
+
+  for (const file of files) {
+    /** @type {string} */
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
+    /** @type {string} */
+    const storagePath = `alertes-documents/${uid()}.${ext}`;
+    /** @type {string | null} */
+    const uploadedUrl = await uploadPhotoWithRetry(file, storagePath);
+
+    /** @type {Omit<AlertDocument, 'url'>} */
+    const base = { id: 'doc-' + uid(), nom: file.name, mime: file.type || 'application/octet-stream', taille: file.size, ajoutLe: Date.now() };
+
+    if (uploadedUrl) {
+      _alertPendingDocuments.push({ ...base, url: uploadedUrl });
+      _renderAlertDocumentPreviews();
+    } else {
+      _readFileAsBase64(file, base64 => {
+        _alertPendingDocuments.push({ ...base, url: base64 });
+        _renderAlertDocumentPreviews();
+      });
+    }
+  }
+
+  input.value = '';
+}
+
+/**
+ * Rafraîchit la liste des documents en attente dans la modale, avec
+ * icône selon le type, nom de fichier, taille, et un bouton de
+ * suppression par document.
+ * @returns {void}
+ */
+function _renderAlertDocumentPreviews() {
+  const container = el('al-docs-prev');
+  if (!container) return;
+
+  container.innerHTML = _alertPendingDocuments.map((doc, index) => {
+    /** @type {string} */
+    const escapedName = doc.nom.replace(/'/g, "\\'");
+    return `<div class="doc-chip">
+      <i class="ti ${_alertDocumentIcon(doc.mime)}"></i>
+      <span class="doc-name" onclick="openDocumentViewer('${doc.url}','${doc.mime}','${escapedName}')" title="${doc.nom}">${doc.nom}</span>
+      <span class="doc-size">${_formatFileSize(doc.taille)}</span>
+      <button onclick="_alertPendingDocuments.splice(${index},1);_renderAlertDocumentPreviews()" aria-label="Retirer le document" title="Retirer">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>`;
+  }).join('');
+}
+
+/**
+ * Formate une taille en octets en chaîne lisible (Ko/Mo).
+ * @param {number} bytes
+ * @returns {string}
+ */
+function _formatFileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' Ko';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' Mo';
+}
+
+/**
+ * Affiche un document en aperçu plein écran lorsque le navigateur
+ * sait le rendre nativement (image ou PDF), SANS AUCUN traitement du
+ * fichier — le navigateur affiche le fichier stocké tel quel. Pour
+ * tout autre type (Word, Excel...), aucun rendu inline fiable
+ * n'existe côté navigateur : le fichier est simplement ouvert dans un
+ * nouvel onglet.
+ * @param {string} url - URL Supabase Storage, ou data URL base64 en fallback hors-ligne.
+ * @param {string} mime - AlertDocument.mime.
+ * @param {string} [name] - Nom de fichier d'origine, pour le titre de l'aperçu.
+ * @returns {void}
+ */
+function openDocumentViewer(url, mime, name) {
+  if (mime && mime.startsWith('image/')) { openPhotoViewer(url); return; }
+
+  if (mime === 'application/pdf') {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', 'Visionneuse document');
+    overlay.innerHTML = `
+      <div style="width:92vw;height:88vh;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+        <iframe src="${url}" style="width:100%;height:100%;border:none" title="${name ? name.replace(/"/g, '&quot;') : 'Document PDF'}"></iframe>
+      </div>
+      <button style="margin-top:14px;background:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600">Fermer</button>
+    `;
+    overlay.querySelector('button').onclick = () => document.body.removeChild(overlay);
+    overlay.onclick = e => { if (e.target === overlay) document.body.removeChild(overlay); };
+    document.body.appendChild(overlay);
+    return;
+  }
+
+  // Type non prévisualisable inline (Word, Excel...) : ouverture native navigateur/OS.
+  window.open(url, '_blank', 'noopener');
+  showToast('Ce type de fichier ne peut pas être prévisualisé ici — ouvert dans un nouvel onglet.', 'warning');
+}
+
+/**
+ * Télécharge un document tel quel (aucune conversion), en restaurant
+ * son nom de fichier d'origine — le chemin de stockage utilise un nom
+ * généré (uid), pas le nom d'origine. Tente d'abord un fetch+Blob
+ * (fonctionne pour les URLs Supabase Storage et les data URLs) ; si
+ * ça échoue (réseau, CORS...), retombe sur une simple navigation vers
+ * l'URL.
+ * @param {string} url
+ * @param {string} name - Nom de fichier à restaurer.
+ * @returns {Promise<void>}
+ */
+async function downloadDocument(url, name) {
+  try {
+    /** @type {Response} */
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    /** @type {Blob} */
+    const blob = await response.blob();
+    /** @type {string} */
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = name || 'document';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    console.warn('Téléchargement direct impossible, ouverture de l’URL :', err);
+    window.open(url, '_blank', 'noopener');
+  }
+}
+
+// ─────────────────────────────────────────────
 // 5. RENDU DASHBOARD ALERTES
 // ─────────────────────────────────────────────
 
 /**
- * Affiche le cadre "alertes terrain urgentes" en haut du tableau de
- * bord (#d-urgent-alerts, Qualistore.html), avec la liste des
- * alertes actives (max 8, les plus récentes en premier — même ordre
- * de stockage que DB.alertes, jamais retrié ici).
- *
- * ⚠️ CHANGÉ : le cadre est désormais entièrement masqué s'il n'y a
- * aucune alerte ACTIVE (auparavant, un état vide "Aucune alerte"
- * restait visible en permanence en bas du dashboard FSQS). Ce
- * changement de comportement est volontaire : un encart à l'allure
- * urgente en haut de page, affiché même sans rien à signaler,
- * banaliserait le signal et nuirait à sa visibilité le jour où une
- * alerte réelle survient.
- *
- * Le cadre pulse (classe .d-urgent-alerts-critical, app.css) si au
- * moins une alerte active est de gravité 'Critique', pour distinguer
- * visuellement une urgence réelle d'une simple alerte à traiter.
+ * Affiche la liste des alertes actives (max 8) dans le widget
+ * dashboard.
  * @returns {void}
  */
 function renderAlertsDash() {
   if (!DB.alertes) return;
 
-  /** @type {HTMLElement | null} */
-  const urgentCard = el('d-urgent-alerts');
-  if (!urgentCard) return;
-
   /** @type {Alerte[]} */
   const activeAlerts = DB.alertes.filter(a => a.statut === 'Active');
-
-  if (!activeAlerts.length) {
-    urgentCard.style.display = 'none';
-    urgentCard.classList.remove('d-urgent-alerts-critical');
-    return;
-  }
-
-  urgentCard.style.display = '';
   el('d-alert-cnt').textContent = `${activeAlerts.length} alerte(s) active(s)`;
 
-  /** @type {boolean} */
-  const hasCritical = activeAlerts.some(a => a.gravite === 'Critique');
-  urgentCard.classList.toggle('d-urgent-alerts-critical', hasCritical);
+  if (!DB.alertes.length) {
+    el('d-alerts-list').innerHTML = `<div class="empty-state" style="padding:24px">
+      <i class="ti ti-bell" style="font-size:28px"></i><p>Aucune alerte</p>
+    </div>`;
+    return;
+  }
 
   el('d-alerts-list').innerHTML = activeAlerts
     .slice(0, 8)
@@ -461,6 +689,23 @@ function _buildAlertItem(alert) {
        </div>`
     : '';
 
+  /** @type {string} */
+  const documentsHtml = alert.documents?.length
+    ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+         ${alert.documents.map(doc => {
+           /** @type {string} */
+           const escapedName = doc.nom.replace(/'/g, "\\'");
+           return `<span class="badge" style="background:#eef2ff;color:#3730a3;cursor:pointer;display:inline-flex;align-items:center;gap:4px" title="${doc.nom}"
+             onclick="openDocumentViewer('${doc.url}','${doc.mime}','${escapedName}')">
+             <i class="ti ${_alertDocumentIcon(doc.mime)}" style="font-size:12px"></i> ${doc.nom.length > 20 ? doc.nom.slice(0, 17) + '…' : doc.nom}
+           </span>
+           <button class="btn btn-secondary btn-sm" style="padding:2px 6px" title="Télécharger" onclick="downloadDocument('${doc.url}','${escapedName}')">
+             <i class="ti ti-download" style="font-size:12px"></i>
+           </button>`;
+         }).join('')}
+       </div>`
+    : '';
+
   return `<div class="alert-item">
     <div class="alert-dot" style="background:${color}"></div>
     <div style="flex:1">
@@ -473,10 +718,15 @@ function _buildAlertItem(alert) {
       <div class="tsm tm">
         ${alert.mag ? `🏪 <strong>${alert.mag}</strong> · ` : ''}Signalé par <strong>${alert.signale}</strong> · ${fd(alert.date)}
         ${alert.photos?.length ? `· <i class="ti ti-camera" style="font-size:12px"></i> ${alert.photos.length} photo(s)` : ''}
+        ${alert.documents?.length ? `· <i class="ti ti-paperclip" style="font-size:12px"></i> ${alert.documents.length} document(s)` : ''}
       </div>
       ${commentHtml}
       ${photosHtml}
+      ${documentsHtml}
     </div>
+    <button class="btn btn-secondary btn-sm" onclick="openAlertModal('${alert.id}')" title="Modifier">
+      <i class="ti ti-pencil"></i>
+    </button>
     <button class="btn btn-secondary btn-sm" onclick="closeAlerte('${alert.id}')" title="Clôturer">
       <i class="ti ti-check"></i>
     </button>
