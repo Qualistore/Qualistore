@@ -1,7 +1,53 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-  <meta http-equiv="refresh" content="0; url=Qualistore.html">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QualiStore</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="css/app.css">
 </head>
-<body></body>
-</html>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="login-screen" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">
+<img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">      <p style="color:var(--text2);font-size:13px;margin-top:4px">Gestion de la qualité alimentaire</p>
+    </div>
+    <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
+    <div class="form-group">
+      <label class="form-label">Identifiant</label>
+      <input class="form-control" type="text" id="f-login" placeholder="Votre identifiant" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mot de passe</label>
+      <div class="pw-wrap">
+        <input class="form-control" type="password" id="f-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+        <button class="pw-eye" type="button" onclick="togglePass('f-pass',this)"><i class="ti ti-eye"></i></button>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
+      <i class="ti ti-login"></i> Se connecter
+    </button>
+
+  </div>
+</div>
+
+<div id="app">
+  <a href="./Qualistore.html">Qualistore</a>
+</div>
+
+
+<!-- Librairies externes -->
+<script src="js/jspdf.umd.min.js"></script>
+<script src="js/html2canvas.min.js"></script>
+<script src="js/chart.umd.min.js"></script>
+
+<!-- Infrastructure -->
+<script src="js/config.js"></script>
+<script src="js/supabase.js"></script>
+<script src="js/db/supabase/storage.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/ui.js"></script>
