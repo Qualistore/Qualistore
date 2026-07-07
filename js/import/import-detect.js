@@ -174,8 +174,8 @@ const IMPORT_CONCEPT_DEFINITIONS = [
   {
     concept: 'methode',
     headerPatterns: [
-      /^(m[eé]thode|m[eé]thode de v[eé]rification|indication|modalit[eé]|pr[eé]cisions?|comment (le |la |les )?v[eé]rifier)$/,
-      /m[eé]thode|indication|modalit[eé]|comment (le |la |les )?v[eé]rifier|protocole|pr[eé]cisions?|ce qu.{0,3}il faut v[eé]rifier|^[aà] v[eé]rifier|consigne/,
+      /^(m[eé]thode|m[eé]thode de v[eé]rification|indication|modalit[eé]|pr[eé]cisions?|normes?( de l.enseigne)?|comment (le |la |les )?v[eé]rifier)$/,
+      /m[eé]thode|indication|modalit[eé]|comment (le |la |les )?v[eé]rifier|protocole|pr[eé]cisions?|normes?|ce qu.{0,3}il faut v[eé]rifier|^[aà] v[eé]rifier|consigne/,
     ],
     contentScorer: null,
   },

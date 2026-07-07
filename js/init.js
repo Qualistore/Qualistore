@@ -44,6 +44,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   _bindModalOverlayClose();
   _bindBeforeUnloadPause();
+  _bindVisibilityChangePause();
+  _bindPeriodicAuditAutosave();
   _bindActivityTracking();
 });
 
@@ -83,15 +85,65 @@ function _bindModalOverlayClose() {
 }
 
 /**
- * Sauvegarde automatiquement l'audit en cours si l'utilisateur
- * ferme ou recharge la page pendant une saisie.
+ * Sauvegarde automatiquement l'audit en cours si l'utilisateur ferme
+ * ou recharge la page pendant une saisie.
+ *
+ * ⚠️ CORRIGÉ : appelait auparavant pauseAudit() (audits.js), qui est
+ * une fonction ASYNC — elle attend (await) la fin des envois de
+ * photos en cours (_pendingPhotoUploads) avant de sauvegarder le
+ * brouillon. Rien ne garantit qu'un `await` se termine dans un
+ * handler 'beforeunload' avant que la page ne se ferme réellement :
+ * si une photo était encore en cours d'envoi au moment de la
+ * fermeture — précisément le cas le plus probable, un utilisateur
+ * pressé refermant l'onglet juste après avoir pris une photo — le
+ * brouillon (donc TOUTES les réponses déjà saisies, pas seulement la
+ * photo) pouvait ne jamais être sauvegardé. On appelle donc
+ * directement la fonction de snapshot, synchrone, sans rien attendre.
  * @returns {void}
  */
 function _bindBeforeUnloadPause() {
   window.addEventListener('beforeunload', () => {
-    if (auditStep === 1)  pauseAudit();
-    else if (qaStep === 2) pauseQualAudit();
+    if (auditStep === 1)   _snapshotCurrentAuditAsDraft();
+    else if (qaStep === 2) _snapshotCurrentQaAuditAsDraft();
   });
+}
+
+/**
+ * ⚠️ AJOUTÉ : sauvegarde le brouillon d'audit en cours dès que
+ * l'onglet passe en arrière-plan (verrouillage du téléphone,
+ * changement d'application, bascule d'onglet...), pas seulement à la
+ * fermeture. 'beforeunload' n'est PAS fiable sur mobile — un onglet
+ * mis en arrière-plan peut être déchargé directement par l'OS pour
+ * libérer de la mémoire, sans jamais déclencher 'beforeunload'.
+ * 'visibilitychange' vers 'hidden' est le signal recommandé (Page
+ * Lifecycle API) pour ne rien perdre dans ce cas. N'interrompt rien
+ * pour l'utilisateur (pas de fermeture de modale, pas de message) :
+ * uniquement une sauvegarde silencieuse.
+ * @returns {void}
+ */
+function _bindVisibilityChangePause() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden') return;
+    if (auditStep === 1)   _snapshotCurrentAuditAsDraft();
+    else if (qaStep === 2) _snapshotCurrentQaAuditAsDraft();
+  });
+}
+
+/**
+ * ⚠️ AJOUTÉ : dernier filet de sécurité, sauvegarde silencieusement le
+ * brouillon d'audit en cours toutes les 30 secondes — en plus des
+ * sauvegardes déclenchées par un événement (pause manuelle, onglet en
+ * arrière-plan, fermeture). Couvre les cas qu'aucun événement ne peut
+ * capter (plantage brutal du navigateur, processus tué par l'OS avant
+ * qu'un événement n'ait pu se déclencher, etc.). Sans effet si aucun
+ * audit n'est en cours (auditStep/qaStep à leur valeur de repos).
+ * @returns {void}
+ */
+function _bindPeriodicAuditAutosave() {
+  setInterval(() => {
+    if (auditStep === 1)   _snapshotCurrentAuditAsDraft();
+    else if (qaStep === 2) _snapshotCurrentQaAuditAsDraft();
+  }, 30_000);
 }
 
 /**

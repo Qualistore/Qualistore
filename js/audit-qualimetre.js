@@ -274,9 +274,12 @@ function switchQaZone(idx) {
 }
 
 /**
- * Affiche les questions d'une zone, restaure les réponses déjà
- * saisies (réponse, commentaire, photos), puis met à jour la
- * progression.
+ * Affiche les questions d'une zone, groupées par catégorie
+ * (point.cat — sous-groupe à l'intérieur de la zone, ex : colonne
+ * "Sous-section" à l'import), avec un en-tête de section par
+ * catégorie, sur le même principe que switchAuditZone (audits.js,
+ * FSQS). Restaure les réponses déjà saisies (réponse, commentaire,
+ * photos), puis met à jour la progression.
  * @param {number} idx - Index dans _qaGrille.
  * @returns {void}
  */
@@ -284,7 +287,12 @@ function renderQaZone(idx) {
   /** @type {QMZoneWithPoints | undefined} */
   const zone = _qaGrille[idx]; if (!zone) return;
   el('qa-zone-title').textContent = zone.emoji + ' ' + zone.label;
-  el('qa-questions').innerHTML = zone.points.map(p => `
+
+  /** @type {string[]} */
+  const categories = [...new Set(zone.points.map(p => p.cat || 'Général'))];
+  el('qa-questions').innerHTML = categories.map(category => `
+    <div style="padding:8px 4px;font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">${category}</div>
+    ${zone.points.filter(p => (p.cat || 'Général') === category).map(p => `
     <div class="aq" id="qaaq-${p.id}" style="margin-bottom:8px">
       <div class="qt">${p.q}</div>
       ${p.prec ? `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-style:italic">${p.prec}</div>` : ''}
@@ -307,7 +315,8 @@ function renderQaZone(idx) {
           </label>
         </div>
       </div>
-    </div>`).join('');
+    </div>`).join('')}
+  `).join('');
   // Restaurer les réponses existantes
   zone.points.forEach(p => {
     /** @type {QaAnswer | undefined} */
@@ -570,7 +579,16 @@ function deleteQualAudit(id) {
  * pousse vers Supabase, puis ferme la modale.
  * @returns {void}
  */
-function pauseQualAudit() {
+/**
+ * Construit et persiste (local + Supabase) un instantané du brouillon
+ * d'audit Qualimètre en cours, sans toucher à l'affichage — factorisé
+ * hors de pauseQualAudit() pour être appelable aussi par les filets de
+ * sécurité (beforeunload, changement de visibilité, autosave
+ * périodique — voir init.js) sans fermer la modale ni interrompre
+ * l'utilisateur.
+ * @returns {Draft} Le brouillon sauvegardé.
+ */
+function _snapshotCurrentQaAuditAsDraft() {
   /** @type {string} */
   const mid = v('qa-mag'), date = v('qa-date'), aud = v('qa-aud').trim(), cmt = v('qa-cmt');
   /** @type {Magasin | {}} */
@@ -587,6 +605,11 @@ function pauseQualAudit() {
   };
   if (existing >= 0) DB.drafts[existing] = draft; else DB.drafts.push(draft);
   save(['drafts']); sbUpsert('drafts', [draft]);
+  return draft;
+}
+
+function pauseQualAudit() {
+  _snapshotCurrentQaAuditAsDraft();
   const qapause = el('qa-pause'); if (qapause) qapause.style.display = 'none';
   closeModal('m-qual-audit');
   qaStep = 0; _currentQaDraftId = null;

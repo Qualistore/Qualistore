@@ -2,7 +2,7 @@
 // GRILLE-QUALIMETRE — Gestion de la grille Qualimètre par enseigne et par zone
 // Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, CDN_SHEETJS, CDN_PDFJS), ui.js,
 //             magasins.js (getKnownEnseignes — classement par enseigne, même liste que pour la grille FSQS),
-//             import/import-detect.js (detectConceptMapping, buildSyntheticHeaders, detectImportSeparator, RawImportRow, DetectionResult, ImportConcept),
+//             import/import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
 //             import/import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap),
 //             import/import-grille.js (_resolveOrCreateZoneFromDocument, ResolvedZone, IMPORT_UNCLASSIFIED_ZONE_LABEL — résolution de zone partagée avec l'import de grille FSQS)
 // ══════════════════════════════════════════════════════════════
@@ -29,15 +29,17 @@
  */
 
 /**
- * Point de contrôle Qualimètre. Pour les points créés via ce
- * fichier (saisie manuelle ou import), .cat vaut toujours 'Général'
- * — contrairement à la grille FSQS où cat varie selon
- * section/sous-catégorie (voir grille.js).
+ * Point de contrôle Qualimètre. Pour les points créés manuellement
+ * (voir openGqPointModal), .cat vaut toujours 'Général'. Pour les
+ * points importés (voir _applyImportToStore), .cat reflète la colonne
+ * "Sous-section"/catégorie détectée dans le document si présente,
+ * sinon 'Général' — contrairement à avant (⚠️ CORRIGÉ), où l'import
+ * écrasait systématiquement cette valeur par 'Général'.
  * @typedef {Object} GrillePoint
  * @property {string} id - Préfixé 'gq-' + uid().
  * @property {string} q
  * @property {string} prec - Chaîne vide si absent.
- * @property {string} cat - Toujours 'Général' pour les points créés ici.
+ * @property {string} cat - Voir description ci-dessus.
  * @property {number} p
  * @property {GrilleCriticite} c
  */
@@ -107,7 +109,8 @@
  * @property {string} zoneId - Id de zone résolu (voir ResolvedZone, import-grille.js).
  * @property {string} zoneName - Valeur brute de zone telle que lue dans le fichier source, non résolue. Jamais perdue même si zoneId pointe vers "Non classé".
  * @property {string} q
- * @property {string} prec - Méthode de contrôle / précision, initialisée depuis NormalizedImportRow.methode (colonne détectée par le concept 'methode' — ex : "Méthode", "Ce qu'il faut vérifier", "À vérifier" ; voir import-detect.js). Chaîne vide si aucune colonne de ce type n'a été détectée. ⚠️ CORRIGÉ : figée à '' auparavant, cette colonne était donc systématiquement perdue à l'import Qualimètre alors que le moteur FSQS (import-grille.js) la routait déjà correctement.
+ * @property {string} prec
+ * @property {string} cat - Sous-groupe au sein de la zone (ex : colonne "Sous-section"), voir GrillePoint.cat. 'Général' si non détecté (repli déjà appliqué par normalizeRows, import-normalize.js).
  * @property {GrilleCriticite} c
  * @property {number} p
  * @property {string} extra - Contenu des colonnes du document non reconnues comme un concept métier connu, concaténé pour ne perdre aucune information. Voir import-normalize.js.
@@ -343,8 +346,8 @@ function showQualimetreEnseigneDetail(enseigne) {
   if (el('gq-detail-view')) el('gq-detail-view').style.display = '';
   if (el('gq-detail-ttl'))  el('gq-detail-ttl').textContent    = _qmEnseigneLabel(enseigne);
 
-  _buildGqMagSelect(enseigne);
   _buildGqZoneSelect();
+  _buildGqMagSelect(enseigne);
   _gqRender();
 }
 
@@ -369,41 +372,17 @@ function onGqZoneChange() { _gqRender(); }
 /**
  * Peuple le select de zones (QM_ZONES + zones ad hoc présentes dans
  * qualimetreGlobal, toutes enseignes confondues).
- *
- * ⚠️ CORRIGÉ : préserve désormais la sélection courante si elle reste
- * valide (comme _buildGqMagSelect) ; à défaut, sélectionne la
- * première zone qui contient réellement des points dans le contexte
- * actuel (magasin sélectionné, sinon grille commune de l'enseigne)
- * plutôt que systématiquement la toute première de la liste. Sans ce
- * correctif, l'utilisateur atterrissait toujours sur "Référentiel
- * Affichage" (premier élément de QM_ZONES) — zone qui, en pratique,
- * n'a souvent aucun point importé (voir les limites connues de
- * l'import PDF) — donnant l'impression trompeuse qu'un import n'a
- * rien produit alors que les autres zones étaient bien remplies.
  * @returns {void}
  */
 function _buildGqZoneSelect() {
   const select = el('gq-zone-sel');
   if (!select) return;
 
-  /** @type {string} */
-  const currentValue = select.value;
   /** @type {QMZone[]} */
   const allZones = _getAllZones();
   select.innerHTML = allZones.map(zone =>
     `<option value="${zone.id}">${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}</option>`
   ).join('');
-
-  if (currentValue && allZones.some(z => z.id === currentValue)) {
-    select.value = currentValue;
-    return;
-  }
-
-  /** @type {string} */
-  const storeId = v('gq-mag-sel') || '';
-  /** @type {QMZone | undefined} */
-  const zoneWithPoints = allZones.find(zone => getQualimetrePoints(storeId || null, zone.id, _gqCurrentEnseigne).length > 0);
-  if (zoneWithPoints) select.value = zoneWithPoints.id;
 }
 
 /**
@@ -543,7 +522,38 @@ function _gqRender() {
 
   body.innerHTML =
     _buildGqSourceBar(points.length, isAdmin, storeId, zoneId) +
-    points.map(point => _buildGqPointRow(point, isAdmin, storeId, zoneId)).join('');
+    _buildGqCategorySections(points, isAdmin, storeId, zoneId);
+}
+
+/**
+ * Groupe les points par catégorie (GrillePoint.cat, ex : colonne
+ * "Sous-section" à l'import) et construit une section par catégorie
+ * — sous-groupe à l'intérieur de la zone, ne crée pas d'onglet propre.
+ * Équivalent Qualimètre de _buildZoneSection/_buildCategorySection
+ * (grille.js, FSQS) : même principe, un en-tête de catégorie est
+ * TOUJOURS affiché, même si 'Général' est la seule catégorie présente
+ * (aucun cas particulier pour le masquer) — pour rester cohérent avec
+ * le comportement FSQS.
+ * @param {(GrillePoint & {_scope: 'common'|'store'})[]} points
+ * @param {boolean} isAdmin
+ * @param {string} storeId
+ * @param {string} zoneId
+ * @returns {string}
+ */
+function _buildGqCategorySections(points, isAdmin, storeId, zoneId) {
+  /** @type {string[]} */
+  const categories = [...new Set(points.map(point => point.cat || 'Général'))];
+
+  return categories.map(category => {
+    /** @type {(GrillePoint & {_scope: 'common'|'store'})[]} */
+    const categoryPoints = points.filter(point => (point.cat || 'Général') === category);
+    return `<div>
+      <div style="padding:8px 20px;background:var(--bg);font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)">
+        ${_escapeHtml(category)}
+      </div>
+      ${categoryPoints.map(point => _buildGqPointRow(point, isAdmin, storeId, zoneId)).join('')}
+    </div>`;
+  }).join('');
 }
 
 /**
@@ -1164,19 +1174,31 @@ function _gqLoadPDFJS(callback) {
  * _onGqMappingConceptChanged (rejeu après correction manuelle du
  * mapping).
  *
- * ⚠️ CORRIGÉ (2ème fois) : le filtre "ligne de titre de zone"
+ * ⚠️ CORRIGÉ (3 bugs) : ce code lisait `row.rayon`, un champ qui
+ * n'existe pas sur NormalizedImportRow (voir import-normalize.js,
+ * _normalizeOneRow — le champ s'appelle `zone`) — `row.rayon` valait
+ * donc toujours `undefined`, si bien que _resolveOrCreateZoneFromDocument
+ * recevait toujours une chaîne vide : TOUS les points importés
+ * atterrissaient dans la zone "Non classé", quelle que soit la
+ * colonne Zone réellement détectée dans le document. Remplacé par
+ * `row.zone`. Par ailleurs `prec` était toujours codé en dur à '' au
+ * lieu de lire `row.methode` (colonne "Norme de l'enseigne" par
+ * exemple) — cette information était donc silencieusement perdue à
+ * chaque import. Et `cat` (colonne "Sous-section" par exemple,
+ * concept 'categorie') n'était même pas transmis dans l'objet
+ * poussé ici, perdu avant même d'atteindre _applyImportToStore.
+ *
+ * ⚠️ CORRIGÉ (préexistant) : le filtre "ligne de titre de zone"
  * (criticité ET poids vides) ne s'applique désormais QUE si le
- * document possède une colonne criticité OU poids QUI CONTIENT
- * RÉELLEMENT AU MOINS UNE VALEUR quelque part — pas seulement si
- * cette colonne est présente/mappée. Un référentiel entièrement
- * dépourvu de criticité/poids (cas réel : import d'un référentiel
- * pas encore priorisé, avec des en-têtes "Criticité"/"Poids" présents
- * mais vides sur toutes les lignes) voyait auparavant TOUTES ses
- * lignes rejetées comme "lignes-titre", pour un résultat final vide
- * sans aucune erreur visible expliquant pourquoi (voir aussi la
- * première correction ci-dessous, qui ne couvrait que le cas où la
- * colonne n'existait pas du tout — pas celui où elle existe mais est
- * intégralement vide).
+ * document possède réellement une colonne mappée à 'criticite' OU
+ * 'poids` (paramètre `mapping`). Sans cette condition, un document
+ * qui n'a tout simplement AUCUNE de ces deux colonnes (cas réel
+ * observé : relevé d'audit C/NC sans référentiel de criticité)
+ * verrait TOUTES ses lignes filtrées à tort, puisque crit/poids y
+ * sont alors systématiquement vides pour des raisons n'ayant rien à
+ * voir avec une ligne-titre. Quand aucune des deux colonnes n'existe,
+ * la criticité retombe sur _gqDefaultCrit pour chaque ligne (voir
+ * _gqNormalizeCrit) — jamais sur un filtrage de la ligne elle-même.
  * @param {NormalizedImportRow[]} normalized
  * @param {ConceptMapping | null} [mapping] - Mapping détecté pour ce document ; utilisé uniquement pour savoir si le filtre "ligne de titre" est pertinent ici (voir avertissement ci-dessus). Si absent (compatibilité), le filtre s'applique comme avant.
  * @returns {GqParsedRow[]}
@@ -1184,10 +1206,6 @@ function _gqLoadPDFJS(callback) {
 function _buildGqParsedRows(normalized, mapping) {
   /** @type {boolean} */
   const hasCritOrPoidsColumn = !mapping || !!mapping.criticite || !!mapping.poids;
-  /** @type {boolean} */
-  const columnActuallyHasValues = normalized.some(r => r.crit || r.poids);
-  /** @type {boolean} */
-  const shouldFilterTitleRows = hasCritOrPoidsColumn && columnActuallyHasValues;
 
   /** @type {GqParsedRow[]} */
   const rows = [];
@@ -1195,10 +1213,9 @@ function _buildGqParsedRows(normalized, mapping) {
     if (!row.q.trim()) return;
 
     // Ignorer les lignes de titre de zone (criticité et poids vides)
-    // — seulement pertinent si le document a une colonne de ce type
-    // ET qu'elle contient réellement au moins une valeur ; voir
-    // avertissement ci-dessus.
-    if (shouldFilterTitleRows && !row.crit && !row.poids) return;
+    // — seulement pertinent si le document a une de ces colonnes ;
+    // voir avertissement ci-dessus.
+    if (hasCritOrPoidsColumn && !row.crit && !row.poids) return;
 
     /** @type {GrilleCriticite} */
     const crit  = _gqNormalizeCrit(row.crit) || _gqDefaultCrit;
@@ -1207,7 +1224,11 @@ function _buildGqParsedRows(normalized, mapping) {
     /** @type {ResolvedZone} */
     const zone  = _resolveOrCreateZoneFromDocument(row.zone, '');
 
-    rows.push({ zoneId: zone.id, zoneName: row.zone, q: row.q.trim(), prec: row.methode || '', c: crit, p: poids, extra: row.extra || '', isDuplicate: false });
+    rows.push({
+      zoneId: zone.id, zoneName: row.zone, q: row.q.trim(),
+      prec: row.methode || '', cat: row.cat, c: crit, p: poids,
+      extra: row.extra || '', isDuplicate: false,
+    });
   });
 
   /** @type {DuplicateMap} */
@@ -1266,7 +1287,7 @@ function _gqParseCSV(text) {
   if (lines.length < 2) { _gqImportErr('Le fichier est vide ou ne contient pas de données.'); return; }
 
   /** @type {string} */
-  const separator = detectImportSeparator(lines);
+  const separator = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
   /** @type {string[][]} */
   const cellRows = lines.map(line => line.split(separator).map(c => c.trim().replace(/^["']|["']$/g, '')));
 
@@ -1427,10 +1448,21 @@ function _gqRenderImportPreview() {
           const duplicateBadge = p.isDuplicate
             ? ' <span title="Doublon possible avec une autre ligne du fichier" style="color:var(--orange);font-size:10px;border:1px solid var(--orange);border-radius:8px;padding:1px 6px">doublon ?</span>'
             : '';
-          return `<div style="display:flex;gap:8px;align-items:center;padding:5px 10px;font-size:12px;border-bottom:1px solid var(--border)">
-          <span style="flex:1">${_escapeHtml(p.q)}${duplicateBadge}${extraIcon}</span>
-          ${critBdg(p.c)}
-          <span class="tsm tm">${p.p}pts</span>
+          /** @type {string} */
+          const catBadge = (p.cat && p.cat !== 'Général')
+            ? ` <span class="badge" style="background:#f3f4f6;color:#374151;font-size:10px">${_escapeHtml(p.cat)}</span>`
+            : '';
+          /** @type {string} */
+          const precHtml = p.prec
+            ? `<div class="tsm tm" style="margin-top:2px">${_escapeHtml(p.prec)}</div>`
+            : '';
+          return `<div style="display:flex;flex-direction:column;gap:2px;padding:5px 10px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="flex:1">${_escapeHtml(p.q)}${catBadge}${duplicateBadge}${extraIcon}</span>
+            ${critBdg(p.c)}
+            <span class="tsm tm">${p.p}pts</span>
+          </div>
+          ${precHtml}
         </div>`;
         }).join('')}
       </div>`;
@@ -1480,7 +1512,7 @@ const GQ_CONCEPT_LABELS = {
  */
 function _buildGqMappingBlock(detection) {
   /** @type {string[]} */
-  const allHeaders = _collectAllHeaders(_gqRawRows);
+  const allHeaders = _gqRawRows.length ? Object.keys(_gqRawRows[0]) : [];
 
   /** @type {string} */
   const rows = Object.keys(GQ_CONCEPT_LABELS).map(concept => {
@@ -1527,7 +1559,7 @@ function _onGqMappingConceptChanged(concept, newHeader) {
   _gqDetection.mapping[concept] = newHeader || null;
 
   /** @type {string[]} */
-  const allHeaders = _collectAllHeaders(_gqRawRows);
+  const allHeaders = _gqRawRows.length ? Object.keys(_gqRawRows[0]) : [];
   /** @type {Set<string>} */
   const assignedHeaders = new Set(Object.values(_gqDetection.mapping).filter(Boolean));
   _gqDetection.unmappedHeaders = allHeaders.filter(h => !assignedHeaders.has(h));
@@ -1575,13 +1607,6 @@ function confirmGqImport() {
 
   /** @type {string} */
   const storeId = el('gqi-mag-sel')?.value || '';
-  // Capturé avant réinitialisation de _gqImportData, pour naviguer
-  // vers une zone qui contient réellement les points qui viennent
-  // d'être importés (voir plus bas) — sans ça, la vue peut très bien
-  // rester sur une zone restée sélectionnée depuis avant l'import,
-  // vide, donnant l'impression trompeuse que rien n'a été importé.
-  /** @type {string | undefined} */
-  const firstImportedZoneId = _gqImportData[0]?.zoneId;
 
   if (storeId) {
     if (!DB.qualimetreCustom) DB.qualimetreCustom = {};
@@ -1600,14 +1625,6 @@ function confirmGqImport() {
   _gqImportData = [];
   _gqZoneReplaceFlags = {};
   _gqRefreshCurrentView();
-
-  // Navigation explicite vers une zone importée, PLUTÔT que de
-  // laisser _buildGqZoneSelect (appelé par _gqRefreshCurrentView)
-  // préserver une sélection antérieure potentiellement vide.
-  if (firstImportedZoneId && el('gq-zone-sel')) {
-    el('gq-zone-sel').value = firstImportedZoneId;
-    _gqRender();
-  }
 }
 
 /**
@@ -1633,7 +1650,7 @@ function _applyImportToStore(store) {
   _gqImportData.forEach(row => {
     if (!store[row.zoneId]) store[row.zoneId] = [];
     store[row.zoneId].push({
-      id: 'gq-' + uid(), q: row.q, prec: row.prec, cat: 'Général', p: row.p, c: row.c,
+      id: 'gq-' + uid(), q: row.q, prec: row.prec, cat: row.cat || 'Général', p: row.p, c: row.c,
     });
   });
 }
