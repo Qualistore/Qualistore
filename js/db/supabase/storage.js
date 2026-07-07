@@ -205,10 +205,32 @@
 const SYNC_POLL_INTERVAL_MS = 5_000;
 
 /**
- * Durée de rétention des audits en jours avant nettoyage automatique.
+ * Durée de rétention nominale des audits en jours, avant suppression
+ * automatique (voir DATA_RETENTION_GRACE_DAYS pour le délai réel).
  * @type {number}
  */
-const DATA_RETENTION_DAYS = 180;
+const DATA_RETENTION_DAYS = 190;
+
+/**
+ * Nombre de jours avant l'échéance de rétention à partir desquels un
+ * avertissement de suppression prochaine est affiché sur la ligne du
+ * rapport concerné (voir _buildAuditCheckboxRow, rapports-fsqs.js).
+ * @type {number}
+ */
+const DATA_RETENTION_WARNING_DAYS = 15;
+
+/**
+ * Délai de grâce (jours) automatiquement ajouté après l'échéance
+ * nominale (DATA_RETENTION_DAYS) avant la suppression EFFECTIVE d'un
+ * audit — garantit que l'avertissement (DATA_RETENTION_WARNING_DAYS)
+ * reste visible au moins 15 jours avant que la suppression n'ait
+ * réellement lieu. Volontairement égal à DATA_RETENTION_WARNING_DAYS
+ * (le délai de grâce EST la fenêtre d'avertissement), gardé comme
+ * constante séparée pour rester lisible si les deux devaient un jour
+ * diverger.
+ * @type {number}
+ */
+const DATA_RETENTION_GRACE_DAYS = 15;
 
 // ─────────────────────────────────────────────
 // 2. ÉTAT GLOBAL
@@ -226,12 +248,34 @@ let DB = _buildDefaultDB();
  */
 let CU = null;
 
+/** @type {string} Clé localStorage pour persister _pendingSyncToSupabase à travers les rechargements. */
+const PENDING_SYNC_KEY = STORAGE_KEY + '_pending_sync';
+
 /**
  * Indique si des modifications locales n'ont pas encore été
- * synchronisées avec Supabase (ex : perte réseau).
+ * synchronisées avec Supabase (ex : perte réseau, erreur serveur...).
+ * ⚠️ AJOUTÉ : persisté dans localStorage, pas seulement en mémoire —
+ * un simple rechargement de page ne doit jamais faire oublier qu'une
+ * sauvegarde précédente a échoué, sans quoi loadDB() écraserait les
+ * données locales de l'utilisateur par une version Supabase plus
+ * ancienne sans même s'en apercevoir (voir loadDB, section 5).
  * @type {boolean}
  */
-let _pendingSyncToSupabase = false;
+let _pendingSyncToSupabase = localStorage.getItem(PENDING_SYNC_KEY) === '1';
+
+/**
+ * Positionne _pendingSyncToSupabase et persiste sa valeur, pour
+ * qu'elle survive à un rechargement de page (voir PENDING_SYNC_KEY).
+ * @param {boolean} value
+ * @returns {void}
+ */
+function _setPendingSync(value) {
+  _pendingSyncToSupabase = value;
+  try {
+    if (value) localStorage.setItem(PENDING_SYNC_KEY, '1');
+    else localStorage.removeItem(PENDING_SYNC_KEY);
+  } catch (_) { /* localStorage indisponible : tant pis, le suivi reste en mémoire seulement */ }
+}
 
 // Restaurer l'utilisateur connecté depuis le cache localStorage au chargement
 try {
@@ -329,6 +373,24 @@ async function loadDB() {
   // Migration non destructive — sûre à appeler même si déjà migrée.
   if (DB.qualimetreGlobal) DB.qualimetreGlobal = _migrateQualimetreGlobalToEnseigneScoped(DB.qualimetreGlobal);
 
+  // ⚠️ AJOUTÉ : si une synchronisation précédente a échoué (colonne
+  // manquante, erreur serveur ponctuelle, etc. — pas nécessairement
+  // une perte réseau) et que la page a été rechargée depuis, ne JAMAIS
+  // écraser les données locales (qui contiennent la saisie de
+  // l'utilisateur non encore confirmée côté serveur) par la version
+  // Supabase, potentiellement plus ancienne. On retente d'abord de
+  // pousser les données locales telles quelles ; l'écrasement par la
+  // version serveur ci-dessous n'a lieu que si cette tentative réussit
+  // (les deux versions sont alors identiques, aucune perte possible).
+  if (_pendingSyncToSupabase) {
+    console.warn('⚠️ Synchronisation précédente incomplète détectée — nouvelle tentative avant rechargement...');
+    await _pushToSupabase();
+    if (_pendingSyncToSupabase) {
+      console.warn('⚠️ Toujours en échec — données locales conservées telles quelles, sans écrasement par Supabase.');
+      return;
+    }
+  }
+
   try {
     /** @type {[User[], Magasin[], Audit[], NC[], Action[], Alerte[], SupabaseRow[], QualAudit[], SupabaseRow[], Draft[]]} */
     const [
@@ -365,9 +427,14 @@ async function loadDB() {
     if (!DB.users.length) DB.users = _buildDefaultDB().users;
 
     _saveToLocalStorage();
-    _pendingSyncToSupabase = false;
+    _setPendingSync(false);
     console.log('✅ Supabase chargé');
 
+    // Nettoyage automatique des audits de plus de DATA_RETENTION_DAYS
+    // (190 jours, soit ~6 mois) — décision produit explicite : les
+    // rapports approchant l'échéance sont signalés 15 jours à l'avance
+    // dans l'onglet Rapports FSQS (voir DATA_RETENTION_WARNING_DAYS,
+    // daysUntilAuditCleanup, _buildAuditCheckboxRow dans rapports-fsqs.js).
     _cleanStaleData();
 
     // Rafraîchir l'utilisateur connecté depuis la DB à jour
@@ -378,7 +445,7 @@ async function loadDB() {
     }
   } catch (error) {
     console.warn('⚠️ Supabase inaccessible — mode hors ligne :', error.message);
-    _pendingSyncToSupabase = true;
+    _setPendingSync(true);
   }
 }
 
@@ -718,11 +785,11 @@ async function _pushToSupabase(tables) {
     }
 
     await Promise.all(operations);
-    _pendingSyncToSupabase = false;
+    _setPendingSync(false);
     console.log('✅ Sync Supabase OK');
   } catch (error) {
     console.warn('⚠️ Sync Supabase échouée :', error.message);
-    _pendingSyncToSupabase = true;
+    _setPendingSync(true);
   }
 }
 
@@ -731,22 +798,95 @@ async function _pushToSupabase(tables) {
 // ─────────────────────────────────────────────
 
 /**
- * Identifie et supprime (DB + Supabase) les audits FSQS et audits
- * Qualimètre dont la date dépasse DATA_RETENTION_DAYS, en respectant
- * la règle métier de _findStaleAudits (NC liées toutes clôturées
- * ou absentes).
+ * Calcule la date de suppression EFFECTIVE d'un audit, selon une
+ * règle à 3 paliers basée sur le moment où sa DERNIÈRE NC à traiter a
+ * été clôturée (nc.closedDate, voir saveNCEdit, nc.js), en jours
+ * depuis la date de l'audit (= date de création des NC liées) :
+ *
+ *  - clôturée au plus tard au jour (DATA_RETENTION_DAYS − DATA_RETENTION_GRACE_DAYS)
+ *    [175] → suppression au jour DATA_RETENTION_DAYS [190].
+ *  - clôturée entre ce jour et DATA_RETENTION_DAYS [176 à 190]
+ *    → suppression au jour DATA_RETENTION_DAYS + DATA_RETENTION_GRACE_DAYS
+ *    [205] — palier FIXE, pas jour de clôture + 15 (une clôture au
+ *    jour 180 donne 205, pas 195).
+ *  - clôturée après DATA_RETENTION_DAYS [190] (NC restée ouverte
+ *    au-delà de l'échéance nominale) → suppression DATA_RETENTION_GRACE_DAYS
+ *    [15] jours après cette clôture, glissant (jamais plafonné).
+ *
+ * Un audit sans aucune NC liée suit l'échéance nominale directement
+ * (rien à "traiter"). Repli sur la date de l'audit si nc.closedDate
+ * est absent (NC clôturée avant l'ajout de ce champ) — traité comme
+ * une clôture immédiate, donc premier palier.
+ * @param {Audit} audit
+ * @returns {Date | null} null si au moins une NC liée n'est pas (encore) clôturée — jamais supprimé automatiquement dans ce cas.
+ */
+function _auditDeletionDate(audit) {
+  /** @type {NC[]} */
+  const linkedNcs = DB.ncs.filter(nc => nc.aid === audit.id);
+  if (linkedNcs.some(nc => nc.statut !== 'Clôturée')) return null;
+
+  /** @type {Date} */
+  const auditDate = new Date(audit.date);
+  /** @type {number} Début de la fenêtre d'avertissement (175). */
+  const earlyThreshold = DATA_RETENTION_DAYS - DATA_RETENTION_GRACE_DAYS;
+
+  /** @type {number} Décalage en jours depuis auditDate. */
+  let deletionDayOffset;
+
+  if (!linkedNcs.length) {
+    deletionDayOffset = DATA_RETENTION_DAYS;
+  } else {
+    // Jour (depuis l'audit) où la DERNIÈRE NC à traiter a été clôturée.
+    /** @type {number} */
+    const lastClosureDayOffset = Math.max(...linkedNcs.map(nc => {
+      /** @type {Date} */
+      const closedDate = new Date(nc.closedDate || audit.date);
+      return Math.round((closedDate.getTime() - auditDate.getTime()) / 86_400_000);
+    }));
+
+    if      (lastClosureDayOffset <= earlyThreshold)      deletionDayOffset = DATA_RETENTION_DAYS;
+    else if (lastClosureDayOffset <= DATA_RETENTION_DAYS) deletionDayOffset = DATA_RETENTION_DAYS + DATA_RETENTION_GRACE_DAYS;
+    else                                                  deletionDayOffset = lastClosureDayOffset + DATA_RETENTION_GRACE_DAYS;
+  }
+
+  /** @type {Date} */
+  const deletionDate = new Date(auditDate);
+  deletionDate.setDate(deletionDate.getDate() + deletionDayOffset);
+  return deletionDate;
+}
+
+/**
+ * Calcule dans combien de jours un audit sera EFFECTIVEMENT supprimé
+ * (voir _auditDeletionDate pour la règle à 3 paliers). Utilisée par
+ * _buildAuditCheckboxRow (rapports-fsqs.js) pour l'avertissement de
+ * suppression prochaine.
+ * @param {Audit} audit
+ * @returns {number | null} Jours restants (négatif si déjà dépassée et pas encore nettoyée au prochain chargement), ou null si au moins une NC liée n'est pas clôturée (jamais supprimé automatiquement en l'état).
+ */
+function daysUntilAuditCleanup(audit) {
+  /** @type {Date | null} */
+  const deletionDate = _auditDeletionDate(audit);
+  if (!deletionDate) return null;
+  return Math.ceil((deletionDate.getTime() - Date.now()) / 86_400_000);
+}
+
+/**
+ * Identifie et supprime (DB + Supabase) les audits FSQS (règle à 3
+ * paliers, voir _auditDeletionDate) et les audits Qualimètre (échéance
+ * simple à DATA_RETENTION_DAYS, sans notion de NC).
  * @returns {Promise<void>}
  */
 async function _cleanStaleData() {
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - DATA_RETENTION_DAYS);
-  /** @type {string} Date de coupure au format 'YYYY-MM-DD'. */
-  const cutoffString = cutoffDate.toISOString().split('T')[0];
-
   /** @type {Audit[]} */
-  const staleAudits = _findStaleAudits(cutoffString);
+  const staleAudits = _findStaleAudits();
+
+  /** @type {Date} */
+  const qualCutoffDate = new Date();
+  qualCutoffDate.setDate(qualCutoffDate.getDate() - DATA_RETENTION_DAYS);
+  /** @type {string} Date de coupure au format 'YYYY-MM-DD'. */
+  const qualCutoffString = qualCutoffDate.toISOString().split('T')[0];
   /** @type {QualAudit[]} */
-  const staleQualAudits = _findStaleQualAudits(cutoffString);
+  const staleQualAudits = _findStaleQualAudits(qualCutoffString);
 
   if (!staleAudits.length && !staleQualAudits.length) return;
 
@@ -754,26 +894,31 @@ async function _cleanStaleData() {
   await _deleteStaleQualAudits(staleQualAudits);
 
   _saveToLocalStorage();
-  console.log(`🗑️ Nettoyage : ${staleAudits.length} audit(s) FSQS + ${staleQualAudits.length} Qualimètre supprimé(s) (>${DATA_RETENTION_DAYS} jours)`);
+  console.log(`🗑️ Nettoyage : ${staleAudits.length} audit(s) FSQS + ${staleQualAudits.length} Qualimètre supprimé(s)`);
 }
 
 /**
- * Sélectionne les audits FSQS antérieurs à la date de coupure, dont
- * toutes les NC liées (s'il en existe) sont au statut 'Clôturée'.
- * @param {string} cutoffString - Date de coupure au format 'YYYY-MM-DD'.
+ * Sélectionne les audits FSQS dont la date de suppression effective
+ * (voir _auditDeletionDate, règle à 3 paliers) est déjà atteinte. Un
+ * audit dont une NC est encore ouverte n'est jamais sélectionné,
+ * quelle que soit son ancienneté — la non-conformité non traitée doit
+ * rester consultable avec son rapport d'origine.
  * @returns {Audit[]}
  */
-function _findStaleAudits(cutoffString) {
+function _findStaleAudits() {
+  /** @type {number} */
+  const now = Date.now();
   return DB.audits.filter(audit => {
-    if (audit.date >= cutoffString) return false;
-    /** @type {NC[]} */
-    const linkedNcs = DB.ncs.filter(nc => nc.aid === audit.id);
-    return linkedNcs.length === 0 || linkedNcs.every(nc => nc.statut === 'Clôturée');
+    /** @type {Date | null} */
+    const deletionDate = _auditDeletionDate(audit);
+    return deletionDate !== null && deletionDate.getTime() <= now;
   });
 }
 
 /**
- * Sélectionne les audits Qualimètre antérieurs à la date de coupure.
+ * Sélectionne les audits Qualimètre antérieurs à la date de coupure
+ * (échéance simple, sans notion de NC ni de délai de grâce — ce
+ * concept d'audits Qualimètre n'a pas de NC liée dans ce projet).
  * @param {string} cutoffString - Date de coupure au format 'YYYY-MM-DD'.
  * @returns {QualAudit[]}
  */
@@ -783,7 +928,10 @@ function _findStaleQualAudits(cutoffString) {
 
 /**
  * Supprime les audits FSQS donnés ainsi que leurs NC et actions
- * liées, à la fois dans Supabase et dans la DB en mémoire.
+ * liées, à la fois dans Supabase et dans la DB en mémoire. Ne reçoit
+ * que des audits déjà filtrés par _findStaleAudits (donc dont les NC,
+ * s'il en existe, sont nécessairement toutes clôturées), rien
+ * d'ouvert n'est jamais perdu ici.
  * @param {Audit[]} audits - Audits à supprimer.
  * @returns {Promise<void>}
  */

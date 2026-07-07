@@ -135,10 +135,22 @@ function renderRap() {
 
 /**
  * Construit la ligne HTML à case à cocher d'un audit sélectionnable.
+ * Affiche un badge d'avertissement si l'audit sera automatiquement
+ * supprimé (voir DATA_RETENTION_DAYS, storage.js) dans moins de
+ * DATA_RETENTION_WARNING_DAYS jours.
  * @param {Audit} audit
  * @returns {string}
  */
 function _buildAuditCheckboxRow(audit) {
+  /** @type {number | null} */
+  const daysLeft = daysUntilAuditCleanup(audit);
+  /** @type {string} */
+  const warningHtml = (daysLeft !== null && daysLeft <= DATA_RETENTION_WARNING_DAYS)
+    ? `<span class="badge" style="background:#fef3c7;color:#92400e" title="Suppression automatique après ${DATA_RETENTION_DAYS} jours">
+         <i class="ti ti-alert-triangle" style="font-size:11px"></i> ${daysLeft > 0 ? `Suppression dans ${daysLeft} j` : 'Suppression imminente'}
+       </span>`
+    : '';
+
   return `<label style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px">
     <input type="checkbox" class="r-cb" value="${audit.id}"
            style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer" checked>
@@ -147,6 +159,7 @@ function _buildAuditCheckboxRow(audit) {
     <span class="tsm tm">${fd(audit.date)}</span>
     <span class="score-badge ${scCls(audit.score)}">${audit.score}%</span>
     ${audit.nc > 0 ? `<span class="badge b-open">${audit.nc} NC</span>` : ''}
+    ${warningHtml}
   </label>`;
 }
 
