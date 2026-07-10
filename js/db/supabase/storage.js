@@ -969,19 +969,29 @@ async function _deleteStaleQualAudits(audits) {
  * Vérifie toutes les N secondes si des données ont changé dans Supabase
  * (modifications par d'autres sessions / utilisateurs).
  *
- * ⚠️ CORRIGÉ : `drafts` était récupéré mais jamais comparé dans
- * `hasChanges` — un brouillon modifié par une autre session (ex :
- * photo ajoutée depuis une tablette) n'était donc reflété ici que si
- * une des AUTRES tables (audits/ncs/actions/alertes/qualAudits)
- * changeait EN MÊME TEMPS, sinon `hasChanges` restait `false` et tout
- * le bloc — y compris la mise à jour de DB.drafts pourtant déjà
- * récupérée — était ignoré. Seul un rechargement complet de page
- * (qui repasse par loadDB(), inconditionnel) permettait alors de voir
- * le brouillon à jour.
+ * ⚠️ CORRIGÉ : ce sondage écrasait DB.ncs/DB.actions/... par la
+ * version Supabase dès qu'elle différait de la version locale — y
+ * compris quand cette différence venait d'un push LOCAL encore en
+ * attente ou en échec (voir _pendingSyncToSupabase, section 1). Dans
+ * ce cas, la version serveur (plus ancienne, sans les données tout
+ * juste créées localement) était considérée comme "changée" et
+ * écrasait silencieusement la version locale — un audit qui vient de
+ * créer une NC pouvait ainsi la voir disparaître au tick suivant (5s)
+ * si le push de cette NC n'avait pas encore abouti côté serveur (par
+ * exemple à cause d'une colonne manquante en base, comme déjà
+ * rencontré sur 'alertes'/'documents'). Même protection qu'à
+ * l'ouverture de l'app (voir loadDB) : si une synchronisation est en
+ * attente, on retente le push AVANT toute comparaison, et on
+ * n'écrase la DB locale que si ce push a réussi.
  * @returns {Promise<void>} Callback exécuté à chaque tick de l'intervalle.
  */
 setInterval(async () => {
   if (!CU) return;
+
+  if (_pendingSyncToSupabase) {
+    await _pushToSupabase();
+    if (_pendingSyncToSupabase) return; // toujours en échec — ne pas comparer/écraser ce tick-ci
+  }
 
   try {
     /** @type {[Audit[], NC[], Action[], Alerte[], QualAudit[], Draft[]]} */
