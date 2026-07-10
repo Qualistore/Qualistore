@@ -16,6 +16,24 @@
 // réellement (voir requestPasswordReset ci-dessous, et le SMTP Brevo
 // configuré côté Supabase).
 //
+// ⚠️ CHANGÉ (v3) : le lien de réinitialisation ne consomme plus le
+// jeton à usage unique dès son premier chargement. Avec le lien par
+// défaut de Supabase (qui vérifie le jeton côté serveur AVANT même
+// d'afficher votre page), les scanners de sécurité des messageries
+// (Gmail, Brevo qui réécrit tous les liens pour son suivi de clics,
+// filtres anti-spam d'entreprise...) "cliquent" automatiquement le
+// lien pour l'analyser — ce qui grille le jeton avant que
+// l'utilisateur ne clique lui-même, d'où l'erreur "Email link is
+// invalid or has expired" observée même sur un lien tout juste reçu.
+// Désormais, le lien pointe directement vers cette page avec un
+// jeton brut (token_hash) qui n'est envoyé à Supabase pour
+// vérification qu'au moment où l'utilisateur clique explicitement
+// sur "Valider le nouveau mot de passe" (voir confirmPasswordReset).
+// Un simple chargement de page (par un scanner) ne consomme plus rien.
+// ⚠️ Le template d'email "Reset Password" côté Supabase Dashboard
+// (Authentication → Email Templates) doit être mis à jour en
+// conséquence — voir les instructions fournies séparément.
+//
 // ⚠️ CHANGÉ (ferme la faille "session falsifiable" de l'audit) :
 // CU n'est plus jamais écrit tel quel dans localStorage par ce
 // fichier — reconstruit à chaque chargement depuis la table
@@ -68,27 +86,36 @@ const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 let _sessionTimer = null;
 
 // ─────────────────────────────────────────────
-// 3. ÉCOUTEUR GLOBAL — RÉCUPÉRATION DE MOT DE PASSE
-// Enregistré dès le chargement de ce script (avant DOMContentLoaded),
-// pour être sûr de ne jamais manquer l'événement PASSWORD_RECOVERY
-// déclenché par supabase-js quand l'utilisateur revient sur l'appli
-// via le lien reçu par email (voir requestPasswordReset).
+// 3. DÉTECTION DU LIEN DE RÉCUPÉRATION DE MOT DE PASSE
+// ⚠️ CHANGÉ (v3, voir bandeau d'en-tête) : on ne dépend plus de
+// l'événement automatique PASSWORD_RECOVERY de supabase-js (qui ne se
+// déclenche que si le lien contient déjà un access_token — ce qui
+// signifiait que le jeton avait déjà été vérifié côté serveur avant
+// même d'arriver ici). Le lien contient maintenant un token_hash brut,
+// pas encore vérifié — c'est _checkSessionOnLoad qui détecte sa
+// présence et affiche le formulaire, et confirmPasswordReset qui
+// déclenche la vérification réelle, uniquement au clic utilisateur.
 // ─────────────────────────────────────────────
-
-_sb.auth.onAuthStateChange((event) => {
-  if (event === 'PASSWORD_RECOVERY') {
-    _showPasswordRecoveryForm();
-  }
-});
 
 /**
  * Indique si la page vient d'être ouverte via un lien de
- * réinitialisation de mot de passe (Supabase ajoute `type=recovery`
- * dans le fragment d'URL au retour depuis l'email).
+ * réinitialisation de mot de passe (contient un token_hash et
+ * type=recovery dans le fragment d'URL — voir le template d'email
+ * "Reset Password" côté Supabase Dashboard).
  * @returns {boolean}
  */
 function _isPasswordRecoveryFlow() {
-  return window.location.hash.includes('type=recovery');
+  return window.location.hash.includes('type=recovery') && window.location.hash.includes('token_hash=');
+}
+
+/**
+ * Extrait le token_hash brut du fragment d'URL, si présent.
+ * @returns {string|null}
+ */
+function _getRecoveryTokenHash() {
+  /** @type {URLSearchParams} */
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  return params.get('token_hash');
 }
 
 // ─────────────────────────────────────────────
@@ -113,11 +140,15 @@ function _resetSessionTimer() {
  * dans CU le cas échéant. Sans effet si la page vient d'être ouverte
  * via un lien de réinitialisation (voir _isPasswordRecoveryFlow) —
  * dans ce cas, c'est le formulaire de nouveau mot de passe qui prend
- * la main, pas une connexion normale.
+ * la main, pas une connexion normale ; le jeton n'est pas encore
+ * vérifié à ce stade (voir confirmPasswordReset).
  * @returns {Promise<void>}
  */
 async function _checkSessionOnLoad() {
-  if (_isPasswordRecoveryFlow()) return; // géré par l'écouteur PASSWORD_RECOVERY
+  if (_isPasswordRecoveryFlow()) {
+    _showPasswordRecoveryForm();
+    return;
+  }
 
   /** @type {{ data: { session: Object|null } }} */
   const { data: { session } } = await _sb.auth.getSession();
@@ -241,8 +272,8 @@ function showLoginForm() {
 
 /**
  * Affiche le formulaire "choisir un nouveau mot de passe", déclenché
- * automatiquement quand l'utilisateur revient sur l'appli via le lien
- * reçu par email (voir l'écouteur PASSWORD_RECOVERY, section 3).
+ * quand la page est ouverte via un lien de réinitialisation reçu par
+ * email (voir _isPasswordRecoveryFlow, appelé depuis _checkSessionOnLoad).
  * @returns {void}
  */
 function _showPasswordRecoveryForm() {
@@ -281,13 +312,19 @@ async function requestPasswordReset() {
   // enregistrés dans l'appli (voir faille XSS/énumération de l'audit,
   // même principe de prudence).
   void error;
-  msgEl.textContent = 'Si un compte existe avec cet email, un lien de réinitialisation vient d\'être envoyé.';
+  msgEl.textContent = "Si un compte existe avec cet email, un lien de réinitialisation vient d'être envoyé.";
   msgEl.className   = 'login-ok show';
 }
 
 /**
  * Valide le nouveau mot de passe saisi après un clic sur le lien de
  * réinitialisation reçu par email, et termine le flux de récupération.
+ *
+ * ⚠️ CHANGÉ (v3, voir bandeau d'en-tête) : le jeton à usage unique
+ * (token_hash) n'est envoyé à Supabase pour vérification (verifyOtp)
+ * qu'ICI, au clic explicite de l'utilisateur — jamais automatiquement
+ * au chargement de la page. C'est ce qui protège contre les scanners
+ * de sécurité des messageries qui "pré-cliquent" les liens des emails.
  * @returns {Promise<void>}
  */
 async function confirmPasswordReset() {
@@ -308,6 +345,21 @@ async function confirmPasswordReset() {
     return;
   }
 
+  /** @type {string|null} */
+  const tokenHash = _getRecoveryTokenHash();
+  if (!tokenHash) {
+    msgEl.textContent = 'Lien invalide — merci de redemander une réinitialisation.';
+    msgEl.className   = 'login-err show';
+    return;
+  }
+
+  const { error: verifyError } = await _sb.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
+  if (verifyError) {
+    msgEl.textContent = 'Ce lien a expiré ou a déjà été utilisé — merci de redemander une réinitialisation.';
+    msgEl.className   = 'login-err show';
+    return;
+  }
+
   const { error } = await _sb.auth.updateUser({ password: newPassword });
   if (error) {
     msgEl.textContent = 'Erreur : ' + error.message;
@@ -315,7 +367,7 @@ async function confirmPasswordReset() {
     return;
   }
 
-  // Nettoie le fragment d'URL (#access_token=...&type=recovery) pour
+  // Nettoie le fragment d'URL (#token_hash=...&type=recovery) pour
   // ne pas laisser le jeton visible/réutilisable dans la barre d'adresse.
   history.replaceState(null, '', window.location.pathname);
 
