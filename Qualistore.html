@@ -1115,7 +1115,11 @@
 
       <div class="form-group">
         <label class="form-label">Zone</label>
-        <select class="form-control" id="gqc-zone-sel"></select>
+        <select class="form-control" id="gqc-zone-sel" onchange="onGqZoneSelectChanged()"></select>
+      </div>
+      <div class="form-group" id="gqc-zone-new-group" style="display:none">
+        <label class="form-label">Nom de la nouvelle zone <span style="color:var(--danger)">*</span></label>
+        <input type="text" class="form-control" id="gqc-zone-new" placeholder="Ex : Vente Assistée">
       </div>
       <div class="form-group">
         <label class="form-label">Intitulé <span style="color:var(--danger)">*</span></label>

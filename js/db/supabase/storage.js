@@ -165,14 +165,13 @@
 
 /**
  * Dictionnaire de renommages manuels de zones Qualimètre, persistant,
- * indexé par QMZone.id — override du label par défaut (QM_ZONES,
- * config.js) appliqué via _resolveZoneLabel (grille-qualimetre.js).
- * QM_ZONES étant une constante figée en mémoire, ce dictionnaire est
- * l'unique mécanisme de renommage persistant d'une zone — voir
- * renameQmZone. Stocké côté Supabase comme ligne réservée
- * '__zone_labels__' de la table qualimetre_custom (voir
- * _parseQualimetreZoneLabels), sur le même principe que '__global__'
- * pour QualimetreGlobalMap.
+ * indexé par QMZone.id — override du libellé par défaut (le zoneId
+ * lui-même, aucune zone n'étant plus prédéfinie) appliqué via
+ * _resolveZoneLabel (grille-qualimetre.js). Unique mécanisme de
+ * renommage persistant d'une zone — voir renameQmZone. Stocké côté
+ * Supabase comme ligne réservée '__zone_labels__' de la table
+ * qualimetre_custom (voir _parseQualimetreZoneLabels), sur le même
+ * principe que '__global__' pour QualimetreGlobalMap.
  * @typedef {Record<string, string>} QualimetreZoneLabelsMap
  */
 

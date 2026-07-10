@@ -1,6 +1,9 @@
 // ══════════════════════════════════════════════════════════════
 // QUALIMETRE — Page référentiel Qualimètre (lecture seule)
-// Dépend de : storage.js (DB, CU), config.js (QUAL_ZONES), ui.js, grille-qualimetre.js
+// Dépend de : storage.js (DB, CU), ui.js, grille-qualimetre.js (_getAllZones — plus aucune zone prédéfinie)
+// ⚠️ Page apparemment non reliée à la navigation actuelle (aucun
+//    #page-qualimetre dans Qualistore.html) — code conservé tel quel,
+//    signalé à l'utilisateur plutôt que supprimé de sa propre initiative.
 // Note : l'édition se fait depuis la page "Grille Qualimètre" (grille-qualimetre.js)
 // ══════════════════════════════════════════════════════════════
 
@@ -129,11 +132,11 @@ function showQualimetre() {
   /** @type {string} */
   const storeId  = v('qual-mag-sel');
   /** @type {string} */
-  const zoneId   = v('qual-zone-sel') || (QUAL_ZONES[0]?.id);
+  const zoneId   = v('qual-zone-sel') || (_getAllZones()[0]?.id || '');
   /** @type {Magasin | undefined} */
   const store    = DB.magasins.find(m => m.id === storeId);
   /** @type {QMZone | undefined} */
-  const zone     = QUAL_ZONES.find(z => z.id === zoneId);
+  const zone     = _getAllZones().find(z => z.id === zoneId);
   /** @type {boolean} */
   const isAdmin  = CU && CU.role === 'admin';
 
@@ -151,7 +154,7 @@ function showQualimetre() {
   }
 
   /** @type {string} */
-  const zoneName = zone ? `${zone.emoji} ${zone.label}` : zoneId;
+  const zoneName = zone ? zone.label : zoneId;
   el('qual-ttl').textContent = `${store ? store.nom : '?'} – ${zoneName}`;
 
   /** @type {GrillePoint[]} */

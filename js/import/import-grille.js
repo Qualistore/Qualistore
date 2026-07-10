@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════════════
 // IMPORT-GRILLE — Import de grille d'audit (CSV / XLSX / PDF)
-// Dépend de : storage.js (DB, CU), config.js (CDN_SHEETJS, CDN_PDFJS, CDN_PDFJS_WORKER, IMPORT_FORMAT_INFO, QM_ZONES), ui.js,
+// Dépend de : storage.js (DB, CU), config.js (CDN_SHEETJS, CDN_PDFJS, CDN_PDFJS_WORKER, IMPORT_FORMAT_INFO), ui.js,
 //             import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
 //             import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap)
 // ══════════════════════════════════════════════════════════════
@@ -13,7 +13,8 @@
 //    cible à partir de la valeur de zone telle qu'elle apparaît
 //    dans le document importé (row.zoneRaw), au lieu d'utiliser le
 //    rayon FSQS normalisé. La résolution ne dépend d'aucune liste
-//    figée (QM_ZONES n'est consultée que pour ÉVITER une duplication
+//    (plus aucune zone prédéfinie : seules qualimetreGlobal/
+//    qualimetreCustom sont consultées, pour ÉVITER une duplication
 //    par libellé exact déjà connu, jamais pour deviner ou valider
 //    une zone). Voir _resolveOrCreateZoneFromDocument.
 //
@@ -108,7 +109,7 @@
  * valeur brute lue dans le document importé.
  * @typedef {Object} ResolvedZone
  * @property {string} id - Identifiant de zone à utiliser comme clé dans qualimetreCustom/qualimetreGlobal.
- * @property {boolean} reused - Vrai si une zone existante (QM_ZONES, qualimetreGlobal ou qualimetreCustom[storeId]) a été réutilisée par correspondance exacte de libellé normalisé ; faux si une nouvelle zone a été créée.
+ * @property {boolean} reused - Vrai si une zone existante (qualimetreGlobal ou qualimetreCustom[storeId]) a été réutilisée par correspondance exacte de libellé normalisé ; faux si une nouvelle zone a été créée.
  * @property {boolean} isUnclassified - Vrai si la ligne d'origine n'avait aucune valeur de zone identifiable (case vide) et a été placée dans la zone "Non classé".
  */
 
@@ -1763,27 +1764,25 @@ function _slugifyZoneLabel(label) {
 }
 
 /**
- * Recherche une zone existante (QM_ZONES, qualimetreGlobal,
- * qualimetreCustom[storeId]) dont le libellé normalisé correspond
- * EXACTEMENT au libellé recherché. Cette recherche sert uniquement
- * à éviter de dupliquer une zone déjà connue sous un autre id —
- * elle n'applique aucun mapping métier et ne devine jamais une
+ * Recherche une zone existante (qualimetreGlobal, toutes enseignes
+ * confondues, ou qualimetreCustom[storeId]) dont le libellé normalisé
+ * correspond EXACTEMENT au libellé recherché. Cette recherche sert
+ * uniquement à éviter de dupliquer une zone déjà connue sous un autre
+ * id — elle n'applique aucun mapping métier et ne devine jamais une
  * correspondance approximative.
+ * ⚠️ CHANGÉ : ne consulte plus QM_ZONES (supprimé — plus aucune zone
+ * prédéfinie, voir _getAllZones, grille-qualimetre.js).
  * @param {string} normalizedLabel - Libellé déjà normalisé via _normalizeZoneLabel.
  * @param {string} storeId - Référence vers Magasin.id (peut être vide si portée globale).
  * @returns {string | null} L'id de la zone existante, ou null si aucune correspondance exacte.
  */
 function _findExistingZoneIdByLabel(normalizedLabel, storeId) {
-  /** @type {QMZone | undefined} */
-  const fromStaticZones = QM_ZONES.find(z => _normalizeZoneLabel(z.label) === normalizedLabel);
-  if (fromStaticZones) return fromStaticZones.id;
-
-  // ⚠️ CORRIGÉ : DB.qualimetreGlobal est désormais indexé par enseigne
-  // PUIS par zoneId (voir storage.js) — Object.keys(DB.qualimetreGlobal)
-  // donnerait des noms d'ENSEIGNE, pas de zone. Il faut itérer sur les
-  // zoneId de chaque enseigne, toutes enseignes confondues (un même
-  // libellé de zone doit être reconnu, quelle que soit l'enseigne où
-  // il a déjà été créé).
+  // ⚠️ DB.qualimetreGlobal est indexé par enseigne PUIS par zoneId
+  // (voir storage.js) — Object.keys(DB.qualimetreGlobal) donnerait des
+  // noms d'ENSEIGNE, pas de zone. Il faut itérer sur les zoneId de
+  // chaque enseigne, toutes enseignes confondues (un même libellé de
+  // zone doit être reconnu, quelle que soit l'enseigne où il a déjà
+  // été créé).
   if (DB.qualimetreGlobal) {
     /** @type {string | undefined} */
     const fromGlobalIds = Object.values(DB.qualimetreGlobal)
@@ -1802,17 +1801,22 @@ function _findExistingZoneIdByLabel(normalizedLabel, storeId) {
 }
 
 /**
- * Vérifie si un id de zone est déjà utilisé (QM_ZONES,
- * qualimetreGlobal, qualimetreCustom[storeId], ou les zones déjà
+ * Vérifie si un id de zone est déjà utilisé (qualimetreGlobal, toutes
+ * enseignes confondues, qualimetreCustom[storeId], ou les zones déjà
  * résolues plus tôt dans l'import en cours — voir sessionZoneIds).
+ * ⚠️ CORRIGÉ (2 bugs) : ne consulte plus QM_ZONES (supprimé). Par
+ * ailleurs, la vérification sur qualimetreGlobal comparait zoneId aux
+ * clés de PREMIER niveau de DB.qualimetreGlobal — qui sont des noms
+ * d'ENSEIGNE (voir _findExistingZoneIdByLabel ci-dessus), pas des
+ * zoneId : une collision réelle avec une zone existante dans
+ * qualimetreGlobal n'était donc jamais détectée par cette voie.
  * @param {string} zoneId
  * @param {string} storeId
  * @param {Map<string, string> | null} [sessionZoneIds] - Zones déjà créées/résolues plus tôt dans l'import en cours (clé = libellé normalisé, valeur = id), voir _resolveOrCreateZoneFromDocument.
  * @returns {boolean}
  */
 function _isZoneIdTaken(zoneId, storeId, sessionZoneIds) {
-  if (QM_ZONES.some(z => z.id === zoneId)) return true;
-  if (DB.qualimetreGlobal && Object.prototype.hasOwnProperty.call(DB.qualimetreGlobal, zoneId)) return true;
+  if (DB.qualimetreGlobal && Object.values(DB.qualimetreGlobal).some(zonesMap => Object.prototype.hasOwnProperty.call(zonesMap || {}, zoneId))) return true;
   if (storeId && DB.qualimetreCustom?.[storeId] && Object.prototype.hasOwnProperty.call(DB.qualimetreCustom[storeId], zoneId)) return true;
   if (sessionZoneIds && [...sessionZoneIds.values()].includes(zoneId)) return true;
   return false;
@@ -1825,7 +1829,7 @@ function _isZoneIdTaken(zoneId, storeId, sessionZoneIds) {
  * 1. Si la valeur brute est vide, la ligne est rattachée à la zone
  *    "Non classé" (jamais devinée, jamais rattachée à une autre
  *    zone du fichier).
- * 2. Si une zone existante (QM_ZONES, qualimetreGlobal,
+ * 2. Si une zone existante (qualimetreGlobal,
  *    qualimetreCustom[storeId], OU une zone déjà résolue plus tôt
  *    dans CET import — voir sessionZoneIds) porte exactement ce
  *    libellé (normalisé), elle est réutilisée — ceci évite
@@ -1843,7 +1847,7 @@ function _isZoneIdTaken(zoneId, storeId, sessionZoneIds) {
  * "nouvelle zone" et recevraient des ids différents
  * (zone-1, zone-2, zone-3...) au lieu d'être regroupées sous un seul
  * id — la persistance en base ne se produit qu'à la fin de la
- * boucle d'import (save()), donc consulter uniquement QM_ZONES/
+ * boucle d'import (save()), donc consulter uniquement
  * qualimetreGlobal/qualimetreCustom ne suffit pas à détecter les
  * zones que l'import est en train de créer lui-même.
  * @param {string} rawZoneLabel - Valeur brute de la colonne zone, telle qu'écrite dans le document (ImportParsedRow.rayonRaw).

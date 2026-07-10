@@ -34,7 +34,7 @@
 /**
  * Zone de contrôle du parcours Qualimètre.
  * @typedef {Object} QMZone
- * @property {string} id - Identifiant stable de zone (ex : 'z0', 'z1'...). Numérotation non continue (z3 absent dans QM_ZONES).
+ * @property {string} id - Identifiant stable de zone (slug généré depuis le libellé, voir _slugifyZoneLabel, import-grille.js — plus aucune zone prédéfinie, voir _getAllZones, grille-qualimetre.js).
  * @property {string} emoji - Émoji représentant visuellement la zone.
  * @property {string} label - Libellé affiché à l'utilisateur.
  */
@@ -118,28 +118,12 @@ const PIDS   = PERMISSION_IDS;
 // 3. ZONES QUALIMÈTRE
 // ─────────────────────────────────────────────
 
-/**
- * Zones de contrôle du parcours Qualimètre.
- * Chaque zone possède un identifiant stable (zN), un emoji et un libellé.
- * Exporté aussi sous l'alias QUAL_ZONES pour compatibilité.
- * @type {QMZone[]}
- */
-const QM_ZONES = [
-  { id: 'z0',  emoji: '🚩', label: 'Référentiel Affichage' },
-  { id: 'z1',  emoji: '🟢', label: 'Zone 1 – Abords & Accueil' },
-  { id: 'z2',  emoji: '🥖', label: 'Zone 2 – Boulangerie & Pâtisserie' },
-  { id: 'z4',  emoji: '🥩', label: 'Zone 4 – Boucherie & Volaille' },
-  { id: 'z5',  emoji: '🧀', label: 'Zone 5 – Charcuterie / Traiteur / Fromage' },
-  { id: 'z6',  emoji: '🐟', label: 'Zone 6 – Marée' },
-  { id: 'z7',  emoji: '🥛', label: 'Zone 7 – Frais LS (Charcuterie, Crémerie, Traiteur)' },
-  { id: 'z8',  emoji: '🍝', label: 'Zone 8 – Épicerie / Liquide / Surgelés' },
-  { id: 'z9',  emoji: '🧼', label: 'Zone 9 – DPH / Bazar / Textile' },
-  { id: 'z10', emoji: '🛒', label: 'Zone 10 – Ligne de caisse & Sécurité' },
-];
-
-// Alias pour compatibilité avec qualimetre.js
-/** @type {QMZone[]} */
-const QUAL_ZONES = QM_ZONES;
+// ⚠️ SUPPRIMÉ (décision produit explicite : plus aucune zone
+// prédéfinie) : QM_ZONES contenait auparavant 10 zones fixes
+// (Abords & Accueil, Boulangerie...). Les zones Qualimètre sont
+// désormais entièrement déduites des données réelles (import ou
+// création manuelle) — voir _getAllZones (grille-qualimetre.js),
+// seule source de vérité pour la liste des zones existantes.
 
 // ─────────────────────────────────────────────
 // 4. URLS DES LIBRAIRIES EXTERNES (lazy-load)

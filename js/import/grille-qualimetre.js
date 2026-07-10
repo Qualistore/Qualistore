@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════════════
 // GRILLE-QUALIMETRE — Gestion de la grille Qualimètre par enseigne et par zone
-// Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, CDN_SHEETJS, CDN_PDFJS), ui.js,
+// Dépend de : storage.js (DB, CU, save, uid), config.js (CDN_SHEETJS, CDN_PDFJS), ui.js,
 //             magasins.js (getKnownEnseignes — classement par enseigne, même liste que pour la grille FSQS),
 //             import/import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
 //             import/import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap),
@@ -46,7 +46,7 @@
 
 /**
  * Zone de contrôle du parcours Qualimètre (voir config.js). Peut
- * aussi être une zone "ad hoc" non définie dans QM_ZONES mais
+ * aussi être une zone créée ad hoc (aucune zone prédéfinie désormais) mais
  * présente dans DB.qualimetreGlobal (label de fallback = son id,
  * emoji vide) — voir _getAllZones.
  * @typedef {Object} QMZone
@@ -212,13 +212,20 @@ function getQualimetrePoints(storeId, zoneId, enseigne) {
 }
 
 /**
- * Retourne la grille complète d'un magasin (ou d'une enseigne
- * directement) : toutes les zones qui ont au moins un point, fusion
- * commun + magasin comprise (voir getQualimetrePoints). Applique tout
- * renommage manuel persistant (voir _resolveZoneLabel, renameQmZone)
- * sur le label affiché.
+ * Construit la grille Qualimètre effective pour un magasin/enseigne :
+ * fusion de la grille commune de l'enseigne (qualimetreGlobal) et des
+ * points propres au magasin (qualimetreCustom), zone par zone. Ne
+ * garde que les zones ayant au moins un point (une zone vide
+ * n'apparaît pas comme onglet lors d'un audit).
+ *
+ * ⚠️ CORRIGÉ : la liste des zones candidates ne venait auparavant que
+ * de QM_ZONES (supprimé) + qualimetreGlobal[enseigne] — une zone
+ * créée UNIQUEMENT dans la grille propre d'un magasin (jamais dans la
+ * grille commune) n'était donc jamais candidate, et ses points
+ * restaient invisibles lors d'un audit pour ce magasin. Scanne
+ * désormais aussi qualimetreCustom[storeId].
  * @param {string | null} storeId
- * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis. Signature rétrocompatible : les appelants existants (audit-qualimetre.js, rapport-qualimetre.js) n'appellent qu'avec storeId et continuent de fonctionner à l'identique.
+ * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
  * @returns {QMZoneWithPoints[]}
  */
 function getQualimetreGrille(storeId, enseigne) {
@@ -226,16 +233,12 @@ function getQualimetreGrille(storeId, enseigne) {
   const resolvedEnseigne = enseigne || (storeId ? (DB.magasins.find(m => m.id === storeId)?.enseigne || '') : '');
   /** @type {Set<string>} */
   const zoneIds = new Set([
-    ...QM_ZONES.map(z => z.id),
     ...Object.keys(DB.qualimetreGlobal?.[resolvedEnseigne] || {}),
+    ...Object.keys(storeId ? (DB.qualimetreCustom?.[storeId] || {}) : {}),
   ]);
 
   return [...zoneIds]
-    .map(zoneId => {
-      /** @type {QMZone} */
-      const zoneMeta = QM_ZONES.find(z => z.id === zoneId) || { id: zoneId, emoji: '', label: zoneId };
-      return { ...zoneMeta, label: _resolveZoneLabel(zoneId, zoneMeta.label), points: getQualimetrePoints(storeId, zoneId, resolvedEnseigne) };
-    })
+    .map(zoneId => ({ id: zoneId, emoji: '', label: _resolveZoneLabel(zoneId, zoneId), points: getQualimetrePoints(storeId, zoneId, resolvedEnseigne) }))
     .filter(zone => zone.points.length > 0);
 }
 
@@ -370,7 +373,8 @@ function onGqMagChange()  { _gqRender(); }
 function onGqZoneChange() { _gqRender(); }
 
 /**
- * Peuple le select de zones (QM_ZONES + zones ad hoc présentes dans
+ * Peuple le select de zones (voir _getAllZones — plus aucune zone
+ * prédéfinie, uniquement celles présentes dans
  * qualimetreGlobal, toutes enseignes confondues).
  * @returns {void}
  */
@@ -419,23 +423,21 @@ function _buildGqMagSelect(enseigne) {
 /**
  * Résout le libellé affiché d'une zone : priorité à un renommage
  * manuel persistant (DB.qualimetreZoneLabels, voir renameQmZone),
- * puis au label par défaut (QM_ZONES pour une zone du référentiel,
- * sinon l'id lui-même pour une zone ad hoc créée par import — voir
- * _getAllZones). QM_ZONES étant une constante figée en mémoire (donc
- * non persistable telle quelle), c'est CE mécanisme d'override,
- * jamais une mutation de QM_ZONES, qui doit être utilisé pour
- * renommer une zone — voir renameQmZone.
+ * sinon le libellé de repli fourni (généralement le zoneId lui-même,
+ * ou le libellé d'origine du document pour une zone tout juste créée
+ * — voir _getAllZones, _resolveOrCreateZoneFromDocument).
+ * ⚠️ CHANGÉ : ne consulte plus QM_ZONES (supprimé — plus aucune zone
+ * prédéfinie). Toute personnalisation de libellé passe désormais
+ * exclusivement par ce mécanisme d'override.
  * @param {string} zoneId - Référence vers QMZone.id.
- * @param {string} fallbackLabel - Label à utiliser si aucun renommage ni entrée QM_ZONES ne correspond (généralement zoneId lui-même).
+ * @param {string} fallbackLabel - Label à utiliser si aucun renommage ne correspond.
  * @returns {string}
  */
 function _resolveZoneLabel(zoneId, fallbackLabel) {
   if (DB.qualimetreZoneLabels && Object.prototype.hasOwnProperty.call(DB.qualimetreZoneLabels, zoneId)) {
     return DB.qualimetreZoneLabels[zoneId];
   }
-  /** @type {QMZone | undefined} */
-  const baseZone = QM_ZONES.find(z => z.id === zoneId);
-  return baseZone ? baseZone.label : fallbackLabel;
+  return fallbackLabel;
 }
 
 /**
@@ -463,25 +465,30 @@ function renameQmZone(zoneId, newLabel) {
 }
 
 /**
- * Fusionne QM_ZONES avec les zones présentes dans qualimetreGlobal,
- * toutes enseignes confondues (zones "ad hoc" créées via import, sans
- * métadonnées emoji/label), en appliquant tout renommage manuel
- * persistant (voir _resolveZoneLabel).
+ * Liste toutes les zones Qualimètre réellement existantes dans les
+ * données — plus aucune zone prédéfinie (QM_ZONES a été retiré du
+ * code, décision produit explicite : rien ne doit être codé en dur).
+ *
+ * ⚠️ CORRIGÉ : ne scannait auparavant que DB.qualimetreGlobal (grille
+ * commune), jamais DB.qualimetreCustom (grilles propres à un
+ * magasin). Une zone créée par un import ciblé sur UN magasin précis
+ * (plutôt que la grille commune de l'enseigne) n'apparaissait donc
+ * JAMAIS dans ce sélecteur — les points existaient bien en base, mais
+ * restaient invisibles/inaccessibles depuis l'écran d'administration.
  * @returns {QMZone[]}
  */
 function _getAllZones() {
   /** @type {Set<string>} */
-  const globalZoneIds = new Set();
+  const zoneIds = new Set();
+
   Object.values(DB.qualimetreGlobal || {}).forEach(zonesMap => {
-    Object.keys(zonesMap || {}).forEach(id => globalZoneIds.add(id));
+    Object.keys(zonesMap || {}).forEach(id => zoneIds.add(id));
+  });
+  Object.values(DB.qualimetreCustom || {}).forEach(zonesMap => {
+    Object.keys(zonesMap || {}).forEach(id => zoneIds.add(id));
   });
 
-  return [
-    ...QM_ZONES.map(z => ({ ...z, label: _resolveZoneLabel(z.id, z.label) })),
-    ...[...globalZoneIds]
-      .filter(id => !QM_ZONES.find(z => z.id === id))
-      .map(id => ({ id, emoji: '', label: _resolveZoneLabel(id, id) })),
-  ];
+  return [...zoneIds].map(id => ({ id, emoji: '', label: _resolveZoneLabel(id, id) }));
 }
 
 /**
@@ -495,7 +502,7 @@ function _gqRender() {
   /** @type {string} */
   const storeId  = v('gq-mag-sel');
   /** @type {string} */
-  const zoneId   = v('gq-zone-sel') || QM_ZONES[0]?.id;
+  const zoneId   = v('gq-zone-sel') || _getAllZones()[0]?.id || '';
   /** @type {boolean} */
   const isAdmin  = CU && CU.role === 'admin';
 
@@ -681,7 +688,7 @@ function openGqCtrlModal(storeId, zoneId, pointId) {
   /** @type {string} */
   const resolvedStoreId = storeId || v('gq-mag-sel') || '';
   /** @type {string} */
-  const resolvedZoneId  = zoneId  || v('gq-zone-sel') || QM_ZONES[0]?.id;
+  const resolvedZoneId  = zoneId  || v('gq-zone-sel') || _getAllZones()[0]?.id || '';
   /** @type {boolean} */
   const isEdit          = !!pointId;
 
@@ -715,7 +722,12 @@ function openGqCtrlModal(storeId, zoneId, pointId) {
 }
 
 /**
- * Peuple le select de zones de la modale d'édition de point.
+ * Peuple le select de zones de la modale d'édition de point, avec une
+ * option finale "+ Nouvelle zone…" (valeur spéciale GQ_NEW_ZONE_VALUE)
+ * qui révèle un champ texte libre (voir onGqZoneSelectChanged) —
+ * indispensable depuis la suppression de QM_ZONES : sans elle, une
+ * enseigne toute neuve sans le moindre point importé n'aurait aucune
+ * zone à proposer, donc aucun moyen d'ajouter un premier point.
  * @param {string} selectedZoneId
  * @returns {void}
  */
@@ -725,8 +737,30 @@ function _buildGqCtrlZoneSelect(selectedZoneId) {
   /** @type {QMZone[]} */
   const allZones = _getAllZones();
   select.innerHTML = allZones
-    .map(zone => `<option value="${zone.id}"${zone.id === selectedZoneId ? ' selected' : ''}>${zone.emoji ? zone.emoji + ' ' : ''}${zone.label}</option>`)
-    .join('');
+    .map(zone => `<option value="${zone.id}"${zone.id === selectedZoneId ? ' selected' : ''}>${zone.label}</option>`)
+    .join('') +
+    `<option value="${GQ_NEW_ZONE_VALUE}">+ Nouvelle zone…</option>`;
+
+  onGqZoneSelectChanged();
+}
+
+/**
+ * Valeur spéciale de #gqc-zone-sel déclenchant la saisie libre d'une
+ * nouvelle zone plutôt que le choix d'une zone existante.
+ * @type {string}
+ */
+const GQ_NEW_ZONE_VALUE = '__new_zone__';
+
+/**
+ * Affiche/masque le champ de saisie libre du nom de la nouvelle zone
+ * selon la valeur choisie dans #gqc-zone-sel.
+ * @returns {void}
+ */
+function onGqZoneSelectChanged() {
+  /** @type {HTMLElement | null} */
+  const newZoneGroup = el('gqc-zone-new-group');
+  if (!newZoneGroup) return;
+  newZoneGroup.style.display = v('gqc-zone-sel') === GQ_NEW_ZONE_VALUE ? '' : 'none';
 }
 
 /**
@@ -787,6 +821,7 @@ function _resetGqCtrlForm() {
   sv('gqc-q', '');
   sv('gqc-prec', '');
   sv('gqc-poids', '');
+  sv('gqc-zone-new', '');
   el('gqc-crit').value = 'Majeure';
 }
 
@@ -827,7 +862,7 @@ function saveGqCtrl() {
   /** @type {number} */
   const poids      = parseInt(v('gqc-poids')) || GQ_DEFAULT_POIDS[criticite];
   /** @type {string} */
-  const zoneId     = el('gqc-zone-sel') ? el('gqc-zone-sel').value : v('gqc-zone');
+  let zoneId       = el('gqc-zone-sel') ? el('gqc-zone-sel').value : v('gqc-zone');
   const scopeRadio = [...document.querySelectorAll('input[name="gqc-scope"]')].find(r => r.checked);
   /** @type {GqScope} */
   const scope      = scopeRadio ? scopeRadio.value : 'global';
@@ -835,6 +870,20 @@ function saveGqCtrl() {
   const storeId    = scope === 'mag' ? (el('gqc-mag-sel') ? el('gqc-mag-sel').value : v('gqc-mid')) : '';
   /** @type {string} */
   const existingId = v('gqc-id');
+
+  if (zoneId === GQ_NEW_ZONE_VALUE) {
+    /** @type {string} */
+    const newZoneLabel = v('gqc-zone-new').trim();
+    if (!newZoneLabel) {
+      errorEl.textContent = 'Le nom de la nouvelle zone est requis.';
+      errorEl.classList.add('show');
+      return;
+    }
+    // Même résolution que l'import (jamais de doublon si le libellé
+    // correspond déjà à une zone existante) — voir
+    // _resolveOrCreateZoneFromDocument, import-grille.js.
+    zoneId = _resolveOrCreateZoneFromDocument(newZoneLabel, storeId).id;
+  }
 
   /** @type {GrillePoint} */
   const newPoint = {
@@ -1427,15 +1476,13 @@ function _gqRenderImportPreview() {
       <strong>${rows.length} point(s)</strong> détecté(s) → appliqués à la ${scopeLabel}
     </div>
     ${Object.entries(byZone).map(([zoneId, points]) => {
-      /** @type {QMZone | undefined} */
-      const zone = QM_ZONES.find(z => z.id === zoneId);
       /** @type {string} */
       const zoneLabel = _resolveZoneLabel(zoneId, zoneId);
       /** @type {boolean} */
       const willReplace = _gqZoneReplaceFlags[zoneId] ?? true;
       return `<div style="margin-bottom:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;padding:6px 10px;background:#f5f3ff;border-radius:6px;margin-bottom:4px">
-          <span>${zone?.emoji ? zone.emoji + ' ' : ''}${zoneLabel} (${points.length})</span>
+          <span>${zoneLabel} (${points.length})</span>
           <label style="display:flex;align-items:center;gap:5px;font-size:10px;font-weight:500;text-transform:none;color:#5b21b6;cursor:pointer;white-space:nowrap">
             <input type="checkbox" ${willReplace ? 'checked' : ''} onchange="_onGqZoneReplaceToggle('${zoneId}', this.checked)" style="margin:0">
             Remplacer les points existants
