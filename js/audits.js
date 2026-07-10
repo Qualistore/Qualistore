@@ -752,9 +752,12 @@ function _buildPendingAuditPhotoThumbHtml(pointId, localUrl, queueId) {
 }
 
 /**
- * Met une photo en file d'attente hors-ligne après échec définitif de
- * l'upload (voir uploadPhotoWithRetry, ui.js) — au lieu de la perdre
- * purement et simplement. Garantit d'abord qu'un brouillon existe
+ * Met une photo en file d'attente durable (IndexedDB, voir
+ * queuePendingPhoto, storage.js) — appelée AVANT même la tentative
+ * d'envoi (voir handleAuditPhoto), pas seulement après un échec
+ * détecté. Silencieuse : ne touche à aucun affichage, contrairement à
+ * _showPendingAuditPhotoPreview (appelée séparément, uniquement si
+ * l'envoi échoue réellement). Garantit d'abord qu'un brouillon existe
  * (voir _snapshotCurrentAuditAsDraft) pour que le réconciliateur
  * (enregistré en bas de ce fichier) sache où replacer la vraie URL
  * une fois l'upload réussi, même si l'utilisateur ferme l'onglet
@@ -762,20 +765,31 @@ function _buildPendingAuditPhotoThumbHtml(pointId, localUrl, queueId) {
  * @param {string} pointId - Référence vers GrillePoint.id.
  * @param {Blob} blob - Photo déjà compressée, prête à être envoyée telle quelle.
  * @param {string} storagePath - Chemin de destination déjà calculé dans le bucket 'photos'.
- * @returns {Promise<void>}
+ * @returns {Promise<string>} L'identifiant de la file (PendingPhotoEntry.id).
  */
-async function _queueAuditPhotoForLaterUpload(pointId, blob, storagePath) {
+async function _stagePendingAuditPhoto(pointId, blob, storagePath) {
   _snapshotCurrentAuditAsDraft();
-
-  /** @type {string} */
-  const queueId = await queuePendingPhoto({
+  return queuePendingPhoto({
     context:  'audit-fsqs',
     pointId,
     draftId:  _currentDraftId,
     blob,
     storagePath,
   });
+}
 
+/**
+ * Affiche l'aperçu local (Object URL) d'une photo restée en file
+ * d'attente après un échec d'envoi RÉELLEMENT constaté — la photo
+ * elle-même est déjà en sécurité depuis _stagePendingAuditPhoto,
+ * appelée avant la tentative ; cette fonction ne fait qu'informer
+ * l'utilisateur (aperçu + toast), rien de plus.
+ * @param {string} pointId - Référence vers GrillePoint.id.
+ * @param {string} queueId - Référence vers PendingPhotoEntry.id (storage.js).
+ * @param {Blob} blob - Photo déjà compressée, pour l'aperçu local.
+ * @returns {void}
+ */
+function _showPendingAuditPhotoPreview(pointId, queueId, blob) {
   /** @type {string} */
   const localUrl = URL.createObjectURL(blob);
   if (!_pendingAuditPhotoPreviews[pointId]) _pendingAuditPhotoPreviews[pointId] = [];
@@ -1235,17 +1249,31 @@ async function handleAuditPhoto(pointId, input) {
         const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
         /** @type {string} */
         const storagePath = `audits/${pointId}-${uid()}.${ext}`;
+
+        // ⚠️ CORRIGÉ : mise en file d'attente DURABLE (IndexedDB) AVANT
+        // la tentative d'envoi, pas seulement après un échec réseau
+        // constaté. Sur tablette, prendre une photo bascule souvent
+        // vers l'appli caméra native puis revient au navigateur ; si
+        // l'onglet est ensuite déchargé par l'OS (mémoire limitée)
+        // PENDANT l'envoi (compression ou upload encore en cours),
+        // l'exécution s'interrompt sans qu'aucune erreur ne soit
+        // levée — la photo n'atteignait alors ni photos[] ni
+        // l'ancienne file d'attente (qui ne se déclenchait qu'après un
+        // échec explicite constaté APRÈS l'appel), et disparaissait
+        // silencieusement. En la mettant en file avant la tentative,
+        // elle est déjà en lieu sûr quoi qu'il arrive pendant l'envoi.
+        /** @type {string} */
+        const queueId = await _stagePendingAuditPhoto(pointId, compressed, storagePath);
         /** @type {string | null} */
         const uploadedUrl = await uploadPhotoWithRetry(compressed, storagePath);
 
         if (uploadedUrl) {
+          await removePendingPhoto(queueId);
           auditAnswers[pointId].photos.push(uploadedUrl);
         } else {
-          // ⚠️ CHANGÉ : la photo n'est plus simplement perdue — elle
-          // est mise en file d'attente hors-ligne (voir
-          // _queueAuditPhotoForLaterUpload) et renvoyée automatiquement
-          // dès que la connexion revient (storage.js, section 13).
-          await _queueAuditPhotoForLaterUpload(pointId, compressed, storagePath);
+          // Déjà en file (voir _stagePendingAuditPhoto ci-dessus) —
+          // on affiche juste l'aperçu local + le message d'attente.
+          _showPendingAuditPhotoPreview(pointId, queueId, compressed);
         }
       } catch (err) {
         console.error('Erreur inattendue lors de l\'upload d\'une photo :', err);

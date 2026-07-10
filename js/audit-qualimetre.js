@@ -364,13 +364,33 @@ function _applyQaRep(pid, r, btn) {
 }
 
 // ── Photos NC Qualimètre (2 max, Supabase Storage audits/qualimetre/) ──
+
+/**
+ * Photos en attente d'envoi (Object URL locales) par point de
+ * contrôle Qualimètre — même principe que _pendingAuditPhotoPreviews
+ * (audits.js, FSQS).
+ * @type {Object<string, {queueId: string, localUrl: string}[]>}
+ */
+let _pendingQaPhotoPreviews = {};
+
 /**
  * Upload une photo pour un point de contrôle Qualimètre vers
- * Supabase Storage (limite stricte de 2 photos par point).
+ * Supabase Storage (limite stricte de 2 photos par point, en
+ * comptant les photos déjà envoyées ET celles encore en attente).
  *
- * ⚠️ AJOUTÉ : la photo est redimensionnée/compressée côté navigateur
- * (voir compressImageFile, ui.js) avant l'upload — même correction
- * que handleAuditPhoto (audits.js), pour les mêmes raisons.
+ * ⚠️ CORRIGÉ : auparavant, un échec d'envoi (ou une interruption en
+ * cours de route — voir ci-dessous) perdait la photo PUREMENT ET
+ * SIMPLEMENT (juste une alerte, rien de récupérable), contrairement à
+ * handleAuditPhoto (audits.js, FSQS) qui la mettait déjà en file
+ * d'attente durable. La photo est maintenant mise en file (IndexedDB,
+ * voir queuePendingPhoto storage.js) AVANT même la tentative d'envoi,
+ * pas seulement après un échec constaté : sur tablette, prendre une
+ * photo bascule souvent vers l'appli caméra native puis revient au
+ * navigateur ; si l'onglet est ensuite déchargé par l'OS (mémoire
+ * limitée) PENDANT l'envoi (compression ou upload encore en cours),
+ * l'exécution s'interrompt sans qu'aucune erreur ne soit levée — la
+ * photo n'atteignait alors ni ans.photos ni aucune file d'attente, et
+ * disparaissait silencieusement.
  * @param {string} pid - Référence vers GrillePoint.id.
  * @param {HTMLInputElement} input - Élément `<input type="file">` (un seul fichier).
  * @returns {Promise<void>}
@@ -381,25 +401,115 @@ async function handleQaPhoto(pid, input) {
   /** @type {QaAnswer | undefined} */
   const ans = qaAnswers[pid]; if (!ans) return;
   if (!ans.photos) ans.photos = [];
-  if (ans.photos.length >= 2) { alert('2 photos maximum par point de contrôle.'); input.value = ''; return; }
 
-  /** @type {File | Blob} */
-  const compressed = await compressImageFile(file);
-  /** @type {string} */
-  const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
-  /** @type {string} */
-  const path = `audits/qualimetre/qa-${pid}-${uid()}.${ext}`;
-  /** @type {string | null} */
-  const url = await uploadPhotoWithRetry(compressed, path);
-  if (!url) { alert('Erreur upload photo. Vérifiez votre connexion.'); input.value = ''; return; }
-  ans.photos.push(url);
+  /** @type {number} */
+  const pendingCount = (_pendingQaPhotoPreviews[pid] || []).length;
+  if (ans.photos.length + pendingCount >= 2) {
+    alert('2 photos maximum par point de contrôle.');
+    input.value = '';
+    return;
+  }
+
+  try {
+    /** @type {File | Blob} */
+    const compressed = await compressImageFile(file);
+    /** @type {string} */
+    const ext = compressed.type === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'jpg');
+    /** @type {string} */
+    const path = `audits/qualimetre/qa-${pid}-${uid()}.${ext}`;
+
+    /** @type {string} */
+    const queueId = await _stagePendingQaPhoto(pid, compressed, path);
+    /** @type {string | null} */
+    const url = await uploadPhotoWithRetry(compressed, path);
+
+    if (url) {
+      await removePendingPhoto(queueId);
+      ans.photos.push(url);
+    } else {
+      _showPendingQaPhotoPreview(pid, queueId, compressed);
+    }
+  } catch (err) {
+    console.error('Erreur inattendue lors de l\'upload d\'une photo Qualimètre :', err);
+    alert('Une erreur inattendue est survenue pour cette photo — réessayez de l\'ajouter.');
+  }
+
   input.value = '';
   _renderQaPhotos(pid);
 }
 
 /**
+ * Met une photo Qualimètre en file d'attente durable (IndexedDB) —
+ * appelée AVANT même la tentative d'envoi (voir handleQaPhoto),
+ * silencieuse : ne touche à aucun affichage. Garantit d'abord qu'un
+ * brouillon existe (voir _snapshotCurrentQaAuditAsDraft) pour que le
+ * réconciliateur (enregistré en bas de ce fichier) sache où replacer
+ * la vraie URL une fois l'upload réussi.
+ * @param {string} pid - Référence vers GrillePoint.id.
+ * @param {Blob} blob - Photo déjà compressée.
+ * @param {string} storagePath - Chemin de destination dans le bucket 'photos'.
+ * @returns {Promise<string>} L'identifiant de la file (PendingPhotoEntry.id).
+ */
+async function _stagePendingQaPhoto(pid, blob, storagePath) {
+  _snapshotCurrentQaAuditAsDraft();
+  return queuePendingPhoto({
+    context:  'audit-qualimetre',
+    pointId:  pid,
+    draftId:  _currentQaDraftId,
+    blob,
+    storagePath,
+  });
+}
+
+/**
+ * Affiche l'aperçu local d'une photo Qualimètre restée en file
+ * d'attente après un échec d'envoi réellement constaté — la photo
+ * elle-même est déjà en sécurité depuis _stagePendingQaPhoto.
+ * @param {string} pid - Référence vers GrillePoint.id.
+ * @param {string} queueId - Référence vers PendingPhotoEntry.id (storage.js).
+ * @param {Blob} blob - Photo déjà compressée, pour l'aperçu local.
+ * @returns {void}
+ */
+function _showPendingQaPhotoPreview(pid, queueId, blob) {
+  /** @type {string} */
+  const localUrl = URL.createObjectURL(blob);
+  if (!_pendingQaPhotoPreviews[pid]) _pendingQaPhotoPreviews[pid] = [];
+  _pendingQaPhotoPreviews[pid].push({ queueId, localUrl });
+  showToast('Connexion instable — photo mise en attente, envoi automatique dès que possible', 'warning');
+}
+
+/**
+ * Annule l'envoi d'une photo Qualimètre encore en attente (avant
+ * qu'elle n'ait réussi à s'envoyer) — la retire de la file d'attente
+ * hors-ligne (IndexedDB) et de l'aperçu local, après confirmation
+ * puisque la photo est alors définitivement perdue. Même principe que
+ * removePendingAuditPhotoPreview (audits.js, FSQS).
+ * @param {string} pid - Référence vers GrillePoint.id.
+ * @param {string} queueId - Référence vers PendingPhotoEntry.id (storage.js).
+ * @returns {Promise<void>}
+ */
+async function removePendingQaPhotoPreview(pid, queueId) {
+  if (!confirm("Annuler l'envoi de cette photo ? Elle sera définitivement perdue.")) return;
+
+  /** @type {{queueId: string, localUrl: string}[]} */
+  const pending = _pendingQaPhotoPreviews[pid] || [];
+  /** @type {number} */
+  const idx = pending.findIndex(p => p.queueId === queueId);
+  if (idx >= 0) {
+    URL.revokeObjectURL(pending[idx].localUrl);
+    pending.splice(idx, 1);
+  }
+
+  await removePendingPhoto(queueId);
+  _renderQaPhotos(pid);
+}
+
+/**
  * Rafraîchit l'aperçu des miniatures de photos d'un point de
- * contrôle, avec un bouton de suppression par photo.
+ * contrôle : photos déjà envoyées (bouton de suppression) puis
+ * photos encore en file d'attente (bordure pointillée, bouton
+ * d'annulation) — même principe que _buildAuditPhotoThumbsHtml
+ * (audits.js, FSQS).
  * @param {string} pid - Référence vers GrillePoint.id.
  * @returns {void}
  */
@@ -407,10 +517,22 @@ function _renderQaPhotos(pid) {
   const container = el('qa-photos-' + pid); if (!container) return;
   /** @type {string[]} */
   const photos = qaAnswers[pid]?.photos || [];
-  container.innerHTML = photos.map((url, i) => `
+  /** @type {{queueId: string, localUrl: string}[]} */
+  const pending = _pendingQaPhotoPreviews[pid] || [];
+
+  container.innerHTML =
+    photos.map((url, i) => `
     <div style="display:inline-block;position:relative;margin-right:8px;margin-bottom:4px">
       <img src="${url}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:2px solid #ddd6fe;cursor:pointer" onclick="openPhotoViewer('${url}')">
       <button onclick="removeQaPhoto('${pid}',${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--danger);color:#fff;border:none;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center"><i class="ti ti-x" style="font-size:10px"></i></button>
+    </div>`).join('') +
+    pending.map(p => `
+    <div style="display:inline-block;position:relative;margin-right:8px;margin-bottom:4px" title="En attente d'envoi (connexion instable) — envoi automatique dès que possible">
+      <img src="${p.localUrl}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:2px dashed var(--warning-mid, #d97706);opacity:.7">
+      <span style="position:absolute;bottom:-4px;left:-4px;background:var(--warning-light);color:#92400e;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:9px;border:2px solid #fff">
+        <i class="ti ti-clock"></i>
+      </span>
+      <button onclick="removePendingQaPhotoPreview('${pid}','${p.queueId}')" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--danger);color:#fff;border:none;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center"><i class="ti ti-x" style="font-size:10px"></i></button>
     </div>`).join('');
 }
 
@@ -659,3 +781,48 @@ function resumeQualDraft(id) {
   qaStep = 2;
   openModal('m-qual-audit');
 }
+
+/**
+ * Réconciliateur appelé par flushPendingPhotoQueue (storage.js) après
+ * l'envoi réussi d'une photo Qualimètre auparavant mise en attente
+ * (voir _stagePendingQaPhoto). Deux cas possibles, mêmes principes
+ * que le réconciliateur FSQS ('audit-fsqs', audits.js) :
+ * 1) L'audit Qualimètre est toujours ouvert dans cette session
+ *    (qaAnswers contient encore ce point) : la vraie URL est ajoutée
+ *    directement à la réponse en mémoire, aperçu local retiré/libéré.
+ * 2) L'audit n'est plus ouvert (page rechargée, audit mis en pause
+ *    puis fermé...) : la vraie URL est injectée directement dans le
+ *    brouillon persisté (DB.drafts), identifié par entry.draftId.
+ * @param {PendingPhotoEntry} entry
+ * @param {string} url - URL publique réelle (Supabase Storage) obtenue après envoi réussi.
+ * @returns {void}
+ */
+registerPhotoQueueReconciler('audit-qualimetre', (entry, url) => {
+  /** @type {{queueId: string, localUrl: string}[]} */
+  const pending = _pendingQaPhotoPreviews[entry.pointId] || [];
+  /** @type {number} */
+  const idx = pending.findIndex(p => p.queueId === entry.id);
+  if (idx >= 0) {
+    URL.revokeObjectURL(pending[idx].localUrl);
+    pending.splice(idx, 1);
+  }
+
+  if (qaAnswers[entry.pointId]) {
+    // Audit toujours ouvert dans cette session.
+    if (!qaAnswers[entry.pointId].photos) qaAnswers[entry.pointId].photos = [];
+    qaAnswers[entry.pointId].photos.push(url);
+    _renderQaPhotos(entry.pointId);
+  } else if (entry.draftId) {
+    // Audit non ouvert : on injecte directement dans le brouillon persisté.
+    /** @type {Draft | undefined} */
+    const draft = DB.drafts.find(d => d.id === entry.draftId);
+    if (draft && draft.answers && draft.answers[entry.pointId]) {
+      if (!draft.answers[entry.pointId].photos) draft.answers[entry.pointId].photos = [];
+      draft.answers[entry.pointId].photos.push(url);
+      save(['drafts']);
+      sbUpsert('drafts', [draft]);
+    }
+  }
+
+  showToast('Photo Qualimètre en attente envoyée avec succès ✓', 'success');
+});
