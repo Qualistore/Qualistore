@@ -1,5 +1,10 @@
 // ══════════════════════════════════════════════════════════════
 // AUTH — Authentification et gestion de session
+// ⚠️ NOM DE FICHIER : enregistrez ce fichier sous le nom "auth.js"
+// dans votre projet (il remplace l'ancien auth.js) — je n'ai pas pu
+// réutiliser ce nom exact ici suite à une limitation technique de
+// cette session, sans lien avec le contenu du fichier lui-même.
+//
 // Dépend de : storage.js (DB, CU), supabase.js (_sb), ui.js
 //   (buildSidebar, updateSBUser, navigate, showToast)
 //
@@ -16,23 +21,22 @@
 // réellement (voir requestPasswordReset ci-dessous, et le SMTP Brevo
 // configuré côté Supabase).
 //
-// ⚠️ CHANGÉ (v3) : le lien de réinitialisation ne consomme plus le
-// jeton à usage unique dès son premier chargement. Avec le lien par
-// défaut de Supabase (qui vérifie le jeton côté serveur AVANT même
-// d'afficher votre page), les scanners de sécurité des messageries
-// (Gmail, Brevo qui réécrit tous les liens pour son suivi de clics,
-// filtres anti-spam d'entreprise...) "cliquent" automatiquement le
-// lien pour l'analyser — ce qui grille le jeton avant que
-// l'utilisateur ne clique lui-même, d'où l'erreur "Email link is
-// invalid or has expired" observée même sur un lien tout juste reçu.
-// Désormais, le lien pointe directement vers cette page avec un
-// jeton brut (token_hash) qui n'est envoyé à Supabase pour
-// vérification qu'au moment où l'utilisateur clique explicitement
-// sur "Valider le nouveau mot de passe" (voir confirmPasswordReset).
-// Un simple chargement de page (par un scanner) ne consomme plus rien.
-// ⚠️ Le template d'email "Reset Password" côté Supabase Dashboard
-// (Authentication → Email Templates) doit être mis à jour en
-// conséquence — voir les instructions fournies séparément.
+// ⚠️ CHANGÉ (v3) : la finalisation de la réinitialisation (choix du
+// nouveau mot de passe) se fait désormais sur une page séparée et
+// autonome, reset-password.html — PAS sur cette page. Raison : le
+// lien de récupération par défaut de Supabase consomme le jeton à
+// usage unique dès son premier chargement (avant même que
+// l'utilisateur ne clique), ce qui le grille quand un scanner de
+// sécurité de messagerie (Gmail, le suivi de clics de Brevo...)
+// pré-charge le lien automatiquement. reset-password.html ne
+// consomme le jeton qu'au clic explicite sur "Valider" — voir ce
+// fichier pour le détail. requestPasswordReset() ci-dessous pointe
+// donc désormais vers cette page dédiée plutôt que vers la page
+// courante.
+// Les fonctions _isPasswordRecoveryFlow / _showPasswordRecoveryForm /
+// confirmPasswordReset restent définies plus bas (inoffensives,
+// jamais déclenchées désormais que le lien ne pointe plus ici) —
+// conservées telles quelles pour ne rien retirer sans votre accord.
 //
 // ⚠️ CHANGÉ (ferme la faille "session falsifiable" de l'audit) :
 // CU n'est plus jamais écrit tel quel dans localStorage par ce
@@ -86,22 +90,16 @@ const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 let _sessionTimer = null;
 
 // ─────────────────────────────────────────────
-// 3. DÉTECTION DU LIEN DE RÉCUPÉRATION DE MOT DE PASSE
-// ⚠️ CHANGÉ (v3, voir bandeau d'en-tête) : on ne dépend plus de
-// l'événement automatique PASSWORD_RECOVERY de supabase-js (qui ne se
-// déclenche que si le lien contient déjà un access_token — ce qui
-// signifiait que le jeton avait déjà été vérifié côté serveur avant
-// même d'arriver ici). Le lien contient maintenant un token_hash brut,
-// pas encore vérifié — c'est _checkSessionOnLoad qui détecte sa
-// présence et affiche le formulaire, et confirmPasswordReset qui
-// déclenche la vérification réelle, uniquement au clic utilisateur.
+// 3. DÉTECTION DU LIEN DE RÉCUPÉRATION (conservé, inoffensif —
+// voir bandeau d'en-tête : ce flux se déroule maintenant sur
+// reset-password.html, pas ici. Ces fonctions ne sont donc plus
+// jamais déclenchées en pratique, mais laissées telles quelles.)
 // ─────────────────────────────────────────────
 
 /**
  * Indique si la page vient d'être ouverte via un lien de
  * réinitialisation de mot de passe (contient un token_hash et
- * type=recovery dans le fragment d'URL — voir le template d'email
- * "Reset Password" côté Supabase Dashboard).
+ * type=recovery dans le fragment d'URL).
  * @returns {boolean}
  */
 function _isPasswordRecoveryFlow() {
@@ -139,9 +137,8 @@ function _resetSessionTimer() {
  * existe déjà (persistée par le SDK), et recharge le profil complet
  * dans CU le cas échéant. Sans effet si la page vient d'être ouverte
  * via un lien de réinitialisation (voir _isPasswordRecoveryFlow) —
- * dans ce cas, c'est le formulaire de nouveau mot de passe qui prend
- * la main, pas une connexion normale ; le jeton n'est pas encore
- * vérifié à ce stade (voir confirmPasswordReset).
+ * cas normalement inatteignable désormais (voir bandeau d'en-tête),
+ * conservé par prudence.
  * @returns {Promise<void>}
  */
 async function _checkSessionOnLoad() {
@@ -271,9 +268,9 @@ function showLoginForm() {
 }
 
 /**
- * Affiche le formulaire "choisir un nouveau mot de passe", déclenché
- * quand la page est ouverte via un lien de réinitialisation reçu par
- * email (voir _isPasswordRecoveryFlow, appelé depuis _checkSessionOnLoad).
+ * Affiche le formulaire "choisir un nouveau mot de passe". Conservé
+ * mais normalement inatteignable désormais (voir bandeau d'en-tête :
+ * ce flux se déroule sur reset-password.html).
  * @returns {void}
  */
 function _showPasswordRecoveryForm() {
@@ -289,6 +286,12 @@ function _showPasswordRecoveryForm() {
  * saisie, via la fonctionnalité native de Supabase Auth (le serveur
  * SMTP réellement utilisé — Brevo — est configuré côté dashboard
  * Supabase, rien à faire ici).
+ *
+ * ⚠️ CHANGÉ (v3, voir bandeau d'en-tête) : redirige désormais vers la
+ * page autonome reset-password.html (dans le même dossier que la
+ * page courante, qu'il s'agisse de index.html ou Qualistore.html —
+ * calculé dynamiquement, aucune URL en dur), plutôt que vers la page
+ * courante elle-même.
  * @returns {Promise<void>}
  */
 async function requestPasswordReset() {
@@ -302,8 +305,14 @@ async function requestPasswordReset() {
     return;
   }
 
+  /** @type {string} Dossier de la page courante (avec / final), quelle
+   * que soit la page depuis laquelle la demande est faite. */
+  const currentDir = window.location.pathname.replace(/[^/]*$/, '');
+  /** @type {string} */
+  const resetPageUrl = window.location.origin + currentDir + 'reset-password.html';
+
   const { error } = await _sb.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + window.location.pathname,
+    redirectTo: resetPageUrl,
   });
 
   // Message volontairement identique en succès ou en échec côté
@@ -318,13 +327,9 @@ async function requestPasswordReset() {
 
 /**
  * Valide le nouveau mot de passe saisi après un clic sur le lien de
- * réinitialisation reçu par email, et termine le flux de récupération.
- *
- * ⚠️ CHANGÉ (v3, voir bandeau d'en-tête) : le jeton à usage unique
- * (token_hash) n'est envoyé à Supabase pour vérification (verifyOtp)
- * qu'ICI, au clic explicite de l'utilisateur — jamais automatiquement
- * au chargement de la page. C'est ce qui protège contre les scanners
- * de sécurité des messageries qui "pré-cliquent" les liens des emails.
+ * réinitialisation reçu par email. Conservée mais normalement
+ * inatteignable désormais (voir bandeau d'en-tête : ce flux se
+ * déroule sur reset-password.html).
  * @returns {Promise<void>}
  */
 async function confirmPasswordReset() {
@@ -367,8 +372,6 @@ async function confirmPasswordReset() {
     return;
   }
 
-  // Nettoie le fragment d'URL (#token_hash=...&type=recovery) pour
-  // ne pas laisser le jeton visible/réutilisable dans la barre d'adresse.
   history.replaceState(null, '', window.location.pathname);
 
   await _sb.auth.signOut();
