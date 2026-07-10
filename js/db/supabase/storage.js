@@ -276,14 +276,6 @@ function _setPendingSync(value) {
   } catch (_) { /* localStorage indisponible : tant pis, le suivi reste en mémoire seulement */ }
 }
 
-// Restaurer l'utilisateur connecté depuis le cache localStorage au chargement
-try {
-  /** @type {string | null} */
-  const cachedUser = localStorage.getItem('fsqs_cu');
-  if (cachedUser) CU = JSON.parse(cachedUser);
-} catch (_) {
-  // Cache corrompu — l'utilisateur devra se reconnecter
-}
 
 // ─────────────────────────────────────────────
 // 3. STRUCTURE PAR DÉFAUT DE LA BASE

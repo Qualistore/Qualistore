@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.warn('loadDB error:', error);
   }
 
-  _checkSessionOnLoad();
+  await _checkSessionOnLoad();
 
   if (CU) {
     el('login-screen').style.display = 'none';
