@@ -1,21 +1,37 @@
 // ══════════════════════════════════════════════════════════════
-// SUPABASE — Client HTTP bas niveau
-// Responsabilité unique : encapsuler les appels fetch vers l'API Supabase.
+// SUPABASE — Client officiel (supabase-js)
+// Responsabilité inchangée : encapsuler les échanges avec Supabase.
 // Aucune logique métier ici.
+//
+// ⚠️ CHANGÉ (migration Supabase Auth, étape 2/8 — voir le plan) :
+// remplace les appels fetch() manuels par le client officiel
+// @supabase/supabase-js (chargé via CDN, voir index.html/
+// Qualistore.html — balise <script> à ajouter AVANT ce fichier).
+//
+// Comportement volontairement identique à l'ancienne version pour
+// tous les appelants (storage.js, magasins.js, rayons.js, etc.) :
+// mêmes noms de fonctions, mêmes signatures, mêmes valeurs de
+// retour. Rien d'autre à changer ailleurs pour cette étape.
+//
+// Ce qui change réellement, invisible pour l'instant : le client
+// sait désormais porter un jeton de session utilisateur (JWT) à la
+// place de la clé anon fixe, dès qu'un login réel existera (voir
+// auth.js, étape 3 du plan — pas encore fait). Tant que ce login
+// n'existe pas, aucune session n'est active : le client utilise la
+// clé anon exactement comme avant, comportement inchangé.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
 // 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
-//    ⚠️ Déduits de l'usage dans ce fichier uniquement.
+//    Conservés à l'identique de l'ancienne version.
 // ─────────────────────────────────────────────
 
 /**
- * Ligne brute échangée avec l'API REST Supabase. La forme exacte
- * varie selon la table interrogée (ex : { id, login, pwd, ... } pour
- * 'users', { id, rayon, data } pour 'grille_custom'). Représentée
- * comme un dictionnaire ouvert car ce fichier n'a aucune connaissance
- * du schéma métier — TODO TYPE : à affiner table par table si besoin
- * (voir storage.js pour les typedefs métier qui consomment ces lignes).
+ * Ligne brute échangée avec Supabase. La forme exacte varie selon
+ * la table interrogée (ex : { id, login, pwd, ... } pour 'users',
+ * { id, rayon, data } pour 'grille_custom'). Représentée comme un
+ * dictionnaire ouvert car ce fichier n'a aucune connaissance du
+ * schéma métier.
  * @typedef {Object<string, *>} SupabaseRow
  */
 
@@ -30,46 +46,28 @@ const SUPABASE_URL = 'https://jztacnkvmuhouhhapjen.supabase.co';
 /** @type {string} */
 const SUPABASE_ANON_KEY = 'sb_publishable_HuVt2NSLrCfUvKcgXI7Byg_Jkq96fB9';
 
-// ─────────────────────────────────────────────
-// 2. UTILITAIRE INTERNE
-// ─────────────────────────────────────────────
-
 /**
- * Effectue une requête authentifiée vers l'API REST Supabase.
- * Retourne le JSON parsé, ou null en cas d'erreur réseau / HTTP.
- * @param {string} path - Chemin relatif à SUPABASE_URL (ex : '/rest/v1/users?select=*').
- * @param {RequestInit} [options] - Options fetch standard (method, body, headers...).
- *   Les headers fournis ici complètent/écrasent les headers par défaut
- *   (apikey, Authorization, Content-Type, Prefer).
- * @returns {Promise<*|null>} Le JSON parsé (objet, tableau, ou []
- *   si le corps de réponse est vide), ou null en cas d'erreur HTTP.
+ * Client Supabase officiel, partagé par tout le fichier. `window.supabase`
+ * est fourni par le script CDN (voir index.html/Qualistore.html) — s'il
+ * est absent, une erreur claire est levée immédiatement plutôt que de
+ * planter plus tard sur un message obscur.
+ * @type {Object}
  */
-async function _supabaseFetch(path, options = {}) {
-  const response = await fetch(SUPABASE_URL + path, {
-    ...options,
-    headers: {
-      'apikey':        SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type':  'application/json',
-      'Prefer':        'return=representation',
-      ...(options.headers || {}),
-    },
-  });
-
-  if (!response.ok) {
-    /** @type {string} */
-    const errorText = await response.text();
-    console.error(`Supabase error [${response.status}] ${path}:`, errorText);
-    return null;
-  }
-
-  /** @type {string} */
-  const text = await response.text();
-  return text ? JSON.parse(text) : [];
+if (!window.supabase) {
+  throw new Error(
+    'Le script supabase-js (CDN) doit être chargé AVANT supabase.js — ' +
+    'vérifiez la balise <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"> dans le HTML.'
+  );
 }
+const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession:    true,  // garde la session au rechargement de page (remplace à terme LS_KEY_CURRENT_USER, auth.js)
+    autoRefreshToken:  true,  // renouvelle le jeton automatiquement avant expiration
+  },
+});
 
 // ─────────────────────────────────────────────
-// 3. API PUBLIQUE
+// 2. API PUBLIQUE — signatures inchangées
 // ─────────────────────────────────────────────
 
 /**
@@ -78,7 +76,12 @@ async function _supabaseFetch(path, options = {}) {
  * @returns {Promise<SupabaseRow[]>}
  */
 async function sbSelect(table) {
-  return await _supabaseFetch(`/rest/v1/${table}?select=*`) || [];
+  const { data, error } = await _sb.from(table).select('*');
+  if (error) {
+    console.error(`Supabase error [select] ${table}:`, error.message);
+    return [];
+  }
+  return data || [];
 }
 
 /**
@@ -89,12 +92,13 @@ async function sbSelect(table) {
  *   ligne devrait porter un champ `id` pour bénéficier de la
  *   déduplication ; les lignes sans `id` sont conservées telles quelles.
  * @returns {Promise<SupabaseRow[]|null|undefined>} Le résultat de
- *   _supabaseFetch, ou undefined si `rows` est vide/absent.
+ *   l'upsert, ou undefined si `rows` est vide/absent.
  */
 async function sbUpsert(table, rows) {
   if (!rows || !rows.length) return;
 
-  // Déduplique par id (garde le dernier en cas de doublon)
+  // Déduplique par id (garde le dernier en cas de doublon) — logique
+  // inchangée par rapport à l'ancienne version.
   /** @type {Map<string, SupabaseRow>} */
   const deduplicatedById = new Map();
   rows.forEach(row => { if (row.id) deduplicatedById.set(row.id, row); });
@@ -112,67 +116,51 @@ async function sbUpsert(table, rows) {
     return normalized;
   });
 
-  return await _supabaseFetch(`/rest/v1/${table}`, {
-    method:  'POST',
-    headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
-    body:    JSON.stringify(normalizedRows),
-  });
+  const { data, error } = await _sb.from(table).upsert(normalizedRows).select();
+  if (error) {
+    console.error(`Supabase error [upsert] ${table}:`, error.message);
+    return null;
+  }
+  return data;
 }
 
 /**
  * Supprime toutes les lignes d'une table où `column = value`.
  * @param {string} table - Nom de la table Supabase.
  * @param {string} column - Nom de la colonne sur laquelle filtrer.
- * @param {string|number} value - Valeur de filtre (sera encodée pour l'URL).
+ * @param {string|number} value - Valeur de filtre.
  * @returns {Promise<*|null>}
  */
 async function sbDeleteWhere(table, column, value) {
-  return await _supabaseFetch(
-    `/rest/v1/${table}?${column}=eq.${encodeURIComponent(value)}`,
-    { method: 'DELETE' }
-  );
+  const { data, error } = await _sb.from(table).delete().eq(column, value).select();
+  if (error) {
+    console.error(`Supabase error [delete] ${table}:`, error.message);
+    return null;
+  }
+  return data;
 }
 
 /**
  * Upload une photo dans le bucket Supabase Storage.
  * Retourne l'URL publique de la photo, ou null en cas d'échec.
- *
- * ⚠️ CORRIGÉ : le fetch est désormais entouré d'un try/catch — une
- * connexion instable (coupure momentanée, perte de paquets) fait
- * lever une exception AVANT même de recevoir une réponse HTTP
- * (`TypeError: Failed to fetch`), distincte d'une réponse HTTP en
- * erreur (`!response.ok`, déjà gérée). Sans ce correctif, cette
- * exception remontait telle quelle jusqu'à l'appelant (handleAuditPhoto,
- * audits.js ; handleQaPhoto, audit-qualimetre.js ; handleAlertPhotos,
- * alertes.js), qui n'avait pas non plus de try/catch autour de la
- * boucle d'upload de plusieurs photos — une seule photo en échec
- * réseau interrompait alors la boucle entière, sautant même
- * l'affichage de l'alerte d'échec et le rafraîchissement de l'aperçu.
  * @param {File|Blob} file - Fichier image à uploader (doit exposer `.type`).
  * @param {string} storagePath - Chemin de destination dans le bucket 'photos'.
  * @returns {Promise<string|null>}
  */
 async function sbUploadPhoto(file, storagePath) {
   try {
-    /** @type {Response} */
-    const response = await fetch(`${SUPABASE_URL}/storage/v1/object/photos/${storagePath}`, {
-      method:  'POST',
-      headers: {
-        'apikey':        SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type':  file.type,
-        'x-upsert':      'true',
-      },
-      body: file,
+    const { error } = await _sb.storage.from('photos').upload(storagePath, file, {
+      upsert:      true,
+      contentType: file.type,
     });
-
-    if (!response.ok) {
-      console.error('Upload photo échoué (HTTP) pour :', storagePath);
+    if (error) {
+      console.error('Upload photo échoué (HTTP) pour :', storagePath, error.message);
       return null;
     }
-
-    return `${SUPABASE_URL}/storage/v1/object/public/photos/${storagePath}`;
+    const { data } = _sb.storage.from('photos').getPublicUrl(storagePath);
+    return data.publicUrl;
   } catch (err) {
+    // Coupure réseau momentanée — même garde-fou que l'ancienne version.
     console.error('Upload photo échoué (réseau) pour :', storagePath, err);
     return null;
   }
@@ -181,15 +169,9 @@ async function sbUploadPhoto(file, storagePath) {
 /**
  * Supprime une photo du bucket Supabase Storage.
  * @param {string} storagePath - Chemin de la photo dans le bucket 'photos'.
- * @returns {Promise<boolean>} true si la suppression a réussi (HTTP ok).
+ * @returns {Promise<boolean>} true si la suppression a réussi.
  */
 async function sbDeletePhoto(storagePath) {
-  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/photos/${storagePath}`, {
-    method:  'DELETE',
-    headers: {
-      'apikey':        SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  });
-  return response.ok;
+  const { error } = await _sb.storage.from('photos').remove([storagePath]);
+  return !error;
 }
