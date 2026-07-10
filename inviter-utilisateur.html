@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QualiStore — Inviter un utilisateur</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!--
+  PAGE AUTONOME — outil admin pour envoyer une invitation par email.
+  ⚠️ NOUVEAU FICHIER (à placer à la racine du repo, au même niveau
+  que index.html / Qualistore.html).
+
+  ⚠️ PAS ENCORE INTÉGRÉE à l'écran "Utilisateurs" de l'application
+  (users.js) — c'est un outil séparé pour l'instant. Les utilisateurs
+  invités via cette page n'apparaîtront pas dans le tableau actuel de
+  l'écran Utilisateurs (qui lit encore l'ancienne table `users`) —
+  seulement dans Supabase (Authentication → Users, et la table
+  `profiles`) jusqu'à ce que users.js soit migré vers `profiles`
+  (étape de nettoyage prévue plus tard dans le plan).
+
+  Réutilise la session déjà ouverte dans le navigateur (Qualistore.html
+  et cette page partagent le même stockage de session Supabase,
+  puisqu'elles sont sur le même site) — pas de formulaire de connexion
+  ici. Si personne n'est connecté, ou que la personne connectée n'est
+  pas admin, l'accès est refusé.
+
+  ⚠️ Ce contrôle côté page n'est qu'un confort d'affichage — la
+  vérification qui compte réellement se fait côté serveur, dans la
+  Edge Function invite-user (elle revérifie systématiquement que
+  l'appelant est bien admin avant de faire quoi que ce soit).
+-->
+<div class="login-wrap" id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">
+      <p style="color:var(--text2);font-size:13px;margin-top:4px">Inviter un utilisateur</p>
+    </div>
+
+    <div id="gate-checking">
+      <p class="tsm tm" style="text-align:center">Vérification…</p>
+    </div>
+
+    <div id="gate-denied" style="display:none;text-align:center">
+      <p class="tsm tm" style="margin-bottom:14px">Réservé aux administrateurs connectés.</p>
+      <a class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" href="./Qualistore.html">
+        <i class="ti ti-login"></i> Se connecter
+      </a>
+    </div>
+
+    <div id="invite-form-wrap" style="display:none">
+      <div class="login-err" id="invite-msg" style="display:none"></div>
+
+      <p class="tsm tm" style="margin-bottom:14px">Envoie une invitation par email. La personne choisira elle-même son nom et son mot de passe ; vous lui attribuerez son rôle et ses permissions une fois son compte activé (écran Utilisateurs).</p>
+
+      <div class="form-group">
+        <label class="form-label">Email à inviter</label>
+        <input class="form-control" type="email" id="inv-email" placeholder="collegue@exemple.fr" autocomplete="off" onkeydown="if(event.key==='Enter')sendInvite()">
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="sendInvite()">
+        <i class="ti ti-mail-forward"></i> Envoyer l'invitation
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="js/supabase.js"></script>
+<script>
+/**
+ * Vérifie au chargement que la personne est connectée ET admin
+ * (voir profiles.role) avant d'afficher le formulaire d'invitation.
+ * @returns {Promise<void>}
+ */
+(async function checkAccess() {
+  var checking = document.getElementById('gate-checking');
+  var denied   = document.getElementById('gate-denied');
+  var formWrap = document.getElementById('invite-form-wrap');
+
+  var sessionResult = await _sb.auth.getSession();
+  var session = sessionResult.data.session;
+  if (!session) {
+    checking.style.display = 'none';
+    denied.style.display = 'block';
+    return;
+  }
+
+  var profileResult = await _sb.from('profiles').select('role').eq('id', session.user.id).single();
+  if (profileResult.error || !profileResult.data || profileResult.data.role !== 'admin') {
+    checking.style.display = 'none';
+    denied.style.display = 'block';
+    return;
+  }
+
+  checking.style.display = 'none';
+  formWrap.style.display = '';
+})();
+
+/**
+ * Envoie une invitation à l'email saisi, via la Edge Function
+ * invite-user (qui revérifie elle-même les droits admin côté
+ * serveur avant d'agir).
+ * @returns {Promise<void>}
+ */
+async function sendInvite() {
+  var emailInput = document.getElementById('inv-email');
+  var email = emailInput.value.trim().toLowerCase();
+  var msg = document.getElementById('invite-msg');
+
+  if (!email || !email.includes('@')) {
+    msg.textContent = 'Merci de saisir une adresse email valide.';
+    msg.className = 'login-err show';
+    return;
+  }
+
+  var currentDir = window.location.pathname.replace(/[^/]*$/, '');
+  var redirectTo = window.location.origin + currentDir + 'activation-compte.html';
+
+  var result = await _sb.functions.invoke('invite-user', {
+    body: { email: email, redirectTo: redirectTo },
+  });
+
+  var errorMessage = (result.data && result.data.error) || (result.error && result.error.message);
+  if (errorMessage) {
+    msg.textContent = 'Erreur : ' + errorMessage;
+    msg.className = 'login-err show';
+    return;
+  }
+
+  msg.textContent = 'Invitation envoyée à ' + email + '.';
+  msg.className = 'login-ok show';
+  emailInput.value = '';
+}
+</script>
+</body>
+</html>

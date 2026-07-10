@@ -345,9 +345,7 @@ const _deleteHandlers = {
   },
 
   user: (id) => {
-    DB.users = DB.users.filter(u => u.id !== id);
-    save(['users']);
-    sbDeleteWhere('users', 'id', id);
+    sbDeleteWhere('profiles', 'id', id);
     renderUsers();
   },
 

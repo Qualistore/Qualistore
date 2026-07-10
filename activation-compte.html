@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QualiStore — Création de compte</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!--
+  PAGE AUTONOME — activation d'un compte invité par un administrateur.
+  ⚠️ NOUVEAU FICHIER (à placer à la racine du repo, au même niveau
+  que index.html / Qualistore.html / reset-password.html).
+  N'utilise QUE js/supabase.js — aucune dépendance vers auth.js /
+  storage.js / ui.js / init.js, pour rester isolée du reste de
+  l'application (mêmes raisons que reset-password.html).
+
+  ⚠️ Le jeton (token_hash, type=invite) n'est envoyé à Supabase pour
+  vérification qu'au clic sur "Créer mon compte" — jamais au simple
+  chargement de page — pour ne pas se faire griller le jeton par les
+  scanners de sécurité des messageries (voir reset-password.html
+  pour l'explication complète du même problème).
+-->
+<div class="login-wrap" id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">
+      <p style="color:var(--text2);font-size:13px;margin-top:4px">Bienvenue — créez votre compte</p>
+    </div>
+
+    <div class="login-err" id="activation-msg" style="display:none"></div>
+
+    <div id="activation-form">
+      <p class="tsm tm" style="margin-bottom:14px">Vous avez été invité(e) à rejoindre QualiStore. Complétez vos informations pour créer votre compte.</p>
+
+      <div class="form-group">
+        <label class="form-label">Nom Prénom</label>
+        <input class="form-control" type="text" id="a-nom" placeholder="Jean Dupont" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmez votre adresse email</label>
+        <input class="form-control" type="email" id="a-email" placeholder="vous@exemple.fr" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="a-pass" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="_togglePass('a-pass',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <input class="form-control" type="password" id="a-pass-confirm" placeholder="••••••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')createAccount()">
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="createAccount()">
+        <i class="ti ti-user-check"></i> Créer mon compte
+      </button>
+    </div>
+
+    <div id="activation-success" style="display:none;text-align:center">
+      <p class="tsm tm" style="margin-bottom:14px">Compte créé avec succès. Vous pouvez dès maintenant vous connecter.</p>
+      <a class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" href="./Qualistore.html">
+        <i class="ti ti-login"></i> Se connecter
+      </a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="js/supabase.js"></script>
+<script>
+// ─────────────────────────────────────────────
+// Lecture du jeton déposé dans le fragment d'URL par le lien reçu
+// par email (voir la Edge Function invite-user, et le template
+// "Invite user" côté Supabase Dashboard). Stocké en mémoire
+// uniquement — pas envoyé à Supabase avant le clic sur "Créer mon
+// compte" (voir confirmActivation).
+// ─────────────────────────────────────────────
+(function () {
+  var params = new URLSearchParams(window.location.hash.slice(1));
+  var tokenHash = params.get('token_hash');
+
+  if (!tokenHash || params.get('type') !== 'invite') {
+    document.getElementById('activation-form').style.display = 'none';
+    var msg = document.getElementById('activation-msg');
+    msg.textContent = 'Lien invalide ou incomplet — contactez votre administrateur pour une nouvelle invitation.';
+    msg.style.display = 'flex';
+  }
+
+  window._inviteTokenHash = tokenHash;
+})();
+
+/**
+ * Bascule la visibilité d'un champ mot de passe.
+ * @param {string} inputId
+ * @param {HTMLElement} toggleButton
+ * @returns {void}
+ */
+function _togglePass(inputId, toggleButton) {
+  var input = document.getElementById(inputId);
+  var isHidden = input.type === 'password';
+  input.type = isHidden ? 'text' : 'password';
+  toggleButton.innerHTML = isHidden ? '<i class="ti ti-eye-off"></i>' : '<i class="ti ti-eye"></i>';
+}
+
+/**
+ * Valide le formulaire, vérifie le jeton auprès de Supabase (c'est
+ * ici, et seulement ici, qu'il est consommé), applique le mot de
+ * passe choisi et finalise le profil (nom + statut actif, via la
+ * fonction activate_own_profile — voir 02-invite-support.sql).
+ * @returns {Promise<void>}
+ */
+async function createAccount() {
+  var nom = document.getElementById('a-nom').value.trim();
+  var email = document.getElementById('a-email').value.trim().toLowerCase();
+  var password = document.getElementById('a-pass').value;
+  var confirmPassword = document.getElementById('a-pass-confirm').value;
+  var msg = document.getElementById('activation-msg');
+
+  if (!nom) {
+    msg.textContent = 'Merci de saisir votre nom.';
+    msg.className = 'login-err show';
+    return;
+  }
+  if (!email || !email.includes('@')) {
+    msg.textContent = 'Merci de saisir une adresse email valide.';
+    msg.className = 'login-err show';
+    return;
+  }
+  if (!password || password.length < 10) {
+    msg.textContent = 'Le mot de passe doit contenir au moins 10 caractères.';
+    msg.className = 'login-err show';
+    return;
+  }
+  if (password !== confirmPassword) {
+    msg.textContent = 'Les deux mots de passe ne correspondent pas.';
+    msg.className = 'login-err show';
+    return;
+  }
+  if (!window._inviteTokenHash) {
+    msg.textContent = 'Lien invalide — contactez votre administrateur pour une nouvelle invitation.';
+    msg.className = 'login-err show';
+    return;
+  }
+
+  var verifyResult = await _sb.auth.verifyOtp({ token_hash: window._inviteTokenHash, type: 'invite' });
+  if (verifyResult.error || !verifyResult.data.session) {
+    msg.textContent = 'Cette invitation a expiré ou a déjà été utilisée — contactez votre administrateur.';
+    msg.className = 'login-err show';
+    return;
+  }
+
+  // L'email réellement invité fait foi (celui vérifié par Supabase),
+  // jamais celui tapé dans le formulaire — qui ne sert qu'à ce que
+  // la personne vérifie visuellement qu'elle ne s'est pas trompée
+  // de destinataire. Avertissement non bloquant en cas d'écart.
+  var realEmail = verifyResult.data.session.user.email;
+  if (realEmail && email !== realEmail.toLowerCase()) {
+    console.warn('Email saisi différent de l\'email invité — poursuite avec l\'email invité (' + realEmail + ').');
+  }
+
+  var updateResult = await _sb.auth.updateUser({ password: password });
+  if (updateResult.error) {
+    msg.textContent = 'Erreur : ' + updateResult.error.message;
+    msg.className = 'login-err show';
+    return;
+  }
+
+  var rpcResult = await _sb.rpc('activate_own_profile', { new_nom: nom });
+  if (rpcResult.error) {
+    msg.textContent = 'Erreur lors de la finalisation du profil : ' + rpcResult.error.message;
+    msg.className = 'login-err show';
+    return;
+  }
+
+  history.replaceState(null, '', window.location.pathname);
+  await _sb.auth.signOut();
+
+  document.getElementById('activation-form').style.display = 'none';
+  msg.style.display = 'none';
+  document.getElementById('activation-success').style.display = 'block';
+}
+</script>
+</body>
+</html>

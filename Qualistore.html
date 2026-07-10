@@ -20,7 +20,7 @@
 
     <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
 
-    <!-- PANNEAU 1 -- CONNEXION NORMALE -->
+    <!-- PANNEAU 1 — CONNEXION NORMALE -->
     <div id="login-form">
       <div class="form-group">
         <label class="form-label">Email</label>
@@ -41,7 +41,7 @@
       </div>
     </div>
 
-    <!-- PANNEAU 2 -- MOT DE PASSE OUBLIE -->
+    <!-- PANNEAU 2 — MOT DE PASSE OUBLIÉ -->
     <div id="login-forgot" style="display:none">
       <p class="tsm tm" style="margin-bottom:14px">Saisissez votre email, un lien de réinitialisation vous sera envoyé s'il correspond à un compte existant.</p>
       <div class="login-err" id="login-forgot-msg" style="display:none"></div>
@@ -57,7 +57,7 @@
       </div>
     </div>
 
-    <!-- PANNEAU 3 -- NOUVEAU MOT DE PASSE -->
+    <!-- PANNEAU 3 — NOUVEAU MOT DE PASSE (arrivée depuis le lien email) -->
     <div id="login-reset" style="display:none">
       <p class="tsm tm" style="margin-bottom:14px">Choisissez votre nouveau mot de passe (10 caractères minimum).</p>
       <div class="login-err" id="login-reset-msg" style="display:none"></div>
@@ -543,19 +543,15 @@
       <div class="form-err" id="u-err"></div>
       <input type="hidden" id="u-id">
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Nom complet *</label><input class="form-control" id="u-nom" placeholder="Prénom Nom"></div>
-        <div class="form-group"><label class="form-label">Identifiant (login) *</label><input class="form-control" id="u-login" placeholder="prenom.nom" autocomplete="off"></div>
+        <div class="form-group" id="u-nom-grp"><label class="form-label">Nom complet *</label><input class="form-control" id="u-nom" placeholder="Prénom Nom"></div>
+        <div class="form-group" id="u-statut-grp"><label class="form-label">Statut</label><select class="form-control" id="u-statut"><option value="actif">Actif</option><option value="inactif">Inactif</option><option value="invitation">Invitation en attente</option></select></div>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Mot de passe *</label>
-          <div class="pw-wrap">
-            <input class="form-control" type="password" id="u-mdp" placeholder="••••••••" autocomplete="new-password">
-            <button class="pw-eye" type="button" onclick="togglePass('u-mdp',this)"><i class="ti ti-eye"></i></button>
-          </div>
-          <div class="form-hint" id="u-mdp-hint" style="display:none">Laisser vide pour ne pas modifier</div>
-        </div>
-        <div class="form-group"><label class="form-label">Statut</label><select class="form-control" id="u-statut"><option value="actif">Actif</option><option value="inactif">Inactif</option></select></div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input class="form-control" type="email" id="u-login" placeholder="prenom.nom@exemple.fr" autocomplete="off">
+      </div>
+      <div class="form-hint" id="u-invite-hint" style="display:none;margin-bottom:14px">
+        <i class="ti ti-mail"></i> Un email d'invitation sera envoyé à cette adresse — la personne choisira elle-même son nom et son mot de passe pour activer son compte.
       </div>
       <hr class="divider">
       <div class="form-group">
