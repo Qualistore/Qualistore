@@ -225,6 +225,21 @@ function resolveNcCategorie(nc) {
 }
 
 /**
+ * Met à jour le badge NC de la sidebar (nombre de NC au statut
+ * 'Ouverte') — factorisé ici pour que tout endroit qui modifie
+ * DB.ncs l'appelle de la même façon, plutôt que de recalculer le même
+ * filtre indépendamment (source d'oublis : submitAudit, audits.js, ne
+ * l'appelait pas du tout avant ce correctif — une NC créée depuis un
+ * audit ne rafraîchissait jamais ce badge).
+ * @returns {void}
+ */
+function updateNcBadge() {
+  /** @type {HTMLElement | null} */
+  const ncBadge = el('nc-bdg');
+  if (ncBadge) ncBadge.textContent = DB.ncs.filter(nc => nc.statut === 'Ouverte').length;
+}
+
+/**
  * Affiche la liste des NC actives (statut différent de 'Clôturée'),
  * filtrée par magasins visibles et par les filtres UI, puis
  * déclenche le rendu des archives.
@@ -577,8 +592,7 @@ function saveNCEdit() {
 
   if (el('page-actions')?.classList.contains('active')) renderActions();
 
-  const ncBadge = el('nc-bdg');
-  if (ncBadge) ncBadge.textContent = DB.ncs.filter(n => n.statut === 'Ouverte').length;
+  updateNcBadge();
 }
 
 // ─────────────────────────────────────────────
@@ -617,8 +631,7 @@ function reopenNC(ncId) {
   sbUpsert('ncs',     [nc]);
   if (linkedAction) sbUpsert('actions', [linkedAction]);
 
-  const ncBadge = el('nc-bdg');
-  if (ncBadge) ncBadge.textContent = DB.ncs.filter(n => n.statut === 'Ouverte').length;
+  updateNcBadge();
 
   renderNC();
 }

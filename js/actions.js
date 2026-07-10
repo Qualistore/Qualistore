@@ -368,8 +368,7 @@ function changeActStatut(actionId, newStatus) {
   save();
 
   // Mettre à jour le badge NC dans la sidebar
-  const ncBadge = el('nc-bdg');
-  if (ncBadge) ncBadge.textContent = DB.ncs.filter(nc => nc.statut === 'Ouverte').length;
+  updateNcBadge();
 
   renderActions();
 

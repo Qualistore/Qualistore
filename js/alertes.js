@@ -304,8 +304,7 @@ function saveAlert() {
     _createNcFromAlert({ storeId, storeName: store.nom || '', type, gravity, reporter, deadline, description, alertId });
     _createActionFromAlert({ storeId: storeId, storeName: store.nom || '', title, reporter, deadline, gravity, alertId });
 
-    const ncBadge = el('nc-bdg');
-    if (ncBadge) ncBadge.textContent = DB.ncs.filter(nc => nc.statut === 'Ouverte').length;
+    updateNcBadge();
   }
 
   save();

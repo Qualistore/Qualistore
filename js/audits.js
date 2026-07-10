@@ -1109,6 +1109,13 @@ async function submitAudit() {
 
   save();
 
+  // ⚠️ AJOUTÉ : le badge NC de la sidebar n'était jusqu'ici jamais
+  // rafraîchi après la création de NC depuis un audit — seules les
+  // actions passant par nc.js/actions.js/alertes.js le faisaient,
+  // chacune recalculant le même filtre indépendamment (voir
+  // updateNcBadge, nc.js, qui factorise désormais ce calcul).
+  updateNcBadge();
+
   // Supprimer le brouillon lié si applicable
   if (_currentDraftId) {
     DB.drafts = DB.drafts.filter(d => d.id !== _currentDraftId);
