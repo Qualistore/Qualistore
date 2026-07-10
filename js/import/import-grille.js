@@ -79,8 +79,8 @@
  * @typedef {Object} ImportParsedRow
  * @property {string} zoneRaw - Valeur de zone telle qu'écrite dans le document, jamais altérée (RENOMMÉ depuis rayonRaw). Utilisée par _importIntoQualimetre comme source de vérité pour la résolution de zone Qualimètre, indépendamment de `zone` (qui peut avoir été ajustée à la casse canonique pour la cible 'grille', voir _showImportPreview).
  * @property {string[]} targetRayons - Rayon(s) FSQS où cette ligne sera réellement importée (cible 'grille' uniquement) — initialisé à _importDefaultRayons (rayon(s) choisis par l'utilisateur AVANT l'import, voir le sélecteur au-dessus de la zone de dépose). Modifiable individuellement (voir _onPreviewFieldChanged) ou en masse pour les lignes sélectionnées (voir applyBulkRayonZoneAssignment). Une ligne avec targetRayons vide n'est PAS importée même si `valid` est true — voir confirmImport.
- * @property {string[]} targetStores - Magasin(s) individuels où cette ligne sera importée en plus (grille personnalisée DB.grilleCustomByStore[storeId][rayon]) — vide par défaut, rempli uniquement via assignation manuelle ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). N'est jamais initialisé depuis l'enseigne choisie avant import (voir targetEnseigne, qui gère ce cas séparément).
- * @property {string} targetEnseigne - Enseigne FSQS dont la grille COMMUNE recevra cette ligne (DB.grilleCustom[enseigne][rayon], héritée par tous les magasins de cette enseigne) — initialisé à _importDefaultEnseigne (sélecteur au-dessus de la zone de dépose). Chaîne vide = aucune grille commune ciblée pour cette ligne (elle n'est alors importée que dans les magasins listés dans targetStores, s'il y en a).
+ * @property {string[]} targetStores - Magasin(s) individuels où cette ligne sera importée en plus (grille personnalisée DB.grilleCustomByStore[storeId][rayon]) — modifiable ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). ⚠️ CHANGÉ : initialisé à [_importDefaultStore] si un magasin cible a été choisi avant import (sélecteur au-dessus de la zone de dépose, voir _onImportDefaultStoreChanged) ; vide sinon.
+ * @property {string} targetEnseigne - Enseigne FSQS dont la grille COMMUNE recevra cette ligne (DB.grilleCustom[enseigne][rayon], héritée par tous les magasins de cette enseigne) — initialisé à _importDefaultEnseigne (sélecteur au-dessus de la zone de dépose), SAUF si un magasin cible par défaut est choisi (_importDefaultStore), auquel cas la ligne cible ce magasin uniquement, pas la grille commune. Chaîne vide = aucune grille commune ciblée pour cette ligne (elle n'est alors importée que dans les magasins listés dans targetStores, s'il y en a).
  * @property {string} zone - Sous-partie du rayon (GrillePoint.zone, voir config.js) attribuée à cette ligne pour l'import FSQS — devient l'onglet dans l'audit (voir buildAuditQuestions, audits.js). Initialisé depuis `zoneRaw` (libellé détecté dans le document — colonne "Zone" ou ligne-titre de section), avec résolution à la casse canonique d'une zone déjà existante dans un des rayons cibles si trouvée. Chaîne vide acceptée ("Non classé" à l'affichage). Sans effet sur la cible 'qualimetre'.
  * @property {boolean} selected - Coché dans l'aperçu (case à gauche de chaque ligne) — détermine quelles lignes sont affectées par une assignation groupée (voir applyBulkRayonZoneAssignment), pas par l'import lui-même.
  * @property {string} cat - Thème (sous-groupe à l'intérieur de la zone, voir GrillePoint.cat, config.js) — détecté depuis la colonne "Thème"/"Catégorie" du document, conservé et importé tel quel, mais ⚠️ CHANGÉ : plus affiché comme colonne éditable dans l'aperçu (#imp-preview-tb) depuis que ce concept a été jugé redondant avec le classement rayon → zone. Reste utilisé en interne pour grouper les points par sous-section dans la grille (_buildCategorySection, grille.js) et dans l'audit (switchAuditZone, audits.js).
@@ -220,14 +220,32 @@ let _importDetection = null;
 /** @type {ImportTarget} Destination de l'import. */
 let _importTarget = 'grille';
 
-/** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue) — réglable par l'utilisateur dans la modale avant import, voir _onDefaultCritChanged. Remplace l'ancien fallback fixe 'Majeure'. */
-let _importDefaultCrit = 'Majeure';
+/** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue). ⚠️ CHANGÉ : n'est plus réglable par l'utilisateur dans la modale (le sélecteur a été retiré, remplacé par le choix du magasin cible) — toujours 'Majeure', signalé par un astérisque dans la modale (voir Qualistore.html #imp-default-crit-note). */
+const _importDefaultCrit = 'Majeure';
 
 /** @type {string[]} Rayon(s) FSQS choisis par l'utilisateur AVANT l'import (sélecteur au-dessus de la zone de dépose, voir _onImportDefaultRayonsChanged) — appliqué comme targetRayons par défaut à toutes les lignes de l'aperçu (cible 'grille' uniquement). Un rayon n'est jamais déduit du document : c'est toujours un choix explicite de l'utilisateur, modifiable ensuite ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). */
 let _importDefaultRayons = [];
 
-/** @type {string} Enseigne FSQS choisie par l'utilisateur AVANT l'import (single-select, voir _onImportDefaultEnseigneChanged), cible 'grille' uniquement. Vide = AUCUNE grille commune accessible (voir getGrille, grille.js — pas de grille commune sans enseigne) ; une ligne sans enseigne choisie est alors importée nulle part tant qu'aucun rayon cible n'a de magasin assigné individuellement. Une enseigne choisie = import vers DB.grilleCustom[enseigne][rayon], la grille commune de CETTE enseigne, héritée par tous ses magasins sans surcharge propre. */
+/** @type {string} Enseigne FSQS choisie par l'utilisateur AVANT l'import (single-select, voir _onImportDefaultEnseigneChanged), cible 'grille' uniquement. Vide = AUCUNE grille commune accessible (voir getGrille, grille.js — pas de grille commune sans enseigne) ; une ligne sans enseigne choisie est alors importée nulle part tant qu'aucun rayon cible n'a de magasin assigné individuellement. Une enseigne choisie = import vers DB.grilleCustom[enseigne][rayon], la grille commune de CETTE enseigne, héritée par tous ses magasins sans surcharge propre — SAUF si _importDefaultStore est renseigné (voir ci-dessous), auquel cas la grille commune n'est PAS ciblée par défaut. */
 let _importDefaultEnseigne = '';
+
+/**
+ * @type {string} Magasin FSQS choisi par l'utilisateur AVANT l'import
+ * (single-select #imp-default-store-sel, voir
+ * _onImportDefaultStoreChanged), cible 'grille' uniquement, filtré
+ * sur les magasins de _importDefaultEnseigne (aucune enseigne
+ * choisie = aucun magasin proposé, cohérent avec l'absence de
+ * "grille commune" sans enseigne). Vide = grille COMMUNE de
+ * _importDefaultEnseigne ciblée par défaut. Renseigné = import vers
+ * DB.grilleCustomByStore[storeId][rayon], propre à CE magasin
+ * uniquement — permet d'injecter un fichier pour un seul magasin
+ * plutôt que pour toute l'enseigne. ⚠️ AJOUTÉ : auparavant, cibler un
+ * magasin précis avant import n'était pas possible depuis la
+ * sélection par défaut — uniquement via assignation manuelle ligne
+ * par ligne dans l'aperçu (targetStores restait toujours vide au
+ * chargement, voir ImportParsedRow.targetStores).
+ */
+let _importDefaultStore = '';
 
 // ─────────────────────────────────────────────
 // 3. MODAL D'IMPORT
@@ -248,21 +266,26 @@ let _importDefaultEnseigne = '';
 function openImportModal(target) {
   _importTarget        = target || 'grille';
   _importRows          = [];
-  _importDefaultCrit   = 'Majeure';
   _importDefaultRayons = [];
   _importDefaultEnseigne = '';
+  _importDefaultStore  = '';
 
   el('imp-file-input').value   = '';
   el('imp-warnings').textContent = '';
   el('pdf-note').style.display = 'none';
   el('imp-format-info').innerHTML = IMPORT_FORMAT_INFO.default;
-  if (el('imp-default-crit')) el('imp-default-crit').value = 'Majeure';
 
   if (el('imp-default-rayons-group')) {
     el('imp-default-rayons-group').style.display = _importTarget === 'qualimetre' ? 'none' : '';
   }
   if (el('imp-default-mags-group')) {
     el('imp-default-mags-group').style.display = _importTarget === 'qualimetre' ? 'none' : '';
+  }
+  if (el('imp-default-store-group')) {
+    el('imp-default-store-group').style.display = _importTarget === 'qualimetre' ? 'none' : '';
+  }
+  if (el('imp-default-crit-note')) {
+    el('imp-default-crit-note').style.display = _importTarget === 'qualimetre' ? 'none' : '';
   }
   if (el('imp-default-rayon-cbs')) {
     el('imp-default-rayon-cbs').innerHTML = getKnownRayons().map(rayon =>
@@ -273,6 +296,7 @@ function openImportModal(target) {
     el('imp-default-enseigne-sel').innerHTML = '<option value="">— Grille commune (toutes enseignes) —</option>' +
       getKnownEnseignes().map(e => `<option value="${_escapeHtmlAttr(e)}">${e}</option>`).join('');
   }
+  _populateImportDefaultStoreSelect();
 
   /** @type {string} */
   const targetLabel = _importTarget === 'qualimetre' ? 'Qualimètre' : 'Grille d\'audit';
@@ -297,19 +321,6 @@ function _onImportDefaultRayonsChanged() {
 }
 
 /**
- * Met à jour _importDefaultStores depuis les cases cochées dans
- * #imp-default-mag-cbs (groupées par enseigne, voir
- * buildMagasinCheckboxesByEnseigne, ui.js). Appelée à chaque
- * changement d'une case magasin (voir le onchange câblé par
- * buildMagasinCheckboxesByEnseigne sur _onMagasinCheckboxChanged,
- * qui ne gère que l'état visuel de la case enseigne — c'est cette
- * fonction qui met à jour l'état réel utilisé par l'import).
- * Aucun magasin coché = import vers la grille commune (DB.grilleCustom,
- * partagée par tous les magasins sans surcharge propre) — voir
- * getGrille, grille.js.
- * @returns {void}
- */
-/**
  * Met à jour _importDefaultEnseigne avec l'enseigne choisie dans
  * #imp-default-enseigne-sel (single-select). À l'import, cette
  * enseigne reçoit la grille comme base commune
@@ -321,6 +332,44 @@ function _onImportDefaultRayonsChanged() {
  */
 function _onImportDefaultEnseigneChanged() {
   _importDefaultEnseigne = v('imp-default-enseigne-sel');
+  _importDefaultStore = '';
+  _populateImportDefaultStoreSelect();
+}
+
+/**
+ * Peuple #imp-default-store-sel avec les magasins actifs de
+ * l'enseigne actuellement choisie (_importDefaultEnseigne) — vide
+ * (seule l'option "Grille commune" reste) si aucune enseigne n'est
+ * sélectionnée, cohérent avec l'absence de notion de "grille commune"
+ * sans enseigne (voir _importDefaultEnseigne).
+ * @returns {void}
+ */
+function _populateImportDefaultStoreSelect() {
+  /** @type {HTMLSelectElement | null} */
+  const select = el('imp-default-store-sel');
+  if (!select) return;
+
+  /** @type {Magasin[]} */
+  const stores = _importDefaultEnseigne
+    ? DB.magasins.filter(m => m.enseigne === _importDefaultEnseigne && m.statut === 'actif')
+    : [];
+
+  select.innerHTML = '<option value="">— Grille commune de l\'enseigne —</option>' +
+    stores.map(m => `<option value="${m.id}">${_escapeHtmlAttr(m.nom)}</option>`).join('');
+}
+
+/**
+ * Met à jour _importDefaultStore depuis #imp-default-store-sel. Un
+ * magasin choisi ici cible sa grille personnalisée
+ * (DB.grilleCustomByStore) par défaut pour toutes les lignes du
+ * fichier, à la place de la grille commune de _importDefaultEnseigne
+ * — permet d'injecter un fichier propre à UN seul magasin plutôt qu'à
+ * toute l'enseigne. Choix par défaut seulement : modifiable ensuite
+ * ligne par ligne dans l'aperçu, comme pour l'enseigne et les rayons.
+ * @returns {void}
+ */
+function _onImportDefaultStoreChanged() {
+  _importDefaultStore = v('imp-default-store-sel');
 }
 
 // ⚠️ CHANGÉ : la section "ONGLETS DE FORMAT" (switchImportTab) a été
@@ -1130,8 +1179,8 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
     const parsedRow = {
       zoneRaw:      row.zone,
       targetRayons: isQualimetreTarget ? [] : [..._importDefaultRayons],
-      targetStores: [],
-      targetEnseigne: isQualimetreTarget ? '' : _importDefaultEnseigne,
+      targetStores: (!isQualimetreTarget && _importDefaultStore) ? [_importDefaultStore] : [],
+      targetEnseigne: (isQualimetreTarget || _importDefaultStore) ? '' : _importDefaultEnseigne,
       zone:         isQualimetreTarget ? '' : resolvedZone,
       selected:     false,
       cat:          row.cat || 'Général',
@@ -1282,25 +1331,14 @@ function _onMappingConceptChanged(concept, newHeader) {
   _showImportPreview(normalized, _importDetection, _importRawRows, el('imp-preview-title').textContent.replace('Aperçu — ', ''));
 }
 
-/**
- * Appelée depuis le sélecteur de criticité par défaut de la modale
- * d'import lorsque l'utilisateur change la valeur de repli appliquée
- * aux lignes sans criticité déterminable depuis le document. Met à
- * jour l'état puis, si un fichier est déjà chargé, rejoue
- * normalizeRows + _showImportPreview SANS re-scanner le fichier
- * (même logique que _onMappingConceptChanged) : seule la criticité
- * de repli change, jamais le mapping ni les données brutes.
- * @param {GrilleCriticite} newDefaultCrit
- * @returns {void}
- */
-function _onDefaultCritChanged(newDefaultCrit) {
-  _importDefaultCrit = newDefaultCrit;
-  if (!_importDetection || !_importRawRows.length) return;
-
-  /** @type {NormalizedImportRow[]} */
-  const normalized = normalizeRows(_importRawRows, _importDetection.mapping, _importDetection.unmappedHeaders);
-  _showImportPreview(normalized, _importDetection, _importRawRows, el('imp-preview-title').textContent.replace('Aperçu — ', ''));
-}
+// ⚠️ CHANGÉ : _onDefaultCritChanged a été retiré — le sélecteur de
+// criticité par défaut n'existe plus dans la modale (remplacé par le
+// sélecteur de magasin cible, voir _onImportDefaultStoreChanged
+// ci-dessous). _importDefaultCrit reste fixé à 'Majeure', valeur de
+// repli non réglable par l'utilisateur, appliquée aux lignes sans
+// criticité déterminable depuis le document (signalé par l'astérisque
+// affiché entre "Rayon(s) cible(s)" et la zone de dépose, voir
+// Qualistore.html #imp-default-crit-note).
 
 /**
  * Échappe une chaîne pour insertion sûre dans du texte HTML.
