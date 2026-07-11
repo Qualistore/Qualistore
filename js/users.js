@@ -4,14 +4,14 @@
 //   sbDeleteWhere), auth.js (hasPerm, togglePass), ui.js,
 //   config.js (PIDS, DPERMS, PERMISSION_GROUPS)
 //
-// ⚠️ CHANGÉ (v7) : la modale "Nouvel utilisateur / Modifier
-// l'utilisateur" ne peut plus se fermer implicitement (clic sur le
-// fond sombre, touche Échap) — seuls les boutons "Annuler" et
-// "Enregistrer" la ferment désormais, pour ne jamais perdre une
-// saisie par accident. Implémenté sans dépendre du mécanisme de
-// fermeture existant (inconnu depuis ce fichier) : un écouteur en
-// phase de capture intercepte et bloque ces deux déclencheurs
-// avant qu'ils n'atteignent quelque gestionnaire que ce soit.
+// ⚠️ CHANGÉ (v8) : le champ "Nom complet" est remplacé par deux
+// champs distincts Prénom / Nom (injectés dynamiquement, u-nom
+// reste dans le DOM mais caché, synchronisé automatiquement en
+// "Prénom Nom" pour ne rien casser côté affichage/tableau). Pour un
+// compte SANS email, prenom/nomFamille sont transmis séparément à
+// l'Edge Function, qui construit l'identifiant ET en fait le mot de
+// passe par défaut (voir invite-user-v6.js) — l'utilisateur devra
+// le changer dès sa première connexion.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -47,8 +47,8 @@
  * @typedef {Object} Magasin
  * @property {string} id
  * @property {string} nom
- * @property {string} [enseigne] - Nom d'enseigne (texte historique, conservé).
- * @property {string} [enseigne_id] - Référence vers Enseigne.id (nouveau, prioritaire quand présent).
+ * @property {string} [enseigne]
+ * @property {string} [enseigne_id]
  */
 
 /**
@@ -87,39 +87,27 @@ const USER_STATUT_LABELS = {
   invitation: 'invitation envoyée',
 };
 
-/**
- * Cache local du dernier chargement de `profiles`.
- * @type {User[]}
- */
+/** @type {User[]} */
 let _cachedProfiles = [];
 
-/**
- * Identifiant de l'utilisateur ciblé par la modale de
- * réinitialisation manuelle de mot de passe (compte sans email).
- * @type {string|null}
- */
+/** @type {string|null} */
 let _resetPasswordTargetUserId = null;
 
-/**
- * Sélection réelle des magasins assignés dans la modale en cours —
- * seule source de vérité, indépendante du filtre par enseigne
- * affiché à l'écran (qui ne fait que masquer/afficher des cases).
- * @type {Set<string>}
- */
+/** @type {Set<string>} */
 let _selectedMagasinIds = new Set();
 
-/**
- * Enseignes chargées à l'ouverture de la modale utilisateur.
- * @type {Enseigne[]}
- */
+/** @type {Enseigne[]} */
 let _cachedEnseignes = [];
 
+/** @type {boolean} */
+let _userModalLockInstalled = false;
+
 /**
- * Empêche d'installer plusieurs fois le verrou anti-fermeture de la
- * modale utilisateur (voir _installUserModalCloseLock).
+ * Empêche de recréer plusieurs fois les champs Prénom/Nom (voir
+ * _ensureSplitNameFields).
  * @type {boolean}
  */
-let _userModalLockInstalled = false;
+let _splitNameFieldsInstalled = false;
 
 // ─────────────────────────────────────────────
 // 2. HELPERS DE RENDU
@@ -156,8 +144,6 @@ function _buildUserStoresList(user) {
 }
 
 /**
- * Indique si un login est une adresse technique interne (compte
- * sans email réel) plutôt qu'un email réel.
  * @param {string} login
  * @returns {boolean}
  */
@@ -170,8 +156,6 @@ function _isInternalLogin(login) {
 // ─────────────────────────────────────────────
 
 /**
- * Charge les profils depuis Supabase et affiche le tableau des
- * utilisateurs.
  * @returns {Promise<void>}
  */
 async function renderUsers() {
@@ -233,15 +217,55 @@ async function renderUsers() {
 // ─────────────────────────────────────────────
 
 /**
+ * Remplace le champ unique "Nom complet" (u-nom) par deux champs
+ * Prénom / Nom, injectés dynamiquement. u-nom reste dans le DOM
+ * (cache, type=hidden) et se resynchronise automatiquement en
+ * "Prénom Nom" à chaque frappe, pour que tout code existant lisant
+ * v('u-nom') continue de fonctionner sans changement.
+ * @returns {void}
+ */
+function _ensureSplitNameFields() {
+  if (_splitNameFieldsInstalled) return;
+  _splitNameFieldsInstalled = true;
+
+  /** @type {HTMLInputElement} */
+  const nomInput = el('u-nom');
+  /** @type {HTMLElement} */
+  const nomGroup = nomInput.parentElement;
+  nomGroup.style.display = 'none';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'form-row';
+  wrapper.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Prénom *</label>
+      <input class="form-control" id="u-prenom" placeholder="Prénom" oninput="_syncCombinedNom()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nom *</label>
+      <input class="form-control" id="u-nomfamille" placeholder="Nom" oninput="_syncCombinedNom()">
+    </div>
+  `;
+  nomGroup.parentNode.insertBefore(wrapper, nomGroup);
+}
+
+/**
+ * Recalcule u-nom (caché) = "Prénom Nom" à partir des deux champs
+ * séparés — appelé à chaque frappe dans l'un ou l'autre.
+ * @returns {void}
+ */
+function _syncCombinedNom() {
+  /** @type {string} */
+  const prenom = v('u-prenom').trim();
+  /** @type {string} */
+  const nomFamille = v('u-nomfamille').trim();
+  sv('u-nom', [prenom, nomFamille].filter(Boolean).join(' '));
+}
+
+/**
  * Empêche la modale utilisateur de se fermer implicitement (clic
- * sur le fond sombre en dehors du contenu, touche Échap) — seuls
- * les boutons "Annuler" (closeModal explicite) et "Enregistrer"
- * (saveUser, qui appelle closeModal en cas de succès) doivent
- * pouvoir la fermer. Écouteurs posés en phase de CAPTURE sur
- * document, donc exécutés avant tout gestionnaire de fermeture
- * existant, quel qu'il soit — n'a besoin d'aucune connaissance du
- * mécanisme de fermeture actuel pour fonctionner. Installé une
- * seule fois.
+ * sur le fond, touche Échap) — seuls "Annuler" et "Enregistrer"
+ * doivent pouvoir la fermer.
  * @returns {void}
  */
 function _installUserModalCloseLock() {
@@ -252,10 +276,7 @@ function _installUserModalCloseLock() {
     /** @type {HTMLElement | null} */
     const modal = el('m-user');
     if (!modal) return;
-    /** @type {boolean} */
     const isOpen = window.getComputedStyle(modal).display !== 'none';
-    // Un clic qui atterrit exactement sur le fond de la modale (pas
-    // sur son contenu, ni sur un bouton) correspond à e.target === modal.
     if (isOpen && e.target === modal) {
       e.stopPropagation();
       e.preventDefault();
@@ -267,7 +288,6 @@ function _installUserModalCloseLock() {
     /** @type {HTMLElement | null} */
     const modal = el('m-user');
     if (!modal) return;
-    /** @type {boolean} */
     const isOpen = window.getComputedStyle(modal).display !== 'none';
     if (isOpen) {
       e.stopPropagation();
@@ -278,13 +298,12 @@ function _installUserModalCloseLock() {
 
 /**
  * Ouvre la modale de création ou d'édition d'un utilisateur.
- * Asynchrone : charge la liste des enseignes avant d'afficher le
- * filtre de sélection des magasins.
- * @param {string} [userId] - Référence vers User.id à éditer ; absent/falsy pour une création.
+ * @param {string} [userId]
  * @returns {Promise<void>}
  */
 async function openUserModal(userId) {
   _installUserModalCloseLock();
+  _ensureSplitNameFields();
 
   /** @type {boolean} */
   const isEdit = !!userId;
@@ -312,10 +331,6 @@ async function openUserModal(userId) {
 }
 
 /**
- * Charge les enseignes et prépare le filtre + la liste des
- * magasins (rendu initial, avant sélection connue — voir
- * _populateUserForm / _resetUserForm qui déclenchent le rendu réel
- * une fois _selectedMagasinIds initialisé).
  * @returns {Promise<void>}
  */
 async function _buildStoreCheckboxes() {
@@ -324,8 +339,6 @@ async function _buildStoreCheckboxes() {
 }
 
 /**
- * Crée (si besoin) le filtre "Enseigne" au-dessus de la liste des
- * magasins de la modale.
  * @returns {void}
  */
 function _ensureEnseigneFilter() {
@@ -345,9 +358,6 @@ function _ensureEnseigneFilter() {
 }
 
 /**
- * Retourne les magasins appartenant à une enseigne donnée (par
- * enseigne_id si présent, sinon par correspondance du nom texte
- * historique — pour ne perdre aucun magasin pas encore rattaché).
  * @param {string} enseigneId
  * @returns {Magasin[]}
  */
@@ -360,11 +370,6 @@ function _magasinsForEnseigne(enseigneId) {
 }
 
 /**
- * Reconstruit les cases à cocher des magasins visibles pour
- * l'enseigne actuellement choisie dans le filtre (ou tous les
- * magasins si aucun filtre sélectionné). L'état coché reflète
- * _selectedMagasinIds, seule source de vérité pour la sélection
- * réelle (qui peut porter sur plusieurs enseignes à la fois).
  * @returns {void}
  */
 function _renderStoreCheckboxesForFilter() {
@@ -399,8 +404,6 @@ function _onStoreCheckboxChange(checkbox) {
 }
 
 /**
- * Affiche le nombre total de magasins sélectionnés, toutes
- * enseignes confondues — utile car le filtre masque les autres.
  * @returns {void}
  */
 function _updateStoreSelectionCount() {
@@ -417,12 +420,6 @@ function _updateStoreSelectionCount() {
 }
 
 /**
- * Construit dynamiquement la section "Droits sur l'application" à
- * partir de PERMISSION_GROUPS (config.js) — un menu dépliable
- * (ouvert par défaut, réductible via l'élément natif <details>) par
- * groupe, une case à cocher par droit. Évite de dupliquer la liste
- * des droits en dur dans le HTML : config.js reste la source unique
- * de vérité.
  * @returns {void}
  */
 function _buildPermissionsSection() {
@@ -440,8 +437,6 @@ function _buildPermissionsSection() {
 }
 
 /**
- * Crée (si besoin) et retourne le bouton "Renvoyer l'invitation",
- * inséré juste après le groupe Statut de la modale.
  * @returns {HTMLButtonElement}
  */
 function _ensureResendButton() {
@@ -463,8 +458,6 @@ function _ensureResendButton() {
 }
 
 /**
- * Crée (si besoin) et retourne le bouton "Réinitialiser le mot de
- * passe", positionné juste après le bouton "Renvoyer l'invitation".
  * @returns {HTMLButtonElement}
  */
 function _ensureResetPasswordButton() {
@@ -485,10 +478,6 @@ function _ensureResetPasswordButton() {
 }
 
 /**
- * Crée (si besoin) la modale permettant à l'admin de saisir
- * manuellement un nouveau mot de passe pour un compte sans email.
- * Injectée dynamiquement — aucune modification de Qualistore.html
- * n'est nécessaire pour cette fonctionnalité.
  * @returns {void}
  */
 function _ensureResetPasswordModal() {
@@ -538,7 +527,19 @@ function _populateUserForm(userId) {
   if (!user) return;
 
   sv('u-id', user.id);
-  sv('u-nom', user.nom);
+
+  // Découpage approximatif du nom combiné existant (premier mot =
+  // prénom, reste = nom) — les comptes créés avant cette version
+  // n'ont qu'un seul champ "nom" en base, cette séparation n'est
+  // qu'un affichage pour l'édition.
+  /** @type {string} */
+  const fullName = user.nom || '';
+  /** @type {number} */
+  const spaceIdx = fullName.indexOf(' ');
+  sv('u-prenom', spaceIdx > -1 ? fullName.slice(0, spaceIdx) : '');
+  sv('u-nomfamille', spaceIdx > -1 ? fullName.slice(spaceIdx + 1) : fullName);
+  sv('u-nom', fullName);
+
   sv('u-login', _isInternalLogin(user.login) ? '(compte sans email)' : user.login);
 
   el('u-statut').value = (user.statut === 'invitation') ? 'actif' : user.statut;
@@ -568,7 +569,10 @@ function _populateUserForm(userId) {
  */
 function _resetUserForm() {
   sv('u-id', '');
-  ['u-nom', 'u-login'].forEach(id => sv(id, ''));
+  sv('u-prenom', '');
+  sv('u-nomfamille', '');
+  sv('u-nom', '');
+  sv('u-login', '');
   el('u-statut').value = 'actif';
   el('u-statut').disabled = false;
   el('u-role').value = '';
@@ -613,10 +617,6 @@ function onRoleChange(applyDefaults = true) {
 }
 
 /**
- * Sélectionne ou désélectionne tous les magasins actuellement
- * affichés (donc ceux de l'enseigne choisie dans le filtre, ou
- * tous les magasins si "Toutes les enseignes" est sélectionné) —
- * pas nécessairement tous les magasins de l'application.
  * @param {boolean} selectAll
  * @returns {void}
  */
@@ -639,37 +639,36 @@ function toggleAllMags(selectAll) {
 function _readStoreAndPermsFromForm() {
   /** @type {UserRole | string} */
   const role = el('u-role').value;
-
   /** @type {string[]} */
   const magasins = role === 'admin' ? [] : [..._selectedMagasinIds];
-
   /** @type {UserPerms} */
   const perms = {};
   PIDS.forEach(permId => {
     const checkbox = el('p-' + permId);
     if (checkbox) perms[permId] = checkbox.checked ? 1 : 0;
   });
-
   return { magasins, perms };
 }
 
 /**
- * Valide et sauvegarde le formulaire utilisateur : crée un compte
- * (avec ou sans email — champ 'u-id' vide) ou met à jour le profil
- * existant (édition).
+ * Valide et sauvegarde le formulaire utilisateur.
  * @returns {Promise<void>}
  */
 async function saveUser() {
   /** @type {string} */
-  const userId  = v('u-id');
+  const userId = v('u-id');
   /** @type {UserRole} */
-  const role    = el('u-role').value;
+  const role = el('u-role').value;
   /** @type {string} */
-  const nom     = v('u-nom').trim();
+  const prenom = v('u-prenom').trim();
+  /** @type {string} */
+  const nomFamille = v('u-nomfamille').trim();
+  /** @type {string} */
+  const nom = [prenom, nomFamille].filter(Boolean).join(' ');
   const errorEl = el('u-err');
 
-  if (!nom) {
-    errorEl.textContent = 'Le nom est requis.';
+  if (!prenom || !nomFamille) {
+    errorEl.textContent = 'Le prénom et le nom sont requis.';
     errorEl.classList.add('show');
     return;
   }
@@ -682,15 +681,13 @@ async function saveUser() {
   const { magasins, perms } = _readStoreAndPermsFromForm();
 
   if (!userId) {
-    await _createNewUser(nom, role, magasins, perms, errorEl);
+    await _createNewUser(nom, prenom, nomFamille, role, magasins, perms, errorEl);
   } else {
     await _updateExistingUser(userId, nom, role, magasins, perms, errorEl);
   }
 }
 
 /**
- * Calcule l'URL de retour (activation-compte.html) à partir de
- * l'emplacement courant du site.
  * @returns {string}
  */
 function _computeActivationRedirect() {
@@ -699,8 +696,6 @@ function _computeActivationRedirect() {
 }
 
 /**
- * Calcule l'URL de retour (reset-password.html) à partir de
- * l'emplacement courant du site.
  * @returns {string}
  */
 function _computeResetPasswordRedirect() {
@@ -709,17 +704,19 @@ function _computeResetPasswordRedirect() {
 }
 
 /**
- * Crée un utilisateur — avec email (invitation envoyée par email)
- * ou sans email (identifiant interne + mot de passe temporaire
- * affiché à l'admin), selon que le champ email est rempli ou non.
+ * Crée un utilisateur — avec email (invitation) ou sans email
+ * (identifiant prenom.nom + mot de passe = ce même identifiant,
+ * changement forcé à la première connexion).
  * @param {string} nom
+ * @param {string} prenom
+ * @param {string} nomFamille
  * @param {UserRole} role
  * @param {string[]} magasins
  * @param {UserPerms} perms
  * @param {HTMLElement} errorEl
  * @returns {Promise<void>}
  */
-async function _createNewUser(nom, role, magasins, perms, errorEl) {
+async function _createNewUser(nom, prenom, nomFamille, role, magasins, perms, errorEl) {
   /** @type {string} */
   const email = v('u-login').trim().toLowerCase();
 
@@ -737,7 +734,12 @@ async function _createNewUser(nom, role, magasins, perms, errorEl) {
   }
 
   const { data, error } = await _sb.functions.invoke('invite-user', {
-    body: { email: email || undefined, nom, role, magasins, perms, redirectTo: _computeActivationRedirect() },
+    body: {
+      email: email || undefined,
+      nom, prenom, nomFamille,
+      role, magasins, perms,
+      redirectTo: _computeActivationRedirect(),
+    },
   });
 
   /** @type {string|undefined} */
@@ -759,10 +761,6 @@ async function _createNewUser(nom, role, magasins, perms, errorEl) {
 }
 
 /**
- * Renvoie une invitation à un utilisateur dont le compte est
- * toujours au statut 'invitation' (pas encore activé). Recrée le
- * compte Auth (Supabase refuse de ré-inviter un email déjà
- * enregistré) en conservant nom/rôle/magasins/droits déjà saisis.
  * @param {string} userId
  * @returns {Promise<void>}
  */
@@ -789,9 +787,6 @@ async function resendInvitation(userId) {
 }
 
 /**
- * Déclenche la réinitialisation du mot de passe d'un utilisateur
- * déjà actif : envoi d'un email si le compte a une adresse réelle,
- * sinon ouverture de la modale de saisie manuelle par l'admin.
  * @param {string} userId
  * @returns {Promise<void>}
  */
@@ -826,8 +821,6 @@ async function resetUserPassword(userId) {
 }
 
 /**
- * Valide et envoie le nouveau mot de passe saisi par l'admin pour
- * un compte sans email (action "set-password" de l'Edge Function).
  * @returns {Promise<void>}
  */
 async function confirmAdminResetPassword() {
@@ -868,8 +861,6 @@ async function confirmAdminResetPassword() {
 }
 
 /**
- * Affiche les identifiants générés pour un compte sans email — une
- * seule fois, jamais reconsultables ensuite.
  * @param {string} nom
  * @param {string} identifier
  * @param {string} tempPassword
@@ -883,12 +874,6 @@ function _showGeneratedCredentials(nom, identifier, tempPassword) {
 }
 
 /**
- * Met à jour un profil existant (rôle/statut/magasins/permissions/nom).
- * L'email/identifiant n'est jamais modifié ici (champ désactivé,
- * lié au compte Supabase Auth). Le statut n'est lu depuis le
- * formulaire que s'il n'est pas verrouillé (voir _populateUserForm) ;
- * sinon il reste inchangé, pour ne jamais court-circuiter
- * l'activation par l'utilisateur lui-même.
  * @param {string} userId
  * @param {string} nom
  * @param {UserRole} role
