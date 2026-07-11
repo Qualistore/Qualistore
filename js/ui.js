@@ -458,13 +458,18 @@ function magScore(storeId) {
 
 /**
  * Retourne la liste des IDs de magasins visibles par l'utilisateur
- * connecté. Les rôles 'admin' et 'fsqs' voient tous les magasins ;
- * les autres rôles ne voient que CU.magasins.
+ * connecté. Seul le rôle 'admin' voit tous les magasins ; tous les
+ * autres rôles (fsqs compris) ne voient que CU.magasins.
  * @returns {string[]}
  */
 function visibleMids() {
   if (!CU) return [];
-  if (CU.role === 'admin' || CU.role === 'fsqs') return DB.magasins.map(m => m.id);
+  // ⚠️ CORRIGÉ : seul le rôle 'admin' voit tous les magasins sans
+  // restriction. 'fsqs' bénéficiait auparavant de la même exception
+  // (voit tout, quelle que soit l'assignation) — décision produit
+  // explicite : chaque profil non-admin (fsqs compris) ne doit voir
+  // que les magasins qui lui sont explicitement assignés (CU.magasins).
+  if (CU.role === 'admin') return DB.magasins.map(m => m.id);
   return CU.magasins || [];
 }
 
