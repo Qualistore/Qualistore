@@ -3,169 +3,151 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QualiStore — Création de compte</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
+<title>QualiStore — Activation du compte</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
-<body>
+<body style="background:#1d4ed8;min-height:100vh;display:flex;align-items:center;justify-content:center;margin:0;font-family:system-ui,-apple-system,sans-serif">
 
-<!--
-  PAGE AUTONOME — activation d'un compte invité par un administrateur.
-  ⚠️ MIS À JOUR (v2) : le nom est désormais toujours saisi par
-  l'admin à l'invitation (écran Utilisateurs) — cette page ne
-  demande donc plus que la confirmation de l'email et le mot de
-  passe, plus juste "nom Prénom".
+<div style="background:#fff;border-radius:12px;padding:32px;max-width:400px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,.2)">
+  <div style="text-align:center;margin-bottom:20px">
+    <img src="assets/logo.png" style="width:120px;height:auto" alt="QualiStore">
+  </div>
 
-  À placer à la racine du repo, au même niveau que index.html /
-  Qualistore.html / reset-password.html. N'utilise que
-  js/supabase.js — aucune dépendance vers auth.js / storage.js /
-  ui.js / init.js.
+  <h2 id="act-title" style="text-align:center;font-size:18px;margin-bottom:16px">Bienvenue — activez votre compte</h2>
 
-  ⚠️ Le jeton (token_hash, type=invite) n'est envoyé à Supabase pour
-  vérification qu'au clic sur "Créer mon compte" — jamais au simple
-  chargement de page (voir reset-password.html pour l'explication
-  complète du problème de pré-chargement des liens par les
-  messageries).
--->
-<div class="login-wrap" id="login-screen">
-  <div class="login-box">
-    <div class="login-logo">
-      <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">
-      <p style="color:var(--text2);font-size:13px;margin-top:4px">Bienvenue — activez votre compte</p>
+  <div id="act-error" style="display:none;background:#fee2e2;color:#991b1b;padding:12px;border-radius:6px;margin-bottom:16px;font-size:14px"></div>
+  <div id="act-success" style="display:none;background:#dcfce7;color:#166534;padding:12px;border-radius:6px;margin-bottom:16px;font-size:14px"></div>
+
+  <div id="act-form" style="display:none">
+    <div id="act-email-display" style="text-align:center;font-size:13px;color:#666;margin-bottom:14px"></div>
+
+    <div style="margin-bottom:12px">
+      <label style="display:block;font-size:13px;margin-bottom:4px">Choisissez votre mot de passe</label>
+      <input type="password" id="act-pass" placeholder="••••••••" autocomplete="new-password"
+        style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="display:block;font-size:13px;margin-bottom:4px">Confirmez le mot de passe</label>
+      <input type="password" id="act-pass-confirm" placeholder="••••••••" autocomplete="new-password"
+        style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px"
+        onkeydown="if(event.key==='Enter')confirmActivation()">
     </div>
 
-    <div class="login-err" id="activation-msg" style="display:none"></div>
+    <button onclick="confirmActivation()" style="width:100%;padding:12px;background:#1d4ed8;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">
+      Activer mon compte
+    </button>
+  </div>
 
-    <div id="activation-form">
-      <p class="tsm tm" style="margin-bottom:14px">Un administrateur vous a créé un accès à QualiStore. Confirmez votre email et choisissez votre mot de passe pour l'activer.</p>
-
-      <div class="form-group">
-        <label class="form-label">Confirmez votre adresse email</label>
-        <input class="form-control" type="email" id="a-email" placeholder="vous@exemple.fr" autocomplete="email">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Mot de passe</label>
-        <div class="pw-wrap">
-          <input class="form-control" type="password" id="a-pass" placeholder="••••••••" autocomplete="new-password">
-          <button class="pw-eye" type="button" onclick="_togglePass('a-pass',this)"><i class="ti ti-eye"></i></button>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Confirmer le mot de passe</label>
-        <input class="form-control" type="password" id="a-pass-confirm" placeholder="••••••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')createAccount()">
-      </div>
-      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="createAccount()">
-        <i class="ti ti-user-check"></i> Créer mon compte
-      </button>
-    </div>
-
-    <div id="activation-success" style="display:none;text-align:center">
-      <p class="tsm tm" style="margin-bottom:14px">Compte créé avec succès. Vous pouvez dès maintenant vous connecter.</p>
-      <a class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" href="./Qualistore.html">
-        <i class="ti ti-login"></i> Se connecter
-      </a>
-    </div>
+  <div id="act-login-link" style="display:none;text-align:center;margin-top:12px">
+    <a href="./Qualistore.html" style="color:#1d4ed8;font-size:14px">Aller à la page de connexion</a>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/supabase.js"></script>
 <script>
-(function () {
-  var params = new URLSearchParams(window.location.hash.slice(1));
-  var tokenHash = params.get('token_hash');
-
-  if (!tokenHash || params.get('type') !== 'invite') {
-    document.getElementById('activation-form').style.display = 'none';
-    var msg = document.getElementById('activation-msg');
-    msg.textContent = 'Lien invalide ou incomplet — contactez votre administrateur pour une nouvelle invitation.';
-    msg.style.display = 'flex';
-  }
-
-  window._inviteTokenHash = tokenHash;
-})();
+/**
+ * Jeton d'activation extrait de l'URL (paramètre ?token_hash=...),
+ * ou null si absent — auquel cas le lien est considéré invalide.
+ * @type {string|null}
+ */
+let ACT_TOKEN_HASH = null;
 
 /**
- * Bascule la visibilité d'un champ mot de passe.
- * @param {string} inputId
- * @param {HTMLElement} toggleButton
+ * Point d'entrée : lit le token_hash dans l'URL au chargement de la
+ * page (jamais de vérification automatique ici — la vérification
+ * elle-même n'a lieu qu'au clic explicite de l'utilisateur sur
+ * "Activer mon compte", pour éviter qu'un scanner de sécurité
+ * d'email (Gmail, Brevo...) qui pré-visite ce lien ne consomme le
+ * jeton à usage unique avant le vrai clic de l'utilisateur).
  * @returns {void}
  */
-function _togglePass(inputId, toggleButton) {
-  var input = document.getElementById(inputId);
-  var isHidden = input.type === 'password';
-  input.type = isHidden ? 'text' : 'password';
-  toggleButton.innerHTML = isHidden ? '<i class="ti ti-eye-off"></i>' : '<i class="ti ti-eye"></i>';
+function initActivation() {
+  /** @type {URLSearchParams} */
+  const params = new URLSearchParams(window.location.search);
+  ACT_TOKEN_HASH = params.get('token_hash');
+
+  if (!ACT_TOKEN_HASH) {
+    _showActError("Lien invalide ou incomplet — contactez votre administrateur pour une nouvelle invitation.");
+    return;
+  }
+
+  el('act-form').style.display = '';
 }
 
 /**
- * Valide le formulaire, vérifie le jeton auprès de Supabase (c'est
- * ici, et seulement ici, qu'il est consommé), applique le mot de
- * passe choisi et finalise le profil (statut actif, via la fonction
- * activate_own_profile — voir 02-invite-support.sql /
- * 03-no-email-accounts.sql).
+ * @param {string} message
+ * @returns {void}
+ */
+function _showActError(message) {
+  const errEl = el('act-error');
+  errEl.textContent = message;
+  errEl.style.display = '';
+}
+
+/**
+ * Vérifie le jeton d'activation (verifyOtp, déclenché uniquement
+ * ici, au clic), définit le mot de passe choisi, active le profil
+ * (activate_own_profile) puis déconnecte l'utilisateur pour qu'il
+ * se reconnecte normalement avec ses nouveaux identifiants.
  * @returns {Promise<void>}
  */
-async function createAccount() {
-  var email = document.getElementById('a-email').value.trim().toLowerCase();
-  var password = document.getElementById('a-pass').value;
-  var confirmPassword = document.getElementById('a-pass-confirm').value;
-  var msg = document.getElementById('activation-msg');
+async function confirmActivation() {
+  const errEl = el('act-error');
+  errEl.style.display = 'none';
 
-  if (!email || !email.includes('@')) {
-    msg.textContent = 'Merci de saisir une adresse email valide.';
-    msg.className = 'login-err show';
+  /** @type {string} */
+  const pass = el('act-pass').value;
+  /** @type {string} */
+  const passConfirm = el('act-pass-confirm').value;
+
+  if (!pass || pass.length < 10) {
+    _showActError('Le mot de passe doit contenir au moins 10 caractères.');
     return;
   }
-  if (!password || password.length < 10) {
-    msg.textContent = 'Le mot de passe doit contenir au moins 10 caractères.';
-    msg.className = 'login-err show';
-    return;
-  }
-  if (password !== confirmPassword) {
-    msg.textContent = 'Les deux mots de passe ne correspondent pas.';
-    msg.className = 'login-err show';
-    return;
-  }
-  if (!window._inviteTokenHash) {
-    msg.textContent = 'Lien invalide — contactez votre administrateur pour une nouvelle invitation.';
-    msg.className = 'login-err show';
+  if (pass !== passConfirm) {
+    _showActError('Les mots de passe ne correspondent pas.');
     return;
   }
 
-  var verifyResult = await _sb.auth.verifyOtp({ token_hash: window._inviteTokenHash, type: 'invite' });
-  if (verifyResult.error || !verifyResult.data.session) {
-    msg.textContent = 'Cette invitation a expiré ou a déjà été utilisée — contactez votre administrateur.';
-    msg.className = 'login-err show';
+  const { data: verifyData, error: verifyError } = await _sb.auth.verifyOtp({
+    token_hash: ACT_TOKEN_HASH,
+    type: 'invite',
+  });
+
+  if (verifyError) {
+    _showActError("Ce lien d'invitation n'est plus valide (déjà utilisé ou expiré). Contactez votre administrateur pour en recevoir un nouveau.");
     return;
   }
 
-  var realEmail = verifyResult.data.session.user.email;
-  if (realEmail && email !== realEmail.toLowerCase()) {
-    console.warn('Email saisi différent de l\'email invité — poursuite avec l\'email invité (' + realEmail + ').');
-  }
-
-  var updateResult = await _sb.auth.updateUser({ password: password });
-  if (updateResult.error) {
-    msg.textContent = 'Erreur : ' + updateResult.error.message;
-    msg.className = 'login-err show';
+  const { error: updateError } = await _sb.auth.updateUser({ password: pass });
+  if (updateError) {
+    _showActError("Erreur lors de l'enregistrement du mot de passe : " + updateError.message);
     return;
   }
 
-  var rpcResult = await _sb.rpc('activate_own_profile');
-  if (rpcResult.error) {
-    msg.textContent = 'Erreur lors de la finalisation du profil : ' + rpcResult.error.message;
-    msg.className = 'login-err show';
+  const { error: rpcError } = await _sb.rpc('activate_own_profile');
+  if (rpcError) {
+    _showActError("Erreur lors de l'activation du compte : " + rpcError.message);
     return;
   }
 
-  history.replaceState(null, '', window.location.pathname);
   await _sb.auth.signOut();
 
-  document.getElementById('activation-form').style.display = 'none';
-  msg.style.display = 'none';
-  document.getElementById('activation-success').style.display = 'block';
+  el('act-form').style.display = 'none';
+  el('act-title').style.display = 'none';
+  const successEl = el('act-success');
+  successEl.textContent = 'Compte créé avec succès. Vous pouvez dès maintenant vous connecter.';
+  successEl.style.display = '';
+  el('act-login-link').style.display = '';
 }
+
+/**
+ * @param {string} id
+ * @returns {HTMLElement}
+ */
+function el(id) { return document.getElementById(id); }
+
+initActivation();
 </script>
 </body>
 </html>
