@@ -503,18 +503,14 @@
       <input type="hidden" id="u-id">
       <div class="form-row">
         <div class="form-group"><label class="form-label">Nom complet *</label><input class="form-control" id="u-nom" placeholder="Prénom Nom"></div>
-        <div class="form-group"><label class="form-label">Identifiant (login) *</label><input class="form-control" id="u-login" placeholder="prenom.nom" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label">Identifiant / Email</label><input class="form-control" id="u-login" placeholder="email@exemple.com (laisser vide si sans email)" autocomplete="off"></div>
       </div>
+      <div class="form-hint" id="u-invite-hint" style="margin-bottom:12px">Avec email : un lien d'activation sera envoyé. Sans email : un identifiant et un mot de passe seront générés automatiquement (à communiquer vous-même à l'utilisateur).</div>
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Mot de passe *</label>
-          <div class="pw-wrap">
-            <input class="form-control" type="password" id="u-mdp" placeholder="••••••••" autocomplete="new-password">
-            <button class="pw-eye" type="button" onclick="togglePass('u-mdp',this)"><i class="ti ti-eye"></i></button>
-          </div>
-          <div class="form-hint" id="u-mdp-hint" style="display:none">Laisser vide pour ne pas modifier</div>
+        <div class="form-group" id="u-statut-grp">
+          <label class="form-label">Statut</label>
+          <select class="form-control" id="u-statut"><option value="actif">Actif</option><option value="inactif">Inactif</option></select>
         </div>
-        <div class="form-group"><label class="form-label">Statut</label><select class="form-control" id="u-statut"><option value="actif">Actif</option><option value="inactif">Inactif</option></select></div>
       </div>
       <hr class="divider">
       <div class="form-group">
@@ -539,29 +535,7 @@
       <hr class="divider">
       <div class="form-group">
         <label class="form-label">Droits sur l'application</label>
-        <div class="perm-sec">
-          <div class="perm-title">Audits &amp; Qualité</div>
-          <div class="cb-group">
-            <label class="cb-item"><input type="checkbox" id="p-aud-r"> Consulter les audits</label>
-            <label class="cb-item"><input type="checkbox" id="p-aud-w"> Créer des audits (FSQS &amp; Qualimètre)</label>
-            <label class="cb-item"><input type="checkbox" id="p-nc"> Gérer les non-conformités</label>
-            <label class="cb-item"><input type="checkbox" id="p-ac"> Gérer les actions correctives</label>
-          </div>
-        </div>
-        <div class="perm-sec">
-          <div class="perm-title">Données</div>
-          <div class="cb-group">
-            <label class="cb-item"><input type="checkbox" id="p-mag"> Gérer les magasins</label>
-            <label class="cb-item"><input type="checkbox" id="p-rap"> Accéder aux rapports (FSQS &amp; Qualimètre)</label>
-            <label class="cb-item"><input type="checkbox" id="p-grille"> Modifier la grille d'audit</label>
-          </div>
-        </div>
-        <div class="perm-sec">
-          <div class="perm-title">Administration</div>
-          <div class="cb-group">
-            <label class="cb-item"><input type="checkbox" id="p-usr"> Gérer les utilisateurs</label>
-          </div>
-        </div>
+        <div id="u-perms-container"></div>
       </div>
     </div>
     <div class="modal-foot">
