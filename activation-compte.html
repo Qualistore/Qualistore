@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QualiStore — Activation du compte</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body style="background:#1d4ed8;min-height:100vh;display:flex;align-items:center;justify-content:center;margin:0;font-family:system-ui,-apple-system,sans-serif">
@@ -23,14 +24,26 @@
 
     <div style="margin-bottom:12px">
       <label style="display:block;font-size:13px;margin-bottom:4px">Choisissez votre mot de passe</label>
-      <input type="password" id="act-pass" placeholder="••••••••" autocomplete="new-password"
-        style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+      <div class="pw-wrap" style="position:relative">
+        <input type="password" id="act-pass" placeholder="••••••••" autocomplete="new-password"
+          style="width:100%;box-sizing:border-box;padding:10px 40px 10px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+        <button type="button" class="pw-eye" onclick="togglePass('act-pass', this)"
+          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#888;padding:4px">
+          <i class="ti ti-eye"></i>
+        </button>
+      </div>
     </div>
     <div style="margin-bottom:16px">
       <label style="display:block;font-size:13px;margin-bottom:4px">Confirmez le mot de passe</label>
-      <input type="password" id="act-pass-confirm" placeholder="••••••••" autocomplete="new-password"
-        style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px"
-        onkeydown="if(event.key==='Enter')confirmActivation()">
+      <div class="pw-wrap" style="position:relative">
+        <input type="password" id="act-pass-confirm" placeholder="••••••••" autocomplete="new-password"
+          style="width:100%;box-sizing:border-box;padding:10px 40px 10px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px"
+          onkeydown="if(event.key==='Enter')confirmActivation()">
+        <button type="button" class="pw-eye" onclick="togglePass('act-pass-confirm', this)"
+          style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#888;padding:4px">
+          <i class="ti ti-eye"></i>
+        </button>
+      </div>
     </div>
 
     <button onclick="confirmActivation()" style="width:100%;padding:12px;background:#1d4ed8;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">
@@ -51,6 +64,32 @@
  * @type {string|null}
  */
 let ACT_TOKEN_HASH = null;
+
+/**
+ * @param {string} id
+ * @returns {HTMLElement}
+ */
+function el(id) { return document.getElementById(id); }
+
+/**
+ * Bascule l'affichage en clair / masqué d'un champ mot de passe, et
+ * met à jour l'icône (œil ouvert/barré) du bouton associé.
+ * @param {string} inputId
+ * @param {HTMLButtonElement} btn
+ * @returns {void}
+ */
+function togglePass(inputId, btn) {
+  /** @type {HTMLInputElement} */
+  const input = el(inputId);
+  const icon = btn.querySelector('i');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.className = 'ti ti-eye-off';
+  } else {
+    input.type = 'password';
+    icon.className = 'ti ti-eye';
+  }
+}
 
 /**
  * Point d'entrée : lit le token_hash dans l'URL au chargement de la
@@ -140,12 +179,6 @@ async function confirmActivation() {
   successEl.style.display = '';
   el('act-login-link').style.display = '';
 }
-
-/**
- * @param {string} id
- * @returns {HTMLElement}
- */
-function el(id) { return document.getElementById(id); }
 
 initActivation();
 </script>
