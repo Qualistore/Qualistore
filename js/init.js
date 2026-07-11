@@ -24,13 +24,26 @@
 document.addEventListener('DOMContentLoaded', async () => {
   _clearAppCaches();
 
+  // ⚠️ CORRIGÉ : _checkSessionOnLoad() (restauration de la session
+  // Supabase Auth) doit impérativement s'exécuter AVANT loadDB().
+  // loadDB() interroge des tables désormais protégées par RLS
+  // (magasins, audits, ncs, actions, alertes, grille_custom...), qui
+  // exigent une session authentifiée. Avec l'ancien ordre, loadDB()
+  // partait une fraction de seconde trop tôt — avant que la session ne
+  // soit rétablie — et Supabase traitait alors ces requêtes comme
+  // anonymes : la RLS filtrait silencieusement TOUTES les lignes (sans
+  // la moindre erreur console), donnant l'impression que les données
+  // avaient disparu alors qu'elles étaient toujours bien en base.
+  // _checkSessionOnLoad() ne dépend d'aucune donnée chargée par
+  // loadDB() (uniquement de la session Supabase Auth + de la table
+  // `profiles`), inverser l'ordre est donc sans risque.
+  await _checkSessionOnLoad();
+
   try {
     await loadDB();
   } catch (error) {
     console.warn('loadDB error:', error);
   }
-
-  await _checkSessionOnLoad();
 
   if (CU) {
     el('login-screen').style.display = 'none';
