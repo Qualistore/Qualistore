@@ -16,21 +16,90 @@
     <div class="login-logo">
 <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">      <p style="color:var(--text2);font-size:13px;margin-top:4px">Gestion de la qualité alimentaire</p>
     </div>
-    <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
-    <div class="form-group">
-      <label class="form-label">Identifiant</label>
-      <input class="form-control" type="text" id="f-login" placeholder="Votre identifiant" autocomplete="username">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Mot de passe</label>
-      <div class="pw-wrap">
-        <input class="form-control" type="password" id="f-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-        <button class="pw-eye" type="button" onclick="togglePass('f-pass',this)"><i class="ti ti-eye"></i></button>
+
+    <!-- Formulaire de connexion normal -->
+    <div id="login-form">
+      <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
+      <div class="form-group">
+        <label class="form-label">Identifiant</label>
+        <input class="form-control" type="text" id="f-login" placeholder="Votre identifiant" autocomplete="username">
       </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+          <button class="pw-eye" type="button" onclick="togglePass('f-pass',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
+        <i class="ti ti-login"></i> Se connecter
+      </button>
+      <button type="button" class="btn-logout" style="width:100%;justify-content:center;margin-top:10px;background:none;border:none;color:var(--primary);cursor:pointer" onclick="showForgotPasswordForm()">
+        Mot de passe oublié ?
+      </button>
     </div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
-      <i class="ti ti-login"></i> Se connecter
-    </button>
+
+    <!-- Mot de passe oublié -->
+    <div id="login-forgot" style="display:none">
+      <p class="tsm tm" style="margin-bottom:14px">Saisissez votre email : si un compte existe, un lien de réinitialisation vous sera envoyé.</p>
+      <div class="login-err" id="login-forgot-msg"></div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-control" type="email" id="f-forgot-email" placeholder="email@exemple.com" autocomplete="email">
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="requestPasswordReset()">
+        <i class="ti ti-send"></i> Envoyer le lien
+      </button>
+      <button type="button" class="btn-logout" style="width:100%;justify-content:center;margin-top:10px;background:none;border:none;color:var(--primary);cursor:pointer" onclick="showLoginForm()">
+        Retour à la connexion
+      </button>
+    </div>
+
+    <!-- Réinitialisation (lien email — normalement inatteignable, ce flux vit sur reset-password.html) -->
+    <div id="login-reset" style="display:none">
+      <p class="tsm tm" style="margin-bottom:14px">Choisissez un nouveau mot de passe.</p>
+      <div class="login-err" id="login-reset-msg"></div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-reset-pass" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('f-reset-pass',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-reset-pass-confirm" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('f-reset-pass-confirm',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="confirmPasswordReset()">
+        <i class="ti ti-check"></i> Valider
+      </button>
+    </div>
+
+    <!-- Changement de mot de passe forcé (première connexion, compte créé sans email) -->
+    <div id="login-forcepass" style="display:none">
+      <p class="tsm tm" style="margin-bottom:14px">Pour votre sécurité, vous devez choisir un nouveau mot de passe avant de continuer.</p>
+      <div class="login-err" id="login-forcepass-msg"></div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-forcepass-new" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('f-forcepass-new',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-forcepass-confirm" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('f-forcepass-confirm',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="confirmForcedPasswordChange()">
+        <i class="ti ti-check"></i> Valider et continuer
+      </button>
+    </div>
 
   </div>
 </div>
@@ -48,6 +117,7 @@
       <div>
         <div style="font-size:12px;font-weight:500" id="sb-name">–</div>
         <div style="font-size:10px;opacity:.6" id="sb-role">–</div>
+        <button class="btn-logout" onclick="openChangePasswordModal()"><i class="ti ti-key" style="font-size:13px"></i> Changer le mot de passe</button>
         <button class="btn-logout" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px"></i> Déconnexion</button>
       </div>
     </div>
@@ -541,6 +611,61 @@
     <div class="modal-foot">
       <button class="btn btn-secondary" onclick="closeModal('m-user')">Annuler</button>
       <button class="btn btn-primary" onclick="saveUser()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: IDENTIFIANTS GÉNÉRÉS (compte sans email) -->
+<div class="modal-ov" id="m-new-credentials">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-key" style="color:var(--primary)"></i> Compte créé</div>
+      <button class="btn-x" onclick="closeModal('m-new-credentials')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="tsm tm" style="margin-bottom:14px">Ce compte n'a pas d'adresse email : communiquez ces identifiants à <strong id="cred-nom"></strong>. Un changement de mot de passe lui sera demandé dès sa première connexion.</p>
+      <div class="form-group">
+        <label class="form-label">Identifiant</label>
+        <div class="form-control" id="cred-identifier" style="font-family:monospace;user-select:all"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe temporaire</label>
+        <div class="form-control" id="cred-password" style="font-family:monospace;user-select:all"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" onclick="closeModal('m-new-credentials')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CHANGEMENT DE MOT DE PASSE VOLONTAIRE -->
+<div class="modal-ov" id="m-change-pass">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-key" style="color:var(--primary)"></i> Changer mon mot de passe</div>
+      <button class="btn-x" onclick="closeModal('m-change-pass')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="cp-err"></div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="cp-new" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('cp-new',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="cp-confirm" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('cp-confirm',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-change-pass')">Annuler</button>
+      <button class="btn btn-primary" onclick="submitChangePassword()"><i class="ti ti-check"></i> Enregistrer</button>
     </div>
   </div>
 </div>
