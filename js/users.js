@@ -3,14 +3,13 @@
 // Dépend de : storage.js (CU), supabase.js (_sb, sbDeleteWhere),
 //   auth.js (hasPerm), ui.js, config.js (PIDS, DPERMS, PERMISSION_GROUPS)
 //
-// ⚠️ CHANGÉ (v3 — droits détaillés) : la section "Droits sur
-// l'application" de la modale est désormais générée dynamiquement
-// depuis PERMISSION_GROUPS (config.js, une quarantaine de droits
-// répartis en 10 groupes dépliables) au lieu d'une liste figée en
-// dur dans le HTML — voir _buildPermissionsSection(). Le reste
-// (email optionnel → invitation ou compte sans email, nom toujours
-// saisi par l'admin) est inchangé par rapport à la version
-// précédente.
+// ⚠️ CHANGÉ (v4) : ajout d'un bouton "Renvoyer l'invitation" dans
+// la modale d'édition, visible uniquement pour un compte encore au
+// statut 'invitation' (pas encore activé) avec un email réel (pas
+// un compte sans email). Appelle la nouvelle action "resend" de
+// l'Edge Function invite-user. Le reste est inchangé par rapport à
+// la version précédente (droits détaillés générés dynamiquement
+// depuis PERMISSION_GROUPS).
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -262,6 +261,29 @@ function _buildPermissionsSection() {
 }
 
 /**
+ * Crée (si besoin) et retourne le bouton "Renvoyer l'invitation",
+ * inséré juste après le groupe Statut de la modale. Un seul bouton
+ * est créé puis réutilisé/repositionné à chaque ouverture.
+ * @returns {HTMLButtonElement}
+ */
+function _ensureResendButton() {
+  /** @type {HTMLButtonElement | null} */
+  let btn = /** @type {any} */ (el('u-resend-btn'));
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'u-resend-btn';
+    btn.className = 'btn btn-secondary btn-sm';
+    btn.style.marginTop = '8px';
+    btn.innerHTML = '<i class="ti ti-mail-forward"></i> Renvoyer l\'invitation';
+    btn.onclick = () => resendInvitation(v('u-id'));
+    const anchor = el('u-statut-grp');
+    anchor.parentNode.insertBefore(btn, anchor.nextSibling);
+  }
+  return btn;
+}
+
+/**
  * @param {string} userId
  * @returns {void}
  */
@@ -285,6 +307,9 @@ function _populateUserForm(userId) {
     if (checkbox) checkbox.checked = !!(user.perms || {})[permId];
   });
 
+  const resendBtn = _ensureResendButton();
+  resendBtn.style.display = (user.statut === 'invitation' && !_isInternalLogin(user.login)) ? '' : 'none';
+
   onRoleChange(false);
 }
 
@@ -301,6 +326,9 @@ function _resetUserForm() {
     if (checkbox) checkbox.checked = false;
   });
   el('u-mag-grp').style.display = 'none';
+
+  const resendBtn = el('u-resend-btn');
+  if (resendBtn) resendBtn.style.display = 'none';
 }
 
 /**
@@ -397,6 +425,16 @@ async function saveUser() {
 }
 
 /**
+ * Calcule l'URL de retour (activation-compte.html) à partir de
+ * l'emplacement courant du site.
+ * @returns {string}
+ */
+function _computeActivationRedirect() {
+  const currentDir = window.location.pathname.replace(/[^/]*$/, '');
+  return window.location.origin + currentDir + 'activation-compte.html';
+}
+
+/**
  * Crée un utilisateur — avec email (invitation envoyée par email)
  * ou sans email (identifiant interne + mot de passe temporaire
  * affiché à l'admin), selon que le champ email est rempli ou non.
@@ -424,13 +462,8 @@ async function _createNewUser(nom, role, magasins, perms, errorEl) {
     }
   }
 
-  /** @type {string} */
-  const currentDir = window.location.pathname.replace(/[^/]*$/, '');
-  /** @type {string} */
-  const redirectTo = window.location.origin + currentDir + 'activation-compte.html';
-
   const { data, error } = await _sb.functions.invoke('invite-user', {
-    body: { email: email || undefined, nom, role, magasins, perms, redirectTo },
+    body: { email: email || undefined, nom, role, magasins, perms, redirectTo: _computeActivationRedirect() },
   });
 
   /** @type {string|undefined} */
@@ -449,6 +482,36 @@ async function _createNewUser(nom, role, magasins, perms, errorEl) {
   } else {
     showToast(`Invitation envoyée à ${email}.`, 'success');
   }
+}
+
+/**
+ * Renvoie une invitation à un utilisateur dont le compte est
+ * toujours au statut 'invitation' (pas encore activé). Recrée le
+ * compte Auth (Supabase refuse de ré-inviter un email déjà
+ * enregistré) en conservant nom/rôle/magasins/droits déjà saisis.
+ * @param {string} userId
+ * @returns {Promise<void>}
+ */
+async function resendInvitation(userId) {
+  if (!userId) return;
+  const errorEl = el('u-err');
+  errorEl.classList.remove('show');
+
+  const { data, error } = await _sb.functions.invoke('invite-user', {
+    body: { action: 'resend', userId, redirectTo: _computeActivationRedirect() },
+  });
+
+  /** @type {string|undefined} */
+  const functionError = (data && data.error) || error?.message;
+  if (functionError) {
+    errorEl.textContent = 'Erreur : ' + functionError;
+    errorEl.classList.add('show');
+    return;
+  }
+
+  closeModal('m-user');
+  await renderUsers();
+  showToast('Nouvelle invitation envoyée.', 'success');
 }
 
 /**
