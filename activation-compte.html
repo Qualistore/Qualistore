@@ -46,7 +46,7 @@
       </div>
     </div>
 
-    <button onclick="confirmActivation()" style="width:100%;padding:12px;background:#1d4ed8;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">
+    <button id="act-submit-btn" onclick="confirmActivation()" style="width:100%;padding:12px;background:#1d4ed8;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">
       Activer mon compte
     </button>
   </div>
@@ -101,6 +101,11 @@ function togglePass(inputId, btn) {
  * @returns {void}
  */
 function initActivation() {
+  if (typeof _sb === 'undefined' || !_sb || !_sb.auth) {
+    _showActError("Erreur technique : impossible de contacter le serveur (js/supabase.js n'a pas pu être chargé). Vérifiez votre connexion et rechargez la page.");
+    return;
+  }
+
   /** @type {URLSearchParams} */
   const params = new URLSearchParams(window.location.search);
   ACT_TOKEN_HASH = params.get('token_hash');
@@ -126,58 +131,79 @@ function _showActError(message) {
 /**
  * Vérifie le jeton d'activation (verifyOtp, déclenché uniquement
  * ici, au clic), définit le mot de passe choisi, active le profil
- * (activate_own_profile) puis déconnecte l'utilisateur pour qu'il
- * se reconnecte normalement avec ses nouveaux identifiants.
+ * (activate_own_profile), puis redirige DIRECTEMENT vers l'app —
+ * la session ouverte par verifyOtp() reste valide (on ne déconnecte
+ * plus l'utilisateur), donc Qualistore.html le reconnaît déjà
+ * connecté et l'amène droit sur le tableau de bord.
+ * Toute erreur (y compris une exception inattendue) est
+ * systématiquement affichée à l'écran.
  * @returns {Promise<void>}
  */
 async function confirmActivation() {
   const errEl = el('act-error');
   errEl.style.display = 'none';
 
-  /** @type {string} */
-  const pass = el('act-pass').value;
-  /** @type {string} */
-  const passConfirm = el('act-pass-confirm').value;
+  /** @type {HTMLButtonElement} */
+  const submitBtn = el('act-submit-btn');
 
-  if (!pass || pass.length < 10) {
-    _showActError('Le mot de passe doit contenir au moins 10 caractères.');
-    return;
+  try {
+    /** @type {string} */
+    const pass = el('act-pass').value;
+    /** @type {string} */
+    const passConfirm = el('act-pass-confirm').value;
+
+    if (!pass || pass.length < 10) {
+      _showActError('Le mot de passe doit contenir au moins 10 caractères.');
+      return;
+    }
+    if (pass !== passConfirm) {
+      _showActError('Les mots de passe ne correspondent pas.');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Activation en cours...';
+
+    const { data: verifyData, error: verifyError } = await _sb.auth.verifyOtp({
+      token_hash: ACT_TOKEN_HASH,
+      type: 'invite',
+    });
+
+    if (verifyError) {
+      _showActError("Ce lien d'invitation n'est plus valide (déjà utilisé ou expiré) : " + verifyError.message);
+      return;
+    }
+
+    const { error: updateError } = await _sb.auth.updateUser({ password: pass });
+    if (updateError) {
+      _showActError("Erreur lors de l'enregistrement du mot de passe : " + updateError.message);
+      return;
+    }
+
+    const { error: rpcError } = await _sb.rpc('activate_own_profile');
+    if (rpcError) {
+      _showActError("Erreur lors de l'activation du compte : " + rpcError.message);
+      return;
+    }
+
+    // Pas de signOut() ici : on garde la session ouverte par
+    // verifyOtp()/updateUser() pour amener directement l'utilisateur
+    // dans l'app, déjà connecté.
+    el('act-form').style.display = 'none';
+    el('act-title').style.display = 'none';
+    const successEl = el('act-success');
+    successEl.textContent = 'Compte activé ! Redirection vers l\'application...';
+    successEl.style.display = '';
+
+    setTimeout(() => { window.location.href = './Qualistore.html'; }, 900);
+  } catch (err) {
+    _showActError('Erreur technique inattendue : ' + String(err && err.message ? err.message : err));
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Activer mon compte';
+    }
   }
-  if (pass !== passConfirm) {
-    _showActError('Les mots de passe ne correspondent pas.');
-    return;
-  }
-
-  const { data: verifyData, error: verifyError } = await _sb.auth.verifyOtp({
-    token_hash: ACT_TOKEN_HASH,
-    type: 'invite',
-  });
-
-  if (verifyError) {
-    _showActError("Ce lien d'invitation n'est plus valide (déjà utilisé ou expiré). Contactez votre administrateur pour en recevoir un nouveau.");
-    return;
-  }
-
-  const { error: updateError } = await _sb.auth.updateUser({ password: pass });
-  if (updateError) {
-    _showActError("Erreur lors de l'enregistrement du mot de passe : " + updateError.message);
-    return;
-  }
-
-  const { error: rpcError } = await _sb.rpc('activate_own_profile');
-  if (rpcError) {
-    _showActError("Erreur lors de l'activation du compte : " + rpcError.message);
-    return;
-  }
-
-  await _sb.auth.signOut();
-
-  el('act-form').style.display = 'none';
-  el('act-title').style.display = 'none';
-  const successEl = el('act-success');
-  successEl.textContent = 'Compte créé avec succès. Vous pouvez dès maintenant vous connecter.';
-  successEl.style.display = '';
-  el('act-login-link').style.display = '';
 }
 
 initActivation();

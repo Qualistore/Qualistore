@@ -1,15 +1,23 @@
 // ══════════════════════════════════════════════════════════════
 // USERS — Gestion des utilisateurs
 // Dépend de : storage.js (CU), supabase.js (_sb, sbDeleteWhere),
-//   auth.js (hasPerm), ui.js, config.js (PIDS, DPERMS, PERMISSION_GROUPS)
+//   auth.js (hasPerm, togglePass), ui.js, config.js (PIDS, DPERMS,
+//   PERMISSION_GROUPS)
 //
-// ⚠️ CHANGÉ (v4) : ajout d'un bouton "Renvoyer l'invitation" dans
-// la modale d'édition, visible uniquement pour un compte encore au
-// statut 'invitation' (pas encore activé) avec un email réel (pas
-// un compte sans email). Appelle la nouvelle action "resend" de
-// l'Edge Function invite-user. Le reste est inchangé par rapport à
-// la version précédente (droits détaillés générés dynamiquement
-// depuis PERMISSION_GROUPS).
+// ⚠️ CHANGÉ (v5) :
+//  - Le champ Statut est désormais verrouillé (non modifiable par
+//    l'admin) tant que le compte est au statut 'invitation' — il
+//    ne doit passer à 'actif' QUE via l'activation par
+//    l'utilisateur lui-même (activate_own_profile), jamais par une
+//    modification manuelle qui laisserait un compte "actif" sans
+//    mot de passe défini. Redevient modifiable (Actif/Inactif) une
+//    fois le compte réellement activé.
+//  - Nouveau bouton "Réinitialiser le mot de passe" (comptes déjà
+//    actifs uniquement) : envoie un email de réinitialisation si le
+//    compte a un email réel, sinon ouvre une modale permettant à
+//    l'admin de saisir lui-même un nouveau mot de passe temporaire
+//    (l'utilisateur devra le changer à sa prochaine connexion,
+//    comme à la création initiale).
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -81,6 +89,13 @@ const USER_STATUT_LABELS = {
  * @type {User[]}
  */
 let _cachedProfiles = [];
+
+/**
+ * Identifiant de l'utilisateur ciblé par la modale de
+ * réinitialisation manuelle de mot de passe (compte sans email).
+ * @type {string|null}
+ */
+let _resetPasswordTargetUserId = null;
 
 // ─────────────────────────────────────────────
 // 2. HELPERS DE RENDU
@@ -262,8 +277,7 @@ function _buildPermissionsSection() {
 
 /**
  * Crée (si besoin) et retourne le bouton "Renvoyer l'invitation",
- * inséré juste après le groupe Statut de la modale. Un seul bouton
- * est créé puis réutilisé/repositionné à chaque ouverture.
+ * inséré juste après le groupe Statut de la modale.
  * @returns {HTMLButtonElement}
  */
 function _ensureResendButton() {
@@ -275,12 +289,79 @@ function _ensureResendButton() {
     btn.id = 'u-resend-btn';
     btn.className = 'btn btn-secondary btn-sm';
     btn.style.marginTop = '8px';
+    btn.style.marginRight = '8px';
     btn.innerHTML = '<i class="ti ti-mail-forward"></i> Renvoyer l\'invitation';
     btn.onclick = () => resendInvitation(v('u-id'));
     const anchor = el('u-statut-grp');
     anchor.parentNode.insertBefore(btn, anchor.nextSibling);
   }
   return btn;
+}
+
+/**
+ * Crée (si besoin) et retourne le bouton "Réinitialiser le mot de
+ * passe", positionné juste après le bouton "Renvoyer l'invitation".
+ * @returns {HTMLButtonElement}
+ */
+function _ensureResetPasswordButton() {
+  /** @type {HTMLButtonElement | null} */
+  let btn = /** @type {any} */ (el('u-resetpw-btn'));
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'u-resetpw-btn';
+    btn.className = 'btn btn-secondary btn-sm';
+    btn.style.marginTop = '8px';
+    btn.innerHTML = '<i class="ti ti-key"></i> Réinitialiser le mot de passe';
+    btn.onclick = () => resetUserPassword(v('u-id'));
+    const resendBtn = _ensureResendButton();
+    resendBtn.parentNode.insertBefore(btn, resendBtn.nextSibling);
+  }
+  return btn;
+}
+
+/**
+ * Crée (si besoin) la modale permettant à l'admin de saisir
+ * manuellement un nouveau mot de passe pour un compte sans email.
+ * Injectée dynamiquement — aucune modification de Qualistore.html
+ * n'est nécessaire pour cette fonctionnalité.
+ * @returns {void}
+ */
+function _ensureResetPasswordModal() {
+  if (el('m-reset-pass')) return;
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-ov" id="m-reset-pass">
+      <div class="modal">
+        <div class="modal-hdr">
+          <div class="modal-title"><i class="ti ti-key" style="color:var(--primary)"></i> Nouveau mot de passe</div>
+          <button class="btn-x" onclick="closeModal('m-reset-pass')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-err" id="rp-err"></div>
+          <p class="tsm tm" style="margin-bottom:12px">Ce compte n'a pas d'adresse email : définissez vous-même son nouveau mot de passe et communiquez-le à l'utilisateur. Il devra le changer à sa prochaine connexion.</p>
+          <div class="form-group">
+            <label class="form-label">Nouveau mot de passe</label>
+            <div class="pw-wrap">
+              <input class="form-control" type="password" id="rp-new" placeholder="••••••••" autocomplete="new-password">
+              <button class="pw-eye" type="button" onclick="togglePass('rp-new',this)"><i class="ti ti-eye"></i></button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirmer le mot de passe</label>
+            <div class="pw-wrap">
+              <input class="form-control" type="password" id="rp-confirm" placeholder="••••••••" autocomplete="new-password">
+              <button class="pw-eye" type="button" onclick="togglePass('rp-confirm',this)"><i class="ti ti-eye"></i></button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-secondary" onclick="closeModal('m-reset-pass')">Annuler</button>
+          <button class="btn btn-primary" onclick="confirmAdminResetPassword()"><i class="ti ti-check"></i> Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  `);
 }
 
 /**
@@ -295,8 +376,15 @@ function _populateUserForm(userId) {
   sv('u-id', user.id);
   sv('u-nom', user.nom);
   sv('u-login', _isInternalLogin(user.login) ? '(compte sans email)' : user.login);
-  el('u-statut').value = user.statut;
-  el('u-role').value   = user.role;
+
+  // Le statut ne peut être modifié manuellement que pour un compte
+  // déjà activé — jamais pendant qu'il est en attente d'activation,
+  // pour éviter qu'un compte se retrouve marqué "actif" sans avoir
+  // jamais défini de mot de passe.
+  el('u-statut').value = (user.statut === 'invitation') ? 'actif' : user.statut;
+  el('u-statut').disabled = (user.statut === 'invitation');
+
+  el('u-role').value = user.role;
 
   document.querySelectorAll('.mcb').forEach(cb => {
     cb.checked = (user.magasins || []).includes(cb.value);
@@ -310,6 +398,9 @@ function _populateUserForm(userId) {
   const resendBtn = _ensureResendButton();
   resendBtn.style.display = (user.statut === 'invitation' && !_isInternalLogin(user.login)) ? '' : 'none';
 
+  const resetPwBtn = _ensureResetPasswordButton();
+  resetPwBtn.style.display = (user.statut === 'actif') ? '' : 'none';
+
   onRoleChange(false);
 }
 
@@ -320,7 +411,8 @@ function _resetUserForm() {
   sv('u-id', '');
   ['u-nom', 'u-login'].forEach(id => sv(id, ''));
   el('u-statut').value = 'actif';
-  el('u-role').value   = '';
+  el('u-statut').disabled = false;
+  el('u-role').value = '';
   PIDS.forEach(permId => {
     const checkbox = el('p-' + permId);
     if (checkbox) checkbox.checked = false;
@@ -329,6 +421,8 @@ function _resetUserForm() {
 
   const resendBtn = el('u-resend-btn');
   if (resendBtn) resendBtn.style.display = 'none';
+  const resetPwBtn = el('u-resetpw-btn');
+  if (resetPwBtn) resetPwBtn.style.display = 'none';
 }
 
 /**
@@ -435,6 +529,16 @@ function _computeActivationRedirect() {
 }
 
 /**
+ * Calcule l'URL de retour (reset-password.html) à partir de
+ * l'emplacement courant du site.
+ * @returns {string}
+ */
+function _computeResetPasswordRedirect() {
+  const currentDir = window.location.pathname.replace(/[^/]*$/, '');
+  return window.location.origin + currentDir + 'reset-password.html';
+}
+
+/**
  * Crée un utilisateur — avec email (invitation envoyée par email)
  * ou sans email (identifiant interne + mot de passe temporaire
  * affiché à l'admin), selon que le champ email est rempli ou non.
@@ -515,6 +619,85 @@ async function resendInvitation(userId) {
 }
 
 /**
+ * Déclenche la réinitialisation du mot de passe d'un utilisateur
+ * déjà actif : envoi d'un email si le compte a une adresse réelle,
+ * sinon ouverture de la modale de saisie manuelle par l'admin.
+ * @param {string} userId
+ * @returns {Promise<void>}
+ */
+async function resetUserPassword(userId) {
+  if (!userId) return;
+  /** @type {User | undefined} */
+  const user = _cachedProfiles.find(u => u.id === userId);
+  if (!user) return;
+
+  if (_isInternalLogin(user.login)) {
+    _resetPasswordTargetUserId = userId;
+    _ensureResetPasswordModal();
+    sv('rp-new', '');
+    sv('rp-confirm', '');
+    el('rp-err').classList.remove('show');
+    openModal('m-reset-pass');
+    return;
+  }
+
+  const { error } = await _sb.auth.resetPasswordForEmail(user.login, {
+    redirectTo: _computeResetPasswordRedirect(),
+  });
+
+  if (error) {
+    const errorEl = el('u-err');
+    errorEl.textContent = "Erreur lors de l'envoi de l'email : " + error.message;
+    errorEl.classList.add('show');
+    return;
+  }
+
+  showToast(`Email de réinitialisation envoyé à ${user.login}.`, 'success');
+}
+
+/**
+ * Valide et envoie le nouveau mot de passe saisi par l'admin pour
+ * un compte sans email (action "set-password" de l'Edge Function).
+ * @returns {Promise<void>}
+ */
+async function confirmAdminResetPassword() {
+  const errorEl = el('rp-err');
+  errorEl.classList.remove('show');
+
+  /** @type {string} */
+  const newPassword = v('rp-new');
+  /** @type {string} */
+  const confirmPassword = v('rp-confirm');
+
+  if (!newPassword || newPassword.length < 10) {
+    errorEl.textContent = 'Le mot de passe doit contenir au moins 10 caractères.';
+    errorEl.classList.add('show');
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    errorEl.textContent = 'Les mots de passe ne correspondent pas.';
+    errorEl.classList.add('show');
+    return;
+  }
+
+  const { data, error } = await _sb.functions.invoke('invite-user', {
+    body: { action: 'set-password', userId: _resetPasswordTargetUserId, newPassword },
+  });
+
+  /** @type {string|undefined} */
+  const functionError = (data && data.error) || error?.message;
+  if (functionError) {
+    errorEl.textContent = 'Erreur : ' + functionError;
+    errorEl.classList.add('show');
+    return;
+  }
+
+  closeModal('m-reset-pass');
+  closeModal('m-user');
+  showToast("Mot de passe modifié. L'utilisateur devra le changer à sa prochaine connexion.", 'success');
+}
+
+/**
  * Affiche les identifiants générés pour un compte sans email — une
  * seule fois, jamais reconsultables ensuite.
  * @param {string} nom
@@ -532,7 +715,10 @@ function _showGeneratedCredentials(nom, identifier, tempPassword) {
 /**
  * Met à jour un profil existant (rôle/statut/magasins/permissions/nom).
  * L'email/identifiant n'est jamais modifié ici (champ désactivé,
- * lié au compte Supabase Auth).
+ * lié au compte Supabase Auth). Le statut n'est lu depuis le
+ * formulaire que s'il n'est pas verrouillé (voir _populateUserForm) ;
+ * sinon il reste inchangé, pour ne jamais court-circuiter
+ * l'activation par l'utilisateur lui-même.
  * @param {string} userId
  * @param {string} nom
  * @param {UserRole} role
@@ -542,12 +728,12 @@ function _showGeneratedCredentials(nom, identifier, tempPassword) {
  * @returns {Promise<void>}
  */
 async function _updateExistingUser(userId, nom, role, magasins, perms, errorEl) {
-  /** @type {string} */
-  const statut = el('u-statut').value;
-
   /** @type {User | undefined} */
   const existing = _cachedProfiles.find(u => u.id === userId);
   if (!existing) return;
+
+  /** @type {string} */
+  const statut = el('u-statut').disabled ? existing.statut : el('u-statut').value;
 
   /** @type {User} */
   const updated = { ...existing, nom, role, statut, magasins, perms };
