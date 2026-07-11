@@ -56,6 +56,10 @@
   </div>
 </div>
 
+<!-- SDK Supabase (UMD) — DOIT être chargé avant js/supabase.js,
+     sinon js/supabase.js ne trouve pas window.supabase et _sb ne
+     sera jamais défini (c'était la cause de l'erreur précédente). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/supabase.js"></script>
 <script>
 /**
@@ -98,6 +102,8 @@ function togglePass(inputId, btn) {
  * "Activer mon compte", pour éviter qu'un scanner de sécurité
  * d'email (Gmail, Brevo...) qui pré-visite ce lien ne consomme le
  * jeton à usage unique avant le vrai clic de l'utilisateur).
+ * Vérifie aussi que _sb (client Supabase, défini par js/supabase.js)
+ * a bien été chargé — sinon rien ne pourrait fonctionner plus loin.
  * @returns {void}
  */
 function initActivation() {
