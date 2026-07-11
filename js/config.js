@@ -2,114 +2,243 @@
 // CONFIG — QualiStore
 // Source de vérité unique pour toutes les constantes applicatives.
 // Aucune logique métier ici — uniquement des données statiques.
+//
+// ⚠️ CHANGÉ (permissions détaillées) : remplace les 8 permissions
+// globales (aud-r, aud-w, nc, ac, mag, rap, grille, usr) par un
+// système granulaire d'une quarantaine de droits, organisés en
+// groupes (PERMISSION_GROUPS) pour l'affichage dans la modale
+// utilisateur (menus dépliables par groupe). PERMISSION_IDS/PIDS et
+// DEFAULT_PERMISSIONS/DPERMS restent les alias utilisés par le
+// reste du code (users.js, auth.js) — leur FORME change (beaucoup
+// plus d'entrées) mais pas leur RÔLE.
+//
+// Les valeurs par défaut par rôle ci-dessous reproduisent le plus
+// fidèlement possible le comportement actuel du code (voir l'audit
+// détaillé effectué avant ce changement) : beaucoup d'actions
+// étaient jusqu'ici réservées au rôle admin en dur, indépendamment
+// des 8 permissions — ce n'est qu'à partir du moment où chaque
+// fichier concerné sera mis à jour (travail en cours, par lots) que
+// ces nouveaux droits prendront réellement effet à la place des
+// vérifications de rôle codées en dur.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
-// 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
-//    ⚠️ Déduits de l'usage et du contenu des données de ce fichier.
+// 0. TYPEDEFS JSDoc
 // ─────────────────────────────────────────────
 
 /**
- * Identifiant de permission applicative. Liste fermée et canonique
- * (ce fichier est la source de vérité — voir PERMISSION_IDS).
- * Réutilisé dans auth.js / storage.js sous le même nom.
- * @typedef {'aud-r'|'aud-w'|'nc'|'ac'|'mag'|'rap'|'grille'|'usr'} PermissionId
+ * Identifiant de permission applicative détaillé. Liste fermée,
+ * dérivée de PERMISSION_GROUPS (voir plus bas) — ne pas modifier
+ * cette liste sans mettre à jour PERMISSION_GROUPS en conséquence.
+ * @typedef {string} PermissionId
  */
 
 /**
  * Droits d'accès pour un rôle donné, une entrée par PermissionId.
- * 1 = autorisé, 0 = refusé (voir commentaire d'origine sur DEFAULT_PERMISSIONS).
- * @typedef {Record<PermissionId, 0|1>} UserPerms
+ * 1 = autorisé, 0 = refusé.
+ * @typedef {Object<PermissionId, 0|1>} UserPerms
  */
 
 /**
- * Table des permissions par défaut, indexée par nom de rôle.
- * Rôles observés dans ce fichier : 'admin', 'fsqs', 'directeur',
- * 'direction', 'collaborateur'. D'autres rôles pourraient exister
- * ailleurs dans le projet sans permissions par défaut associées —
- * TODO TYPE : liste de rôles non garantie exhaustive au-delà de ce fichier.
- * @typedef {Object<string, UserPerms>} RoleDefaultPermissions
+ * Un droit individuel affiché dans la modale utilisateur.
+ * @typedef {Object} PermissionDef
+ * @property {PermissionId} id
+ * @property {string} label
  */
 
 /**
- * Zone de contrôle du parcours Qualimètre.
- * @typedef {Object} QMZone
- * @property {string} id - Identifiant stable de zone (slug généré depuis le libellé, voir _slugifyZoneLabel, import-grille.js — plus aucune zone prédéfinie, voir _getAllZones, grille-qualimetre.js).
- * @property {string} emoji - Émoji représentant visuellement la zone.
- * @property {string} label - Libellé affiché à l'utilisateur.
- */
-
-/**
- * Niveau de criticité d'un point de contrôle de la grille d'audit FSQS.
- * @typedef {'Mineure'|'Majeure'|'Critique'} GrilleCriticite
- */
-
-/**
- * Point de contrôle de la grille d'audit FSQS.
- * @typedef {Object} GrillePoint
- * @property {string} id - Identifiant stable du point (ex : 'imp-...', 'cust-...').
- * @property {string} zone - Sous-partie du rayon (ex : 'Lieu de stockage'), propre à ce rayon précis — devient l'onglet affiché dans la modale d'audit (voir buildAuditQuestions, audits.js). Libre et renommable, jamais partagée entre deux rayons même en cas d'intitulé identique (voir renameGrilleZone, rayons.js). Chaîne vide acceptée (regroupée sous IMPORT_UNCLASSIFIED_ZONE_LABEL à l'affichage, voir getZonesForRayon).
- * @property {string} cat - Sous-groupe à l'intérieur de la zone (ex : 'Equipement', 'Nettoyage'). Affiché comme en-tête de groupe dans la page Grille (voir _buildCategorySection, grille.js), mais ne crée plus d'onglet — c'est zone qui en crée un.
- * @property {string} q - Intitulé de la question / du point de contrôle.
- * @property {string} prec - Précision ou exemple additionnel. Chaîne vide si absent (jamais null/undefined dans ce fichier).
- * @property {number} p - Poids / pondération du point.
- * @property {GrilleCriticite} c - Niveau de criticité du point.
- */
-
-/**
- * Clé de format de fichier supporté pour l'import de grille.
- * @typedef {'csv'|'xlsx'|'pdf'} ImportFormatKey
- */
-
-/**
- * Dictionnaire des textes d'aide HTML affichés dans la modale
- * d'import, indexé par ImportFormatKey. Chaque valeur est une chaîne
- * HTML brute destinée à être injectée via innerHTML côté UI.
- * @typedef {Record<ImportFormatKey, string>} ImportFormatInfoMap
+ * Un groupe de droits, affiché comme un menu dépliable (ouvert par
+ * défaut) dans la modale utilisateur.
+ * @typedef {Object} PermissionGroup
+ * @property {string} id - Identifiant du groupe (usage interne, ex : accordéon).
+ * @property {string} label - Titre affiché du groupe.
+ * @property {string} icon - Classe d'icône Tabler.
+ * @property {PermissionDef[]} permissions
  */
 
 // ─────────────────────────────────────────────
 // 1. CONSTANTES APPLICATIVES
 // ─────────────────────────────────────────────
 
-/**
- * Clé localStorage pour la persistance locale des données.
- * @type {string}
- */
+/** @type {string} Clé localStorage pour la persistance locale des données. */
 const STORAGE_KEY = 'fsqs_v2';
 
-/**
- * Chemin vers le logo (utilisé dans les exports PDF).
- * @type {string}
- */
+/** @type {string} Chemin vers le logo (utilisé dans les exports PDF). */
 const LOGO_PATH = 'assets/logo.png';
 
 // ─────────────────────────────────────────────
-// 2. PERMISSIONS PAR RÔLE
+// 2. PERMISSIONS DÉTAILLÉES, PAR GROUPE
 // ─────────────────────────────────────────────
 
+/** @type {PermissionGroup[]} */
+const PERMISSION_GROUPS = [
+  {
+    id: 'audits', label: 'Audits FSQS', icon: 'ti-clipboard-check',
+    permissions: [
+      { id: 'audit_create',       label: 'Créer un audit' },
+      { id: 'audit_edit_date',    label: 'Modifier la date d\'un audit' },
+      { id: 'draft_view_own',     label: 'Accéder à ses propres brouillons' },
+      { id: 'draft_view_others',  label: 'Accéder aux brouillons des autres' },
+      { id: 'draft_resume',       label: 'Reprendre un brouillon' },
+      { id: 'draft_delete',       label: 'Supprimer un brouillon' },
+      { id: 'draft_save',         label: 'Enregistrer comme brouillon (mettre en pause un audit)' },
+    ],
+  },
+  {
+    id: 'qual_audits', label: 'Audit Qualimètre', icon: 'ti-rosette',
+    permissions: [
+      { id: 'qaudit_create',       label: 'Créer un audit Qualimètre' },
+      { id: 'qaudit_edit_date',    label: 'Modifier la date d\'un audit Qualimètre' },
+      { id: 'qaudit_edit_auditor', label: 'Modifier le champ auditeur' },
+    ],
+  },
+  {
+    id: 'nc', label: 'Non-conformités', icon: 'ti-alert-triangle',
+    permissions: [
+      { id: 'nc_view',          label: 'Voir les non-conformités' },
+      { id: 'nc_edit_status',   label: 'Modifier le statut / commentaire' },
+      { id: 'nc_edit_deadline', label: 'Modifier l\'échéance' },
+      { id: 'nc_delete',        label: 'Supprimer une non-conformité' },
+      { id: 'nc_reopen',        label: 'Rouvrir depuis les archives' },
+    ],
+  },
+  {
+    id: 'actions', label: 'Actions correctives', icon: 'ti-tool',
+    permissions: [
+      { id: 'action_view',        label: 'Voir les actions correctives' },
+      { id: 'action_edit_status', label: 'Modifier le statut d\'une action' },
+      { id: 'action_delete',      label: 'Supprimer une action' },
+      { id: 'action_restore',     label: 'Restaurer une action' },
+    ],
+  },
+  {
+    id: 'alertes', label: 'Alertes terrain', icon: 'ti-alert-circle',
+    permissions: [
+      { id: 'alert_create', label: 'Créer une alerte' },
+      { id: 'alert_edit',   label: 'Modifier une alerte' },
+      { id: 'alert_close',  label: 'Clôturer une alerte' },
+      { id: 'alert_delete', label: 'Supprimer une alerte' },
+    ],
+  },
+  {
+    id: 'magasins', label: 'Magasins & enseignes', icon: 'ti-building-store',
+    permissions: [
+      { id: 'store_manage', label: 'Gérer les magasins (créer/modifier/supprimer/rayons)' },
+      { id: 'brand_manage', label: 'Gérer les enseignes' },
+    ],
+  },
+  {
+    id: 'grille', label: 'Grille FSQS', icon: 'ti-list-check',
+    permissions: [
+      { id: 'grid_view',         label: 'Voir la grille' },
+      { id: 'grid_create_rayon', label: 'Créer un rayon' },
+      { id: 'grid_edit_rayon',   label: 'Modifier un rayon' },
+      { id: 'grid_edit_point',   label: 'Modifier un point de contrôle' },
+      { id: 'grid_import',      label: 'Importer une grille' },
+      { id: 'grid_delete',      label: 'Supprimer une grille' },
+    ],
+  },
+  {
+    id: 'qual_grille', label: 'Grille Qualimètre', icon: 'ti-adjustments',
+    permissions: [
+      { id: 'qgrid_view',   label: 'Voir la grille Qualimètre' },
+      { id: 'qgrid_manage', label: 'Gérer la grille (ajouter/importer/réinitialiser)' },
+    ],
+  },
+  {
+    id: 'rapports', label: 'Rapports', icon: 'ti-file-analytics',
+    permissions: [
+      { id: 'report_fsqs_view',        label: 'Voir le rapport FSQS' },
+      { id: 'report_qualimetre_view',  label: 'Voir le rapport Qualimètre' },
+      { id: 'report_delete_audits',    label: 'Supprimer des audits depuis un rapport' },
+      { id: 'nc_export',               label: 'Exporter les non-conformités' },
+      { id: 'report_fsqs_export',      label: 'Exporter le rapport FSQS' },
+      { id: 'report_qualimetre_export',label: 'Exporter le rapport Qualimètre' },
+    ],
+  },
+  {
+    id: 'admin', label: 'Administration', icon: 'ti-shield-lock',
+    permissions: [
+      { id: 'users_manage',           label: 'Gérer les utilisateurs' },
+      { id: 'users_edit_permissions', label: 'Modifier les droits des utilisateurs' },
+      { id: 'backup_manage',          label: 'Accès à la sauvegarde' },
+    ],
+  },
+];
+
 /**
- * Identifiants de toutes les permissions disponibles.
- * Utilisés pour générer les cases à cocher dans le formulaire utilisateur.
+ * Liste à plat de tous les identifiants de permission, dans l'ordre
+ * de PERMISSION_GROUPS — utilisée pour générer/lire les cases à
+ * cocher du formulaire utilisateur.
  * @type {PermissionId[]}
  */
-const PERMISSION_IDS = ['aud-r', 'aud-w', 'nc', 'ac', 'mag', 'rap', 'grille', 'usr'];
+const PERMISSION_IDS = PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.id));
 
 /**
- * Permissions par défaut attribuées à chaque rôle.
- * 1 = autorisé, 0 = refusé.
- * @type {RoleDefaultPermissions}
+ * Permissions par défaut attribuées à chaque rôle. Conçues pour
+ * reproduire le comportement actuel du code aussi fidèlement que
+ * possible (voir le bandeau d'en-tête) — à ajuster librement une
+ * fois que chaque module aura été branché sur ces permissions.
+ * @type {Object<string, UserPerms>}
  */
 const DEFAULT_PERMISSIONS = {
-  admin:         { 'aud-r': 1, 'aud-w': 1, 'nc': 1, 'ac': 1, 'mag': 1, 'rap': 1, 'grille': 1, 'usr': 1 },
-  fsqs:          { 'aud-r': 1, 'aud-w': 1, 'nc': 1, 'ac': 1, 'mag': 0, 'rap': 1, 'grille': 1, 'usr': 0 },
-  directeur:     { 'aud-r': 1, 'aud-w': 0, 'nc': 0, 'ac': 1, 'mag': 0, 'rap': 1, 'grille': 0, 'usr': 0 },
-  direction:     { 'aud-r': 1, 'aud-w': 0, 'nc': 0, 'ac': 0, 'mag': 0, 'rap': 1, 'grille': 0, 'usr': 0 },
-  collaborateur: { 'aud-r': 0, 'aud-w': 1, 'nc': 0, 'ac': 0, 'mag': 0, 'rap': 0, 'grille': 0, 'usr': 0 },
+  admin: Object.fromEntries(PERMISSION_IDS.map(id => [id, 1])),
+
+  fsqs: {
+    audit_create: 1, audit_edit_date: 0, draft_view_own: 1, draft_view_others: 0, draft_resume: 1, draft_delete: 1, draft_save: 1,
+    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0,
+    nc_view: 1, nc_edit_status: 1, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
+    action_view: 1, action_edit_status: 1, action_delete: 0, action_restore: 0,
+    alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
+    store_manage: 0, brand_manage: 0,
+    grid_view: 1, grid_create_rayon: 1, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 1, grid_delete: 0,
+    qgrid_view: 1, qgrid_manage: 0,
+    report_fsqs_view: 1, report_qualimetre_view: 1, report_delete_audits: 0, nc_export: 1, report_fsqs_export: 1, report_qualimetre_export: 1,
+    users_manage: 0, users_edit_permissions: 0, backup_manage: 0,
+  },
+
+  directeur: {
+    audit_create: 0, audit_edit_date: 0, draft_view_own: 0, draft_view_others: 0, draft_resume: 0, draft_delete: 0, draft_save: 0,
+    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0,
+    nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
+    action_view: 1, action_edit_status: 0, action_delete: 0, action_restore: 0,
+    alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
+    store_manage: 0, brand_manage: 0,
+    grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
+    qgrid_view: 0, qgrid_manage: 0,
+    report_fsqs_view: 1, report_qualimetre_view: 1, report_delete_audits: 0, nc_export: 0, report_fsqs_export: 1, report_qualimetre_export: 1,
+    users_manage: 0, users_edit_permissions: 0, backup_manage: 0,
+  },
+
+  direction: {
+    audit_create: 0, audit_edit_date: 0, draft_view_own: 0, draft_view_others: 0, draft_resume: 0, draft_delete: 0, draft_save: 0,
+    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0,
+    nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
+    action_view: 0, action_edit_status: 0, action_delete: 0, action_restore: 0,
+    alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
+    store_manage: 0, brand_manage: 0,
+    grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
+    qgrid_view: 0, qgrid_manage: 0,
+    report_fsqs_view: 1, report_qualimetre_view: 1, report_delete_audits: 0, nc_export: 0, report_fsqs_export: 1, report_qualimetre_export: 1,
+    users_manage: 0, users_edit_permissions: 0, backup_manage: 0,
+  },
+
+  collaborateur: {
+    audit_create: 1, audit_edit_date: 0, draft_view_own: 1, draft_view_others: 0, draft_resume: 1, draft_delete: 1, draft_save: 1,
+    qaudit_create: 0, qaudit_edit_date: 0, qaudit_edit_auditor: 0,
+    nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
+    action_view: 0, action_edit_status: 0, action_delete: 0, action_restore: 0,
+    alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
+    store_manage: 0, brand_manage: 0,
+    grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
+    qgrid_view: 0, qgrid_manage: 0,
+    report_fsqs_view: 0, report_qualimetre_view: 0, report_delete_audits: 0, nc_export: 0, report_fsqs_export: 0, report_qualimetre_export: 0,
+    users_manage: 0, users_edit_permissions: 0, backup_manage: 0,
+  },
 };
 
-// Alias conservé pour compatibilité avec les appels existants
-/** @type {RoleDefaultPermissions} */
+// Alias conservés pour compatibilité avec les appels existants
+/** @type {Object<string, UserPerms>} */
 const DPERMS = DEFAULT_PERMISSIONS;
 /** @type {PermissionId[]} */
 const PIDS   = PERMISSION_IDS;
@@ -146,10 +275,7 @@ const PDFJS_URL   = CDN_PDFJS;
 // 6. TEXTES D'AIDE À L'IMPORT (ui uniquement)
 // ─────────────────────────────────────────────
 
-/**
- * Descriptions affichées dans la modale d'import selon le format choisi.
- * @type {ImportFormatInfoMap}
- */
+/** @type {Object<string, string>} */
 const IMPORT_FORMAT_INFO = {
   default: `<strong style="color:var(--text);font-size:13px">Déposez un fichier CSV, TSV, Excel (.xlsx/.xls) ou PDF</strong><br>
     Le format est détecté automatiquement. Les colonnes sont reconnues quel que soit leur ordre ou leur intitulé exact (zone, point de contrôle, méthode, criticité, commentaire…).<br>
@@ -173,5 +299,5 @@ const IMPORT_FORMAT_INFO = {
 };
 
 // Alias pour compatibilité
-/** @type {ImportFormatInfoMap} */
+/** @type {Object<string, string>} */
 const FORMAT_INFO = IMPORT_FORMAT_INFO;

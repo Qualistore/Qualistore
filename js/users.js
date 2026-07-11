@@ -1,15 +1,16 @@
 // ══════════════════════════════════════════════════════════════
 // USERS — Gestion des utilisateurs
 // Dépend de : storage.js (CU), supabase.js (_sb, sbDeleteWhere),
-//   auth.js (hasPerm), ui.js, config.js (PIDS, DPERMS)
+//   auth.js (hasPerm), ui.js, config.js (PIDS, DPERMS, PERMISSION_GROUPS)
 //
-// ⚠️ CHANGÉ (v2 — comptes sans email) : le nom est désormais
-// toujours saisi par l'admin à la création (email fourni ou non).
-// Si l'email est vide, un compte "sans email" est créé (identifiant
-// interne + mot de passe temporaire généré, voir la Edge Function
-// invite-user) — les identifiants générés sont affichés une seule
-// fois à l'admin dans une modale dédiée (m-new-credentials) pour
-// qu'il les communique lui-même à la personne concernée.
+// ⚠️ CHANGÉ (v3 — droits détaillés) : la section "Droits sur
+// l'application" de la modale est désormais générée dynamiquement
+// depuis PERMISSION_GROUPS (config.js, une quarantaine de droits
+// répartis en 10 groupes dépliables) au lieu d'une liste figée en
+// dur dans le HTML — voir _buildPermissionsSection(). Le reste
+// (email optionnel → invitation ou compte sans email, nom toujours
+// saisi par l'admin) est inchangé par rapport à la version
+// précédente.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -22,13 +23,9 @@
  */
 
 /**
- * Identifiant de permission applicative (voir config.js).
- * @typedef {'aud-r'|'aud-w'|'nc'|'ac'|'mag'|'rap'|'grille'|'usr'} PermissionId
- */
-
-/**
- * Droits d'accès d'un utilisateur, une entrée par PermissionId.
- * @typedef {Record<PermissionId, 0|1>} UserPerms
+ * Droits d'accès d'un utilisateur, une entrée par PermissionId
+ * (voir config.js, PERMISSION_GROUPS/PERMISSION_IDS).
+ * @typedef {Object<string, 0|1>} UserPerms
  */
 
 /**
@@ -143,7 +140,7 @@ async function renderUsers() {
   _cachedProfiles = await sbSelect('profiles');
 
   /** @type {boolean|0|undefined} */
-  const canManage    = hasPerm('usr');
+  const canManage    = hasPerm('users_manage');
   /** @type {boolean} */
   const onlyOneAdmin = _cachedProfiles.filter(u => u.role === 'admin' && u.statut === 'actif').length <= 1;
 
@@ -217,6 +214,7 @@ function openUserModal(userId) {
   el('u-login').disabled = isEdit;
 
   _buildStoreCheckboxes();
+  _buildPermissionsSection();
 
   if (isEdit) {
     _populateUserForm(userId);
@@ -238,6 +236,29 @@ function _buildStoreCheckboxes() {
           <input type="checkbox" value="${m.id}" class="mcb"> ${m.nom}
         </label>`).join('')
     : '<span class="tm tsm">Aucun magasin créé</span>';
+}
+
+/**
+ * Construit dynamiquement la section "Droits sur l'application" à
+ * partir de PERMISSION_GROUPS (config.js) — un menu dépliable
+ * (ouvert par défaut, réductible via l'élément natif <details>) par
+ * groupe, une case à cocher par droit. Évite de dupliquer la liste
+ * des droits en dur dans le HTML : config.js reste la source unique
+ * de vérité.
+ * @returns {void}
+ */
+function _buildPermissionsSection() {
+  const container = el('u-perms-container');
+  container.innerHTML = PERMISSION_GROUPS.map(group => `
+    <details class="perm-sec" open>
+      <summary class="perm-title"><i class="ti ${group.icon}"></i> ${group.label}</summary>
+      <div class="cb-group">
+        ${group.permissions.map(perm => `
+          <label class="cb-item"><input type="checkbox" id="p-${perm.id}"> ${perm.label}</label>
+        `).join('')}
+      </div>
+    </details>
+  `).join('');
 }
 
 /**
@@ -432,16 +453,14 @@ async function _createNewUser(nom, role, magasins, perms, errorEl) {
 
 /**
  * Affiche les identifiants générés pour un compte sans email — une
- * seule fois, jamais reconsultables ensuite (le mot de passe n'est
- * jamais stocké en clair, ni ici ni côté serveur au-delà de la
- * création du compte).
+ * seule fois, jamais reconsultables ensuite.
  * @param {string} nom
  * @param {string} identifier
  * @param {string} tempPassword
  * @returns {void}
  */
 function _showGeneratedCredentials(nom, identifier, tempPassword) {
-  el('cred-nom').textContent      = nom;
+  el('cred-nom').textContent        = nom;
   el('cred-identifier').textContent = identifier;
   el('cred-password').textContent   = tempPassword;
   openModal('m-new-credentials');
