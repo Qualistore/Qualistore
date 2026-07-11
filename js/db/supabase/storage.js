@@ -29,17 +29,12 @@
  */
 
 /**
- * Utilisateur applicatif (compte admin ou collaborateur).
- * Structure déduite de l'objet admin par défaut dans _buildDefaultDB().
- * @typedef {Object} User
- * @property {string} id
- * @property {string} nom
- * @property {string} login
- * @property {string} pwd - Mot de passe encodé en base64 (btoa). TODO TYPE : à confirmer que ce n'est pas un hash réel ailleurs dans le projet.
- * @property {string} role - Valeur observée : 'admin'. Autres rôles possibles non confirmés ici.
- * @property {string} statut - Valeur observée : 'actif'. Autres valeurs non confirmées ici.
- * @property {string[]} magasins - Tableau d'IDs de magasins assignés (Magasin.id). CONFIRMÉ par users.js (saveUser, _buildUserStoresList) ; toujours vide pour le rôle 'admin'.
- * @property {UserPerms} perms
+ * RETIRE (nettoyage securite) : ce fichier ne manipule plus aucune
+ * donnee utilisateur -- la table locale `users` (mots de passe en
+ * base64, jamais un hachage reel) n'est plus lue ni ecrite ici.
+ * Les comptes/roles/droits vivent entierement dans `profiles`
+ * (Supabase Auth), geres par auth.js/users.js. DB.users et le
+ * typedef User associe ont ete retires en consequence.
  */
 
 /**
@@ -179,7 +174,6 @@
  * Structure racine de la base de données applicative, maintenue en
  * mémoire et synchronisée avec localStorage + Supabase.
  * @typedef {Object} DB
- * @property {User[]} users
  * @property {Magasin[]} magasins
  * @property {Audit[]} audits
  * @property {NC[]} ncs
@@ -288,12 +282,6 @@ function _setPendingSync(value) {
  */
 function _buildDefaultDB() {
   return {
-    users: [{
-      id: 'admin1', nom: 'Administrateur', login: 'admin',
-      pwd: btoa('admin'), role: 'admin', statut: 'actif',
-      magasins: [],
-      perms: { 'aud-r': 1, 'aud-w': 1, 'nc': 1, 'ac': 1, 'mag': 1, 'rap': 1, 'grille': 1, 'usr': 1 },
-    }],
     magasins:          [],
     enseignes:         [],
     audits:            [],
@@ -383,19 +371,18 @@ async function loadDB() {
   }
 
   try {
-    /** @type {[User[], Magasin[], Audit[], NC[], Action[], Alerte[], SupabaseRow[], QualAudit[], SupabaseRow[], Draft[]]} */
+    /** @type {[Magasin[], Audit[], NC[], Action[], Alerte[], SupabaseRow[], QualAudit[], SupabaseRow[], Draft[]]} */
     const [
-      users, magasins, audits, ncs, actions, alertes,
+      magasins, audits, ncs, actions, alertes,
       grilleRows, qualAudits, qualRows, drafts,
     ] = await Promise.all([
-      sbSelect('users'),    sbSelect('magasins'),   sbSelect('audits'),
+      sbSelect('magasins'),   sbSelect('audits'),
       sbSelect('ncs'),      sbSelect('actions'),    sbSelect('alertes'),
       sbSelect('grille_custom'), sbSelect('qual_audits'),
       sbSelect('qualimetre_custom'), sbSelect('drafts'),
     ]);
 
     DB = {
-      users:    users    || [],
       magasins: magasins || [],
       audits:   audits   || [],
       ncs:      ncs      || [],
@@ -414,9 +401,6 @@ async function loadDB() {
       qualAudits: qualAudits || [],
     };
 
-    // Garantir qu'il existe toujours au moins un admin
-    if (!DB.users.length) DB.users = _buildDefaultDB().users;
-
     _saveToLocalStorage();
     _setPendingSync(false);
     console.log('✅ Supabase chargé');
@@ -428,12 +412,9 @@ async function loadDB() {
     // daysUntilAuditCleanup, _buildAuditCheckboxRow dans rapports-fsqs.js).
     _cleanStaleData();
 
-    // Rafraîchir l'utilisateur connecté depuis la DB à jour
-    if (CU) {
-      /** @type {User | undefined} */
-      const freshUser = DB.users.find(u => u.id === CU.id);
-      CU = freshUser || null;
-    }
+    // RETIRE : CU n'est plus jamais rafraichi depuis DB.users ici --
+    // cette table locale/legacy n'existe plus. CU est entierement gere
+    // par auth.js a partir de `profiles` (Supabase Auth).
   } catch (error) {
     console.warn('⚠️ Supabase inaccessible — mode hors ligne :', error.message);
     _setPendingSync(true);
@@ -693,7 +674,7 @@ function uid() {
  * En cas d'échec (réseau, etc.), positionne _pendingSyncToSupabase
  * à true pour permettre une resynchronisation ultérieure.
  * @param {string[]} [tables] - Sous-ensemble de clés de DB à synchroniser
- *   (ex : 'users', 'audits', 'grilleCustom', 'qualimetreCustom'...).
+ *   (ex : 'audits', 'magasins', 'grilleCustom', 'qualimetreCustom'...).
  * @returns {Promise<void>}
  */
 async function _pushToSupabase(tables) {
@@ -703,7 +684,6 @@ async function _pushToSupabase(tables) {
     /** @type {Promise<*>[]} */
     const operations = [];
 
-    if (pushAll || tables.includes('users'))      operations.push(sbUpsert('users',      DB.users));
     if (pushAll || tables.includes('magasins'))   operations.push(sbUpsert('magasins',   DB.magasins));
     if (pushAll || tables.includes('audits'))     operations.push(sbUpsert('audits',     DB.audits));
     if (pushAll || tables.includes('ncs'))        operations.push(sbUpsert('ncs',        DB.ncs));

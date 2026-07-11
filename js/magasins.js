@@ -21,9 +21,12 @@
  */
 
 /**
- * Utilisateur applicatif. Seules .id, .nom, .role, .statut sont
- * accédées dans ce fichier — structure complète documentée dans
- * storage.js / auth.js / config.js.
+ * Profil utilisateur (table `profiles`, Supabase Auth). Seules
+ * .id, .nom, .role, .statut sont accédées dans ce fichier --
+ * structure complète documentée dans users.js / auth.js / config.js.
+ * ⚠️ CHANGÉ : n'est plus lu depuis DB.users (table locale retirée,
+ * voir storage.js) mais via sbSelect('profiles') -- voir
+ * _magDirectorsCache.
  * @typedef {Object} User
  * @property {string} id
  * @property {string} nom
@@ -61,10 +64,20 @@
 // ─────────────────────────────────────────────
 
 /**
- * Affiche la grille des magasins visibles pour l'utilisateur connecté.
- * @returns {void}
+ * Cache local des profils (table `profiles`, Supabase Auth) --
+ * utilise uniquement pour retrouver le nom d'un directeur assigne a
+ * un magasin (DB.users n'existe plus, voir storage.js). Repeuple a
+ * chaque renderMag() / ouverture de la modale magasin.
+ * @type {User[]}
  */
-function renderMag() {
+let _magDirectorsCache = [];
+
+/**
+ * Affiche la grille des magasins visibles pour l'utilisateur connecté.
+ * @returns {Promise<void>}
+ */
+async function renderMag() {
+  _magDirectorsCache = await sbSelect('profiles');
   /** @type {string[]} */
   const storeIds  = visibleMids();
   /** @type {Magasin[]} */
@@ -107,7 +120,7 @@ function _buildStoreCard(store, canManage) {
   /** @type {number} */
   const openNcCount = DB.ncs.filter(n => n.mid === store.id && n.statut === 'Ouverte').length;
   /** @type {User | undefined} */
-  const director    = DB.users.find(u => u.id === store.did);
+  const director    = _magDirectorsCache.find(u => u.id === store.did);
   /** @type {number} */
   const rayonCount  = getRayonsForMagasin(store.id).length;
 
@@ -196,9 +209,9 @@ function _buildStoreActions(store) {
  * `storeId` est fourni, pré-remplit le formulaire avec les données
  * existantes ; sinon, réinitialise le formulaire pour une création.
  * @param {string} [storeId] - Référence vers Magasin.id à éditer ; absent/falsy pour une création.
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function openMagModal(storeId) {
+async function openMagModal(storeId) {
   /** @type {boolean} */
   const isEdit = !!storeId;
 
@@ -208,7 +221,7 @@ function openMagModal(storeId) {
 
   el('mag-err').classList.remove('show');
 
-  _populateDirectorSelect(isEdit && storeId);
+  await _populateDirectorSelect(isEdit && storeId);
 
   if (el('m-enseigne-suggestions')) {
     el('m-enseigne-suggestions').innerHTML = getKnownEnseignes()
@@ -241,9 +254,11 @@ function openMagModal(storeId) {
  * statut 'actif'), et présélectionne le directeur actuel du magasin
  * en édition s'il y en a un.
  * @param {string | false} currentStoreId - Magasin.id en cours d'édition, ou `false` en création.
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function _populateDirectorSelect(currentStoreId) {
+async function _populateDirectorSelect(currentStoreId) {
+  _magDirectorsCache = await sbSelect('profiles');
+
   const select = el('m-dir');
   /** @type {string} */
   const currentStoreDirectorId = currentStoreId
@@ -252,7 +267,7 @@ function _populateDirectorSelect(currentStoreId) {
 
   select.innerHTML =
     '<option value="">– Non assigné –</option>' +
-    DB.users
+    _magDirectorsCache
       .filter(u => u.role === 'directeur' && u.statut === 'actif')
       .map(u => `<option value="${u.id}">${u.nom}</option>`)
       .join('');
