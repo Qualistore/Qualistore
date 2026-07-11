@@ -21,18 +21,32 @@
  */
 
 /**
- * Profil utilisateur (table `profiles`, Supabase Auth). Seules
- * .id, .nom, .role, .statut sont accédées dans ce fichier --
- * structure complète documentée dans users.js / auth.js / config.js.
- * ⚠️ CHANGÉ : n'est plus lu depuis DB.users (table locale retirée,
- * voir storage.js) mais via sbSelect('profiles') -- voir
- * _magDirectorsCache.
+ * Utilisateur applicatif. Seules .id, .nom, .role, .statut sont
+ * accédées dans ce fichier — structure complète documentée dans
+ * users.js / auth.js / config.js.
+ * ⚠️ CHANGÉ : n'existe plus dans DB (DB.users a été supprimé avec la
+ * sécurisation des mots de passe) — provient désormais directement de
+ * la table Supabase `profiles` via sbSelect, voir _magDirectorsCache.
  * @typedef {Object} User
  * @property {string} id
  * @property {string} nom
  * @property {string} role - Valeur testée ici : 'directeur'.
  * @property {string} statut - Valeur testée ici : 'actif'.
  */
+
+/**
+ * Cache local des profils utilisateurs (table `profiles`), utilisé
+ * uniquement pour retrouver le nom du directeur assigné à un magasin
+ * (_buildStoreCard) et peupler le select de sélection du directeur
+ * (_populateDirectorSelect). Remplace l'ancien DB.users, supprimé de
+ * la structure DB avec la sécurisation des mots de passe (voir
+ * storage.js). Rafraîchi à chaque affichage de la page Magasins
+ * (renderMag) et défensivement à l'ouverture de la modale magasin
+ * (_populateDirectorSelect), au cas où la modale serait ouverte sans
+ * que renderMag ait tourné avant.
+ * @type {User[]}
+ */
+let _magDirectorsCache = [];
 
 /**
  * Données de formulaire d'un magasin (sans id), telles que
@@ -64,20 +78,12 @@
 // ─────────────────────────────────────────────
 
 /**
- * Cache local des profils (table `profiles`, Supabase Auth) --
- * utilise uniquement pour retrouver le nom d'un directeur assigne a
- * un magasin (DB.users n'existe plus, voir storage.js). Repeuple a
- * chaque renderMag() / ouverture de la modale magasin.
- * @type {User[]}
- */
-let _magDirectorsCache = [];
-
-/**
  * Affiche la grille des magasins visibles pour l'utilisateur connecté.
  * @returns {Promise<void>}
  */
 async function renderMag() {
   _magDirectorsCache = await sbSelect('profiles');
+
   /** @type {string[]} */
   const storeIds  = visibleMids();
   /** @type {Magasin[]} */
@@ -253,11 +259,15 @@ async function openMagModal(storeId) {
  * Remplit le select des directeurs assignables (rôle 'directeur',
  * statut 'actif'), et présélectionne le directeur actuel du magasin
  * en édition s'il y en a un.
+ * ⚠️ CHANGÉ : re-fetch défensivement _magDirectorsCache (table
+ * `profiles`) si elle est encore vide — la modale magasin peut en
+ * théorie être ouverte avant que renderMag() n'ait eu l'occasion de la
+ * peupler.
  * @param {string | false} currentStoreId - Magasin.id en cours d'édition, ou `false` en création.
  * @returns {Promise<void>}
  */
 async function _populateDirectorSelect(currentStoreId) {
-  _magDirectorsCache = await sbSelect('profiles');
+  if (!_magDirectorsCache.length) _magDirectorsCache = await sbSelect('profiles');
 
   const select = el('m-dir');
   /** @type {string} */

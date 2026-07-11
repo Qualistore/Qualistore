@@ -28,14 +28,14 @@
  * @property {number} [usr]   - Gestion des utilisateurs.
  */
 
-/**
- * RETIRE (nettoyage securite) : ce fichier ne manipule plus aucune
- * donnee utilisateur -- la table locale `users` (mots de passe en
- * base64, jamais un hachage reel) n'est plus lue ni ecrite ici.
- * Les comptes/roles/droits vivent entierement dans `profiles`
- * (Supabase Auth), geres par auth.js/users.js. DB.users et le
- * typedef User associe ont ete retires en consequence.
- */
+// ⚠️ CHANGÉ (sécurisation des mots de passe) : les comptes utilisateurs
+// ne sont plus stockés ni gérés dans DB / la table `users` (mots de
+// passe en base64/btoa, jamais un vrai hash). L'authentification et le
+// profil applicatif vivent désormais entièrement côté Supabase Auth +
+// table `profiles` (voir auth.js, users.js). Ce fichier ne charge,
+// ne pousse et ne référence plus `DB.users` du tout — CU (l'utilisateur
+// connecté) provient uniquement de la session Supabase Auth (auth.js),
+// jamais rafraîchi depuis une DB locale.
 
 /**
  * Magasin (point de vente). Aucune propriété de cet objet n'est lue
@@ -411,10 +411,6 @@ async function loadDB() {
     // dans l'onglet Rapports FSQS (voir DATA_RETENTION_WARNING_DAYS,
     // daysUntilAuditCleanup, _buildAuditCheckboxRow dans rapports-fsqs.js).
     _cleanStaleData();
-
-    // RETIRE : CU n'est plus jamais rafraichi depuis DB.users ici --
-    // cette table locale/legacy n'existe plus. CU est entierement gere
-    // par auth.js a partir de `profiles` (Supabase Auth).
   } catch (error) {
     console.warn('⚠️ Supabase inaccessible — mode hors ligne :', error.message);
     _setPendingSync(true);
