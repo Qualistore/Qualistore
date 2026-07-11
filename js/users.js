@@ -3,14 +3,13 @@
 // Dépend de : storage.js (CU), supabase.js (_sb, sbDeleteWhere),
 //   auth.js (hasPerm), ui.js, config.js (PIDS, DPERMS)
 //
-// ⚠️ CHANGÉ (migration Supabase Auth) : cet écran ne lit/écrit plus
-// DB.users (ancien système, mots de passe en base64) mais la table
-// `profiles` directement via Supabase — création par invitation par
-// email (Edge Function invite-user, la personne invitée choisit
-// elle-même son nom et son mot de passe sur activation-compte.html),
-// édition (rôle/magasins/permissions/statut) via un upsert direct
-// sur `profiles`. Il n'y a plus de champ mot de passe dans cette
-// modale : Supabase Auth gère les mots de passe de bout en bout.
+// ⚠️ CHANGÉ (v2 — comptes sans email) : le nom est désormais
+// toujours saisi par l'admin à la création (email fourni ou non).
+// Si l'email est vide, un compte "sans email" est créé (identifiant
+// interne + mot de passe temporaire généré, voir la Edge Function
+// invite-user) — les identifiants générés sont affichés une seule
+// fois à l'admin dans une modale dédiée (m-new-credentials) pour
+// qu'il les communique lui-même à la personne concernée.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -18,14 +17,12 @@
 // ─────────────────────────────────────────────
 
 /**
- * Rôle applicatif d'un utilisateur. Union fermée à 5 valeurs,
- * cohérente avec les clés de DEFAULT_PERMISSIONS dans config.js.
+ * Rôle applicatif d'un utilisateur.
  * @typedef {'admin'|'fsqs'|'directeur'|'direction'|'collaborateur'} UserRole
  */
 
 /**
- * Identifiant de permission applicative (voir config.js pour la
- * définition canonique).
+ * Identifiant de permission applicative (voir config.js).
  * @typedef {'aud-r'|'aud-w'|'nc'|'ac'|'mag'|'rap'|'grille'|'usr'} PermissionId
  */
 
@@ -35,23 +32,20 @@
  */
 
 /**
- * Profil applicatif (ligne de la table `profiles`, liée à
- * auth.users par le même id — voir 01-profiles-et-policies.sql).
- * ⚠️ Ne porte plus de champ `pwd` — le mot de passe n'existe que
- * côté Supabase Auth.
+ * Profil applicatif (ligne de la table `profiles`).
  * @typedef {Object} User
- * @property {string} id - Référence vers auth.users.id (uuid Supabase).
- * @property {string} nom - Vide tant que le compte est au statut 'invitation'.
- * @property {string} login - Email réel de l'utilisateur (identique à auth.users.email).
+ * @property {string} id
+ * @property {string} nom
+ * @property {string} login - Email réel, ou adresse technique interne (@qualistore.local) pour les comptes sans email.
  * @property {UserRole} role
- * @property {'actif'|'inactif'|'invitation'|string} statut - Seule la valeur 'actif' autorise la connexion.
- * @property {string[]} magasins - Tableau d'IDs de magasins assignés (Magasin.id) ; toujours vide pour le rôle 'admin'.
+ * @property {'actif'|'inactif'|'invitation'|string} statut
+ * @property {string[]} magasins
  * @property {UserPerms} perms
+ * @property {boolean} [must_change_password]
  */
 
 /**
- * Magasin. Seules .id et .nom sont accédées dans ce fichier ;
- * structure complète dans magasins.js.
+ * Magasin. Seules .id et .nom sont accédées dans ce fichier.
  * @typedef {Object} Magasin
  * @property {string} id
  * @property {string} nom
@@ -61,10 +55,7 @@
 // 1. CONSTANTES
 // ─────────────────────────────────────────────
 
-/**
- * Libellés des rôles pour l'affichage dans le tableau.
- * @type {Record<UserRole, string>}
- */
+/** @type {Record<UserRole, string>} */
 const USER_ROLE_LABELS = {
   admin:         'Administrateur',
   fsqs:          'Auditeur FSQS',
@@ -73,10 +64,7 @@ const USER_ROLE_LABELS = {
   collaborateur: 'Collaborateur magasin',
 };
 
-/**
- * Classes CSS de badge par rôle.
- * @type {Record<UserRole, string>}
- */
+/** @type {Record<UserRole, string>} */
 const USER_ROLE_BADGE_CLASSES = {
   admin:         'b-admin',
   fsqs:          'b-fsqs',
@@ -85,10 +73,7 @@ const USER_ROLE_BADGE_CLASSES = {
   collaborateur: 'b-prog',
 };
 
-/**
- * Libellés des statuts pour l'affichage dans le tableau.
- * @type {Record<string, string>}
- */
+/** @type {Record<string, string>} */
 const USER_STATUT_LABELS = {
   actif:      'actif',
   inactif:    'inactif',
@@ -96,10 +81,7 @@ const USER_STATUT_LABELS = {
 };
 
 /**
- * Cache local du dernier chargement de `profiles`, utilisé pour
- * pré-remplir le formulaire d'édition et vérifier le dernier admin
- * actif sans refaire un aller-retour réseau à chaque interaction.
- * Rafraîchi à chaque appel de renderUsers().
+ * Cache local du dernier chargement de `profiles`.
  * @type {User[]}
  */
 let _cachedProfiles = [];
@@ -109,7 +91,6 @@ let _cachedProfiles = [];
 // ─────────────────────────────────────────────
 
 /**
- * Construit le badge HTML d'affichage d'un rôle.
  * @param {UserRole | string} role
  * @returns {string}
  */
@@ -118,9 +99,6 @@ function roleBdg(role) {
 }
 
 /**
- * Construit les initiales d'un nom (jusqu'à 2 lettres), pour
- * l'avatar utilisateur. Retourne '?' si le nom est encore vide
- * (compte invité pas encore activé).
  * @param {string} name
  * @returns {string}
  */
@@ -130,8 +108,6 @@ function _buildUserInitials(name) {
 }
 
 /**
- * Construit la liste HTML des magasins assignés à un utilisateur
- * ('Tous' pour un admin, 'Aucun' si vide, sinon un tag par magasin).
  * @param {User} user
  * @returns {string}
  */
@@ -144,14 +120,23 @@ function _buildUserStoresList(user) {
     .join('');
 }
 
+/**
+ * Indique si un login est une adresse technique interne (compte
+ * sans email réel) plutôt qu'un email réel.
+ * @param {string} login
+ * @returns {boolean}
+ */
+function _isInternalLogin(login) {
+  return (login || '').endsWith('@qualistore.local');
+}
+
 // ─────────────────────────────────────────────
 // 3. RENDU DE LA PAGE
 // ─────────────────────────────────────────────
 
 /**
  * Charge les profils depuis Supabase et affiche le tableau des
- * utilisateurs. Empêche la suppression du dernier administrateur
- * actif (bouton supprimer masqué pour lui).
+ * utilisateurs.
  * @returns {Promise<void>}
  */
 async function renderUsers() {
@@ -162,8 +147,8 @@ async function renderUsers() {
   /** @type {boolean} */
   const onlyOneAdmin = _cachedProfiles.filter(u => u.role === 'admin' && u.statut === 'actif').length <= 1;
 
-  el('usr-cnt').textContent        = `${_cachedProfiles.length} utilisateur(s)`;
-  el('btn-add-usr').style.display  = canManage ? '' : 'none';
+  el('usr-cnt').textContent       = `${_cachedProfiles.length} utilisateur(s)`;
+  el('btn-add-usr').style.display = canManage ? '' : 'none';
 
   el('usr-tb').innerHTML = _cachedProfiles.map(user => {
     /** @type {string} */
@@ -173,19 +158,21 @@ async function renderUsers() {
     /** @type {boolean} */
     const isLastAdmin = user.role === 'admin' && onlyOneAdmin;
     /** @type {string} */
-    const displayName = user.nom || '(invitation en attente)';
+    const loginDisplay = _isInternalLogin(user.login)
+      ? `<span title="Compte sans email — identifiant interne">${user.login.replace('@qualistore.local', '')} <i class="ti ti-lock" style="font-size:11px;opacity:.6"></i></span>`
+      : user.login;
 
     return `<tr>
       <td>
         <div style="display:flex;align-items:center;gap:8px">
           <div class="avatar" style="background:var(--primary-light);color:var(--primary)">${initials}</div>
           <div>
-            <div style="font-weight:500">${displayName}</div>
-            <div class="tsm tm">${user.login}</div>
+            <div style="font-weight:500">${user.nom}</div>
+            <div class="tsm tm">${loginDisplay}</div>
           </div>
         </div>
       </td>
-      <td class="tsm tm">${user.login}</td>
+      <td class="tsm tm">${loginDisplay}</td>
       <td>${roleBdg(user.role)}</td>
       <td style="max-width:200px">${storeList}</td>
       <td><span class="badge ${user.statut === 'actif' ? 'b-done' : 'b-open'}">${USER_STATUT_LABELS[user.statut] || user.statut}</span></td>
@@ -211,12 +198,8 @@ async function renderUsers() {
 // ─────────────────────────────────────────────
 
 /**
- * Ouvre la modale de création (invitation par email) ou d'édition
- * d'un utilisateur. En création : seuls email/rôle/magasins/droits
- * sont demandés (nom et mot de passe sont choisis par la personne
- * invitée elle-même). En édition : nom/statut redeviennent
- * modifiables, email non modifiable (lié au compte Supabase Auth).
- * @param {string} [userId] - Référence vers User.id à éditer ; absent/falsy pour une invitation.
+ * Ouvre la modale de création ou d'édition d'un utilisateur.
+ * @param {string} [userId] - Référence vers User.id à éditer ; absent/falsy pour une création.
  * @returns {void}
  */
 function openUserModal(userId) {
@@ -225,12 +208,11 @@ function openUserModal(userId) {
 
   el('m-user-ttl').innerHTML = isEdit
     ? '<i class="ti ti-user-edit" style="color:var(--primary)"></i> Modifier l\'utilisateur'
-    : '<i class="ti ti-user-plus" style="color:var(--primary)"></i> Inviter un utilisateur';
+    : '<i class="ti ti-user-plus" style="color:var(--primary)"></i> Nouvel utilisateur';
 
   el('u-err').classList.remove('show');
 
-  el('u-nom-grp').style.display    = isEdit ? '' : 'none';
-  el('u-statut-grp').style.display = isEdit ? '' : 'none';
+  el('u-statut-grp').style.display  = isEdit ? '' : 'none';
   el('u-invite-hint').style.display = isEdit ? 'none' : '';
   el('u-login').disabled = isEdit;
 
@@ -246,7 +228,6 @@ function openUserModal(userId) {
 }
 
 /**
- * Construit les cases à cocher de sélection de magasins assignables.
  * @returns {void}
  */
 function _buildStoreCheckboxes() {
@@ -260,9 +241,7 @@ function _buildStoreCheckboxes() {
 }
 
 /**
- * Pré-remplit le formulaire avec les données d'un profil existant
- * (depuis le cache _cachedProfiles, chargé par le dernier renderUsers()).
- * @param {string} userId - Référence vers User.id.
+ * @param {string} userId
  * @returns {void}
  */
 function _populateUserForm(userId) {
@@ -272,7 +251,7 @@ function _populateUserForm(userId) {
 
   sv('u-id', user.id);
   sv('u-nom', user.nom);
-  sv('u-login', user.login);
+  sv('u-login', _isInternalLogin(user.login) ? '(compte sans email)' : user.login);
   el('u-statut').value = user.statut;
   el('u-role').value   = user.role;
 
@@ -289,7 +268,6 @@ function _populateUserForm(userId) {
 }
 
 /**
- * Réinitialise le formulaire pour une invitation.
  * @returns {void}
  */
 function _resetUserForm() {
@@ -305,10 +283,7 @@ function _resetUserForm() {
 }
 
 /**
- * Met à jour l'affichage du groupe magasins et les permissions par défaut
- * quand le rôle change dans le formulaire.
- *
- * @param {boolean} applyDefaults - Si true, applique les permissions par défaut du rôle
+ * @param {boolean} applyDefaults
  * @returns {void}
  */
 function onRoleChange(applyDefaults = true) {
@@ -319,12 +294,10 @@ function onRoleChange(applyDefaults = true) {
 
   if (!applyDefaults) return;
 
-  // Sélectionner tous les magasins pour le rôle "direction"
   if (role === 'direction') {
     document.querySelectorAll('.mcb').forEach(cb => { cb.checked = true; });
   }
 
-  // Appliquer les permissions par défaut du rôle
   if (DPERMS[role]) {
     PIDS.forEach(permId => {
       const checkbox = el('p-' + permId);
@@ -334,7 +307,6 @@ function onRoleChange(applyDefaults = true) {
 }
 
 /**
- * Coche ou décoche toutes les cases de sélection de magasins.
  * @param {boolean} selectAll
  * @returns {void}
  */
@@ -347,7 +319,6 @@ function toggleAllMags(selectAll) {
 // ─────────────────────────────────────────────
 
 /**
- * Lit les magasins cochés et les droits cochés du formulaire.
  * @returns {{ magasins: string[], perms: UserPerms }}
  */
 function _readStoreAndPermsFromForm() {
@@ -370,10 +341,9 @@ function _readStoreAndPermsFromForm() {
 }
 
 /**
- * Valide et sauvegarde le formulaire utilisateur : envoie une
- * invitation par email (création, champ 'u-id' vide) ou met à jour
- * le profil existant (édition). Rafraîchit la session courante (CU)
- * si l'admin modifie son propre profil.
+ * Valide et sauvegarde le formulaire utilisateur : crée un compte
+ * (avec ou sans email — champ 'u-id' vide) ou met à jour le profil
+ * existant (édition).
  * @returns {Promise<void>}
  */
 async function saveUser() {
@@ -381,8 +351,15 @@ async function saveUser() {
   const userId  = v('u-id');
   /** @type {UserRole} */
   const role    = el('u-role').value;
+  /** @type {string} */
+  const nom     = v('u-nom').trim();
   const errorEl = el('u-err');
 
+  if (!nom) {
+    errorEl.textContent = 'Le nom est requis.';
+    errorEl.classList.add('show');
+    return;
+  }
   if (!role) {
     errorEl.textContent = 'Le rôle est requis.';
     errorEl.classList.add('show');
@@ -392,42 +369,47 @@ async function saveUser() {
   const { magasins, perms } = _readStoreAndPermsFromForm();
 
   if (!userId) {
-    await _inviteNewUser(role, magasins, perms, errorEl);
+    await _createNewUser(nom, role, magasins, perms, errorEl);
   } else {
-    await _updateExistingUser(userId, role, magasins, perms, errorEl);
+    await _updateExistingUser(userId, nom, role, magasins, perms, errorEl);
   }
 }
 
 /**
- * Envoie une invitation par email via la Edge Function invite-user.
+ * Crée un utilisateur — avec email (invitation envoyée par email)
+ * ou sans email (identifiant interne + mot de passe temporaire
+ * affiché à l'admin), selon que le champ email est rempli ou non.
+ * @param {string} nom
  * @param {UserRole} role
  * @param {string[]} magasins
  * @param {UserPerms} perms
  * @param {HTMLElement} errorEl
  * @returns {Promise<void>}
  */
-async function _inviteNewUser(role, magasins, perms, errorEl) {
+async function _createNewUser(nom, role, magasins, perms, errorEl) {
   /** @type {string} */
   const email = v('u-login').trim().toLowerCase();
 
-  if (!email || !email.includes('@')) {
-    errorEl.textContent = 'Une adresse email valide est requise.';
-    errorEl.classList.add('show');
-    return;
-  }
-  if (_cachedProfiles.find(u => u.login === email)) {
-    errorEl.textContent = 'Cet email est déjà utilisé.';
-    errorEl.classList.add('show');
-    return;
+  if (email) {
+    if (!email.includes('@')) {
+      errorEl.textContent = 'Email invalide (laissez le champ vide pour créer un compte sans email).';
+      errorEl.classList.add('show');
+      return;
+    }
+    if (_cachedProfiles.find(u => u.login === email)) {
+      errorEl.textContent = "Cet email est déjà utilisé par un autre compte. Si plusieurs personnes doivent partager le même accès, ne créez pas de nouveau compte : communiquez-leur les identifiants existants.";
+      errorEl.classList.add('show');
+      return;
+    }
   }
 
-  /** @type {string} Dossier de la page courante (avec / final). */
+  /** @type {string} */
   const currentDir = window.location.pathname.replace(/[^/]*$/, '');
   /** @type {string} */
   const redirectTo = window.location.origin + currentDir + 'activation-compte.html';
 
   const { data, error } = await _sb.functions.invoke('invite-user', {
-    body: { email, role, magasins, perms, redirectTo },
+    body: { email: email || undefined, nom, role, magasins, perms, redirectTo },
   });
 
   /** @type {string|undefined} */
@@ -439,32 +421,47 @@ async function _inviteNewUser(role, magasins, perms, errorEl) {
   }
 
   closeModal('m-user');
-  showToast(`Invitation envoyée à ${email}.`, 'success');
   await renderUsers();
+
+  if (data && data.mode === 'no-email') {
+    _showGeneratedCredentials(nom, data.identifier, data.tempPassword);
+  } else {
+    showToast(`Invitation envoyée à ${email}.`, 'success');
+  }
 }
 
 /**
- * Met à jour un profil existant (rôle/statut/magasins/permissions/nom)
- * directement dans Supabase. L'email n'est jamais modifié ici (champ
- * désactivé dans le formulaire, lié au compte Supabase Auth).
+ * Affiche les identifiants générés pour un compte sans email — une
+ * seule fois, jamais reconsultables ensuite (le mot de passe n'est
+ * jamais stocké en clair, ni ici ni côté serveur au-delà de la
+ * création du compte).
+ * @param {string} nom
+ * @param {string} identifier
+ * @param {string} tempPassword
+ * @returns {void}
+ */
+function _showGeneratedCredentials(nom, identifier, tempPassword) {
+  el('cred-nom').textContent      = nom;
+  el('cred-identifier').textContent = identifier;
+  el('cred-password').textContent   = tempPassword;
+  openModal('m-new-credentials');
+}
+
+/**
+ * Met à jour un profil existant (rôle/statut/magasins/permissions/nom).
+ * L'email/identifiant n'est jamais modifié ici (champ désactivé,
+ * lié au compte Supabase Auth).
  * @param {string} userId
+ * @param {string} nom
  * @param {UserRole} role
  * @param {string[]} magasins
  * @param {UserPerms} perms
  * @param {HTMLElement} errorEl
  * @returns {Promise<void>}
  */
-async function _updateExistingUser(userId, role, magasins, perms, errorEl) {
-  /** @type {string} */
-  const nom    = v('u-nom').trim();
+async function _updateExistingUser(userId, nom, role, magasins, perms, errorEl) {
   /** @type {string} */
   const statut = el('u-statut').value;
-
-  if (!nom) {
-    errorEl.textContent = 'Le nom est requis.';
-    errorEl.classList.add('show');
-    return;
-  }
 
   /** @type {User | undefined} */
   const existing = _cachedProfiles.find(u => u.id === userId);
@@ -480,7 +477,6 @@ async function _updateExistingUser(userId, role, magasins, perms, errorEl) {
     return;
   }
 
-  // Rafraîchir la session si l'admin modifie son propre profil
   if (CU && CU.id === userId) {
     CU = updated;
     updateSBUser();

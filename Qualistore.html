@@ -23,8 +23,8 @@
     <!-- PANNEAU 1 — CONNEXION NORMALE -->
     <div id="login-form">
       <div class="form-group">
-        <label class="form-label">Email</label>
-        <input class="form-control" type="email" id="f-login" placeholder="vous@exemple.fr" autocomplete="username">
+        <label class="form-label">Email ou identifiant</label>
+        <input class="form-control" type="text" id="f-login" placeholder="vous@exemple.fr" autocomplete="username">
       </div>
       <div class="form-group">
         <label class="form-label">Mot de passe</label>
@@ -73,6 +73,23 @@
         <i class="ti ti-check"></i> Valider le nouveau mot de passe
       </button>
     </div>
+
+    <!-- PANNEAU 4 — CHANGEMENT DE MOT DE PASSE FORCÉ (comptes sans email, 1ère connexion) -->
+    <div id="login-forcepass" style="display:none">
+      <p class="tsm tm" style="margin-bottom:14px">Pour votre sécurité, choisissez un nouveau mot de passe avant de continuer (10 caractères minimum).</p>
+      <div class="login-err" id="login-forcepass-msg" style="display:none"></div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <input class="form-control" type="password" id="f-forcepass-new" placeholder="••••••••" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <input class="form-control" type="password" id="f-forcepass-confirm" placeholder="••••••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')confirmForcedPasswordChange()">
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="confirmForcedPasswordChange()">
+        <i class="ti ti-check"></i> Valider et continuer
+      </button>
+    </div>
   </div>
 </div>
 
@@ -89,6 +106,7 @@
       <div>
         <div style="font-size:12px;font-weight:500" id="sb-name">–</div>
         <div style="font-size:10px;opacity:.6" id="sb-role">–</div>
+        <button class="btn-logout" onclick="openChangePasswordModal()" style="margin-bottom:4px"><i class="ti ti-key" style="font-size:13px"></i> Changer mon mot de passe</button>
         <button class="btn-logout" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px"></i> Déconnexion</button>
       </div>
     </div>
@@ -543,15 +561,16 @@
       <div class="form-err" id="u-err"></div>
       <input type="hidden" id="u-id">
       <div class="form-row">
-        <div class="form-group" id="u-nom-grp"><label class="form-label">Nom complet *</label><input class="form-control" id="u-nom" placeholder="Prénom Nom"></div>
+        <div class="form-group"><label class="form-label">Nom complet *</label><input class="form-control" id="u-nom" placeholder="Prénom Nom"></div>
         <div class="form-group" id="u-statut-grp"><label class="form-label">Statut</label><select class="form-control" id="u-statut"><option value="actif">Actif</option><option value="inactif">Inactif</option><option value="invitation">Invitation en attente</option></select></div>
       </div>
       <div class="form-group">
-        <label class="form-label">Email *</label>
-        <input class="form-control" type="email" id="u-login" placeholder="prenom.nom@exemple.fr" autocomplete="off">
+        <label class="form-label">Email (optionnel)</label>
+        <input class="form-control" type="email" id="u-login" placeholder="prenom.nom@exemple.fr — laisser vide si pas d'email pro" autocomplete="off">
       </div>
       <div class="form-hint" id="u-invite-hint" style="display:none;margin-bottom:14px">
-        <i class="ti ti-mail"></i> Un email d'invitation sera envoyé à cette adresse — la personne choisira elle-même son nom et son mot de passe pour activer son compte.
+        <i class="ti ti-mail"></i> Avec un email : un lien d'invitation est envoyé, la personne choisit elle-même son mot de passe.<br>
+        <i class="ti ti-key"></i> Sans email : un identifiant et un mot de passe temporaire seront générés — à communiquer vous-même à la personne (jamais par email).
       </div>
       <hr class="divider">
       <div class="form-group">
@@ -604,6 +623,62 @@
     <div class="modal-foot">
       <button class="btn btn-secondary" onclick="closeModal('m-user')">Annuler</button>
       <button class="btn btn-primary" onclick="saveUser()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE — changement de mot de passe volontaire (à tout moment, une fois connecté) -->
+<div class="modal-ov" id="m-change-pass">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-key" style="color:var(--primary)"></i> Changer mon mot de passe</div>
+      <button class="btn-x" onclick="closeModal('m-change-pass')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="cp-err"></div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="cp-new" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('cp-new',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <input class="form-control" type="password" id="cp-confirm" placeholder="••••••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')submitChangePassword()">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-change-pass')">Annuler</button>
+      <button class="btn btn-primary" onclick="submitChangePassword()"><i class="ti ti-check"></i> Valider</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE — identifiants générés pour un compte sans email (affichés une seule fois) -->
+<div class="modal-ov" id="m-new-credentials">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-shield-lock" style="color:var(--primary)"></i> Identifiants de connexion</div>
+      <button class="btn-x" onclick="closeModal('m-new-credentials')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="tsm tm" style="margin-bottom:14px">
+        Compte créé pour <strong id="cred-nom"></strong>. Communiquez ces identifiants vous-même (oralement, par écrit...) —
+        <strong>ils ne seront plus jamais affichés</strong> après fermeture de cette fenêtre.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Identifiant de connexion</label>
+        <input class="form-control" id="cred-identifier" readonly style="font-family:monospace">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe temporaire</label>
+        <input class="form-control" id="cred-password" readonly style="font-family:monospace">
+      </div>
+      <div class="form-hint">La personne devra choisir un nouveau mot de passe dès sa première connexion.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" onclick="closeModal('m-new-credentials')" style="width:100%;justify-content:center">J'ai bien noté ces identifiants</button>
     </div>
   </div>
 </div>

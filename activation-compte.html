@@ -11,34 +11,34 @@
 
 <!--
   PAGE AUTONOME — activation d'un compte invité par un administrateur.
-  ⚠️ NOUVEAU FICHIER (à placer à la racine du repo, au même niveau
-  que index.html / Qualistore.html / reset-password.html).
-  N'utilise QUE js/supabase.js — aucune dépendance vers auth.js /
-  storage.js / ui.js / init.js, pour rester isolée du reste de
-  l'application (mêmes raisons que reset-password.html).
+  ⚠️ MIS À JOUR (v2) : le nom est désormais toujours saisi par
+  l'admin à l'invitation (écran Utilisateurs) — cette page ne
+  demande donc plus que la confirmation de l'email et le mot de
+  passe, plus juste "nom Prénom".
+
+  À placer à la racine du repo, au même niveau que index.html /
+  Qualistore.html / reset-password.html. N'utilise que
+  js/supabase.js — aucune dépendance vers auth.js / storage.js /
+  ui.js / init.js.
 
   ⚠️ Le jeton (token_hash, type=invite) n'est envoyé à Supabase pour
   vérification qu'au clic sur "Créer mon compte" — jamais au simple
-  chargement de page — pour ne pas se faire griller le jeton par les
-  scanners de sécurité des messageries (voir reset-password.html
-  pour l'explication complète du même problème).
+  chargement de page (voir reset-password.html pour l'explication
+  complète du problème de pré-chargement des liens par les
+  messageries).
 -->
 <div class="login-wrap" id="login-screen">
   <div class="login-box">
     <div class="login-logo">
       <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">
-      <p style="color:var(--text2);font-size:13px;margin-top:4px">Bienvenue — créez votre compte</p>
+      <p style="color:var(--text2);font-size:13px;margin-top:4px">Bienvenue — activez votre compte</p>
     </div>
 
     <div class="login-err" id="activation-msg" style="display:none"></div>
 
     <div id="activation-form">
-      <p class="tsm tm" style="margin-bottom:14px">Vous avez été invité(e) à rejoindre QualiStore. Complétez vos informations pour créer votre compte.</p>
+      <p class="tsm tm" style="margin-bottom:14px">Un administrateur vous a créé un accès à QualiStore. Confirmez votre email et choisissez votre mot de passe pour l'activer.</p>
 
-      <div class="form-group">
-        <label class="form-label">Nom Prénom</label>
-        <input class="form-control" type="text" id="a-nom" placeholder="Jean Dupont" autocomplete="name">
-      </div>
       <div class="form-group">
         <label class="form-label">Confirmez votre adresse email</label>
         <input class="form-control" type="email" id="a-email" placeholder="vous@exemple.fr" autocomplete="email">
@@ -71,13 +71,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="js/supabase.js"></script>
 <script>
-// ─────────────────────────────────────────────
-// Lecture du jeton déposé dans le fragment d'URL par le lien reçu
-// par email (voir la Edge Function invite-user, et le template
-// "Invite user" côté Supabase Dashboard). Stocké en mémoire
-// uniquement — pas envoyé à Supabase avant le clic sur "Créer mon
-// compte" (voir confirmActivation).
-// ─────────────────────────────────────────────
 (function () {
   var params = new URLSearchParams(window.location.hash.slice(1));
   var tokenHash = params.get('token_hash');
@@ -108,22 +101,17 @@ function _togglePass(inputId, toggleButton) {
 /**
  * Valide le formulaire, vérifie le jeton auprès de Supabase (c'est
  * ici, et seulement ici, qu'il est consommé), applique le mot de
- * passe choisi et finalise le profil (nom + statut actif, via la
- * fonction activate_own_profile — voir 02-invite-support.sql).
+ * passe choisi et finalise le profil (statut actif, via la fonction
+ * activate_own_profile — voir 02-invite-support.sql /
+ * 03-no-email-accounts.sql).
  * @returns {Promise<void>}
  */
 async function createAccount() {
-  var nom = document.getElementById('a-nom').value.trim();
   var email = document.getElementById('a-email').value.trim().toLowerCase();
   var password = document.getElementById('a-pass').value;
   var confirmPassword = document.getElementById('a-pass-confirm').value;
   var msg = document.getElementById('activation-msg');
 
-  if (!nom) {
-    msg.textContent = 'Merci de saisir votre nom.';
-    msg.className = 'login-err show';
-    return;
-  }
   if (!email || !email.includes('@')) {
     msg.textContent = 'Merci de saisir une adresse email valide.';
     msg.className = 'login-err show';
@@ -152,10 +140,6 @@ async function createAccount() {
     return;
   }
 
-  // L'email réellement invité fait foi (celui vérifié par Supabase),
-  // jamais celui tapé dans le formulaire — qui ne sert qu'à ce que
-  // la personne vérifie visuellement qu'elle ne s'est pas trompée
-  // de destinataire. Avertissement non bloquant en cas d'écart.
   var realEmail = verifyResult.data.session.user.email;
   if (realEmail && email !== realEmail.toLowerCase()) {
     console.warn('Email saisi différent de l\'email invité — poursuite avec l\'email invité (' + realEmail + ').');
@@ -168,7 +152,7 @@ async function createAccount() {
     return;
   }
 
-  var rpcResult = await _sb.rpc('activate_own_profile', { new_nom: nom });
+  var rpcResult = await _sb.rpc('activate_own_profile');
   if (rpcResult.error) {
     msg.textContent = 'Erreur lors de la finalisation du profil : ' + rpcResult.error.message;
     msg.className = 'login-err show';

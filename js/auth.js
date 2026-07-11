@@ -1,48 +1,33 @@
 // ══════════════════════════════════════════════════════════════
 // AUTH — Authentification et gestion de session
 // ⚠️ NOM DE FICHIER : enregistrez ce fichier sous le nom "auth.js"
-// dans votre projet (il remplace l'ancien auth.js) — je n'ai pas pu
-// réutiliser ce nom exact ici suite à une limitation technique de
-// cette session, sans lien avec le contenu du fichier lui-même.
+// dans votre projet (remplace l'ancien auth.js).
 //
 // Dépend de : storage.js (DB, CU), supabase.js (_sb), ui.js
 //   (buildSidebar, updateSBUser, navigate, showToast)
 //
-// ⚠️ CHANGÉ (migration Supabase Auth, étape 3/8 — voir le plan) :
-// l'authentification ne compare plus login/mot de passe à la main
-// contre DB.users (qui contenait pwd en base64 — jamais un hachage
-// réel). Le mot de passe n'est désormais plus jamais stocké dans vos
-// propres tables : Supabase Auth le gère entièrement (hachage bcrypt
-// côté serveur), voir supabase.js pour le client.
+// ⚠️ CHANGÉ (v4) — comptes sans email :
+//   - Les salariés sans adresse email pro se voient attribuer un
+//     identifiant interne (ex : 'jean.dupont.a1b2') relié en
+//     coulisses à une adresse technique invisible
+//     ('...@qualistore.local', voir INTERNAL_EMAIL_DOMAIN) —
+//     jamais une vraie boîte mail. doLogin() ajoute automatiquement
+//     ce suffixe si la personne tape juste son identifiant sans '@'.
+//   - Ces comptes sont créés avec un mot de passe temporaire généré
+//     par l'admin (voir la Edge Function invite-user, mode "sans
+//     email") et doivent le changer à la toute première connexion
+//     (profiles.must_change_password) — géré par
+//     _showForcedPasswordChangeForm / confirmForcedPasswordChange.
+//   - Nouveau, pour tout le monde (email ou non) : changement de
+//     mot de passe volontaire à tout moment une fois connecté, via
+//     openChangePasswordModal / submitChangePassword (bouton dans la
+//     barre latérale, au-dessus de Déconnexion).
 //
-// ⚠️ CHANGÉ (v2) : le champ de connexion est désormais une vraie
-// adresse email (plus d'email technique invisible) — nécessaire pour
-// que la réinitialisation de mot de passe par email fonctionne
-// réellement (voir requestPasswordReset ci-dessous, et le SMTP Brevo
-// configuré côté Supabase).
-//
-// ⚠️ CHANGÉ (v3) : la finalisation de la réinitialisation (choix du
-// nouveau mot de passe) se fait désormais sur une page séparée et
-// autonome, reset-password.html — PAS sur cette page. Raison : le
-// lien de récupération par défaut de Supabase consomme le jeton à
-// usage unique dès son premier chargement (avant même que
-// l'utilisateur ne clique), ce qui le grille quand un scanner de
-// sécurité de messagerie (Gmail, le suivi de clics de Brevo...)
-// pré-charge le lien automatiquement. reset-password.html ne
-// consomme le jeton qu'au clic explicite sur "Valider" — voir ce
-// fichier pour le détail. requestPasswordReset() ci-dessous pointe
-// donc désormais vers cette page dédiée plutôt que vers la page
-// courante.
-// Les fonctions _isPasswordRecoveryFlow / _showPasswordRecoveryForm /
-// confirmPasswordReset restent définies plus bas (inoffensives,
-// jamais déclenchées désormais que le lien ne pointe plus ici) —
-// conservées telles quelles pour ne rien retirer sans votre accord.
-//
-// ⚠️ CHANGÉ (ferme la faille "session falsifiable" de l'audit) :
-// CU n'est plus jamais écrit tel quel dans localStorage par ce
-// fichier — reconstruit à chaque chargement depuis la table
-// `profiles`, via l'id du vrai jeton de session Supabase, jamais
-// depuis une donnée modifiable dans le navigateur.
+// (Historique des changements précédents conservé plus bas dans le
+// fichier, sur les fonctions concernées, pour ne rien perdre du
+// contexte déjà en place : Supabase Auth, email réel, réinitialisation
+// de mot de passe sans faille de pré-chargement de lien, session non
+// falsifiable.)
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -62,17 +47,16 @@
 
 /**
  * Utilisateur applicatif (ligne de la table `profiles`, liée à
- * auth.users par le même id — voir 01-profiles-et-policies.sql).
- * ⚠️ CHANGÉ : ne porte plus de champ `pwd` — le mot de passe n'existe
- * plus que côté Supabase Auth, jamais dans cette table.
+ * auth.users par le même id).
  * @typedef {Object} User
  * @property {string} id - Référence vers auth.users.id (uuid Supabase).
  * @property {string} nom
- * @property {string} login - Email réel de l'utilisateur (identique à auth.users.email).
+ * @property {string} login - Email réel OU adresse technique interne (voir INTERNAL_EMAIL_DOMAIN) de l'utilisateur.
  * @property {'admin'|'fsqs'|'directeur'|'direction'|'collaborateur'} role
- * @property {'actif'|string} statut - Seule la valeur 'actif' autorise la connexion.
+ * @property {'actif'|'inactif'|'invitation'|string} statut - Seule la valeur 'actif' autorise la connexion.
  * @property {string[]} magasins
  * @property {UserPerms} perms
+ * @property {boolean} [must_change_password] - Si true, un changement de mot de passe est imposé avant tout accès à l'appli.
  */
 
 // ─────────────────────────────────────────────
@@ -82,6 +66,9 @@
 /** @type {number} Durée d'inactivité (ms) avant expiration de session. */
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
+/** @type {string} Domaine technique des comptes sans email réel — jamais une vraie boîte mail. Doit rester identique à INTERNAL_EMAIL_DOMAIN côté Edge Function invite-user. */
+const INTERNAL_EMAIL_DOMAIN = 'qualistore.local';
+
 // ─────────────────────────────────────────────
 // 2. ÉTAT
 // ─────────────────────────────────────────────
@@ -90,10 +77,8 @@ const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 let _sessionTimer = null;
 
 // ─────────────────────────────────────────────
-// 3. DÉTECTION DU LIEN DE RÉCUPÉRATION (conservé, inoffensif —
-// voir bandeau d'en-tête : ce flux se déroule maintenant sur
-// reset-password.html, pas ici. Ces fonctions ne sont donc plus
-// jamais déclenchées en pratique, mais laissées telles quelles.)
+// 3. DÉTECTION DU LIEN DE RÉCUPÉRATION (conservé, inoffensif — ce
+// flux se déroule sur reset-password.html, pas ici.)
 // ─────────────────────────────────────────────
 
 /**
@@ -134,11 +119,9 @@ function _resetSessionTimer() {
 
 /**
  * Vérifie au chargement de la page si une session Supabase valide
- * existe déjà (persistée par le SDK), et recharge le profil complet
- * dans CU le cas échéant. Sans effet si la page vient d'être ouverte
- * via un lien de réinitialisation (voir _isPasswordRecoveryFlow) —
- * cas normalement inatteignable désormais (voir bandeau d'en-tête),
- * conservé par prudence.
+ * existe déjà, et recharge le profil complet dans CU le cas échéant.
+ * Si un changement de mot de passe est imposé (must_change_password),
+ * affiche ce formulaire au lieu d'entrer dans l'appli.
  * @returns {Promise<void>}
  */
 async function _checkSessionOnLoad() {
@@ -156,6 +139,11 @@ async function _checkSessionOnLoad() {
   if (!profile || profile.statut !== 'actif') {
     await _sb.auth.signOut();
     CU = null;
+    return;
+  }
+
+  if (profile.must_change_password) {
+    _showForcedPasswordChangeForm();
     return;
   }
 
@@ -184,12 +172,20 @@ async function _fetchProfile(userId) {
 
 /**
  * Authentifie l'utilisateur à partir des champs de formulaire
- * 'f-login' (email réel) / 'f-pass', via Supabase Auth.
+ * 'f-login' / 'f-pass', via Supabase Auth. Le champ 'f-login'
+ * accepte soit un email réel, soit un simple identifiant interne
+ * (ex : 'jean.dupont.a1b2') — dans ce second cas, le domaine
+ * technique @qualistore.local est ajouté automatiquement avant
+ * l'appel à Supabase (la personne n'a jamais besoin de le connaître
+ * ni de le taper).
  * @returns {Promise<void>}
  */
 async function doLogin() {
   /** @type {string} */
-  const email    = v('f-login').trim().toLowerCase();
+  let email = v('f-login').trim().toLowerCase();
+  if (email && !email.includes('@')) {
+    email = `${email}@${INTERNAL_EMAIL_DOMAIN}`;
+  }
   /** @type {string} */
   const password = v('f-pass');
   const errorEl  = el('login-err');
@@ -212,6 +208,12 @@ async function doLogin() {
   }
 
   errorEl.classList.remove('show');
+
+  if (profile.must_change_password) {
+    _showForcedPasswordChangeForm();
+    return;
+  }
+
   CU = profile;
   _resetSessionTimer();
 
@@ -241,19 +243,19 @@ async function doLogout() {
 }
 
 // ─────────────────────────────────────────────
-// 6. MOT DE PASSE OUBLIÉ
+// 6. MOT DE PASSE OUBLIÉ (par email — inchangé)
 // ─────────────────────────────────────────────
 
 /**
  * Affiche le formulaire "mot de passe oublié" à la place du
- * formulaire de connexion normal (voir le bloc HTML #login-forgot
- * ajouté dans index.html / Qualistore.html).
+ * formulaire de connexion normal.
  * @returns {void}
  */
 function showForgotPasswordForm() {
-  el('login-form').style.display   = 'none';
-  el('login-forgot').style.display = '';
-  el('login-reset').style.display  = 'none';
+  el('login-form').style.display     = 'none';
+  el('login-forgot').style.display   = '';
+  el('login-reset').style.display    = 'none';
+  el('login-forcepass').style.display = 'none';
   el('login-err').classList.remove('show');
 }
 
@@ -262,42 +264,38 @@ function showForgotPasswordForm() {
  * @returns {void}
  */
 function showLoginForm() {
-  el('login-form').style.display   = '';
-  el('login-forgot').style.display = 'none';
-  el('login-reset').style.display  = 'none';
+  el('login-form').style.display      = '';
+  el('login-forgot').style.display    = 'none';
+  el('login-reset').style.display     = 'none';
+  el('login-forcepass').style.display = 'none';
 }
 
 /**
- * Affiche le formulaire "choisir un nouveau mot de passe". Conservé
- * mais normalement inatteignable désormais (voir bandeau d'en-tête :
- * ce flux se déroule sur reset-password.html).
+ * Affiche le formulaire "choisir un nouveau mot de passe" déclenché
+ * par un lien de réinitialisation reçu par email. Conservée mais
+ * normalement inatteignable désormais (ce flux se déroule sur
+ * reset-password.html).
  * @returns {void}
  */
 function _showPasswordRecoveryForm() {
-  el('login-screen').style.display = '';
+  el('login-screen').style.display    = '';
   el('app').classList.remove('on');
-  el('login-form').style.display   = 'none';
-  el('login-forgot').style.display = 'none';
-  el('login-reset').style.display  = '';
+  el('login-form').style.display      = 'none';
+  el('login-forgot').style.display    = 'none';
+  el('login-reset').style.display     = '';
+  el('login-forcepass').style.display = 'none';
 }
 
 /**
- * Envoie l'email de réinitialisation de mot de passe à l'adresse
- * saisie, via la fonctionnalité native de Supabase Auth (le serveur
- * SMTP réellement utilisé — Brevo — est configuré côté dashboard
- * Supabase, rien à faire ici).
- *
- * ⚠️ CHANGÉ (v3, voir bandeau d'en-tête) : redirige désormais vers la
- * page autonome reset-password.html (dans le même dossier que la
- * page courante, qu'il s'agisse de index.html ou Qualistore.html —
- * calculé dynamiquement, aucune URL en dur), plutôt que vers la page
- * courante elle-même.
+ * Envoie l'email de réinitialisation de mot de passe, en redirigeant
+ * vers la page autonome reset-password.html (voir ce fichier pour
+ * l'explication de la protection contre le pré-chargement de liens).
  * @returns {Promise<void>}
  */
 async function requestPasswordReset() {
   /** @type {string} */
-  const email     = v('f-forgot-email').trim().toLowerCase();
-  const msgEl     = el('login-forgot-msg');
+  const email = v('f-forgot-email').trim().toLowerCase();
+  const msgEl = el('login-forgot-msg');
 
   if (!email) {
     msgEl.textContent = 'Merci de saisir votre email.';
@@ -305,22 +303,14 @@ async function requestPasswordReset() {
     return;
   }
 
-  /** @type {string} Dossier de la page courante (avec / final), quelle
-   * que soit la page depuis laquelle la demande est faite. */
+  /** @type {string} */
   const currentDir = window.location.pathname.replace(/[^/]*$/, '');
   /** @type {string} */
   const resetPageUrl = window.location.origin + currentDir + 'reset-password.html';
 
-  const { error } = await _sb.auth.resetPasswordForEmail(email, {
-    redirectTo: resetPageUrl,
-  });
+  const { error } = await _sb.auth.resetPasswordForEmail(email, { redirectTo: resetPageUrl });
 
-  // Message volontairement identique en succès ou en échec côté
-  // Supabase (même s'il n'existe pas de compte à cet email) — pour
-  // ne jamais permettre à quelqu'un de deviner quels emails sont
-  // enregistrés dans l'appli (voir faille XSS/énumération de l'audit,
-  // même principe de prudence).
-  void error;
+  void error; // message volontairement identique en succès/échec (anti-énumération)
   msgEl.textContent = "Si un compte existe avec cet email, un lien de réinitialisation vient d'être envoyé.";
   msgEl.className   = 'login-ok show';
 }
@@ -328,8 +318,7 @@ async function requestPasswordReset() {
 /**
  * Valide le nouveau mot de passe saisi après un clic sur le lien de
  * réinitialisation reçu par email. Conservée mais normalement
- * inatteignable désormais (voir bandeau d'en-tête : ce flux se
- * déroule sur reset-password.html).
+ * inatteignable désormais (ce flux se déroule sur reset-password.html).
  * @returns {Promise<void>}
  */
 async function confirmPasswordReset() {
@@ -350,7 +339,6 @@ async function confirmPasswordReset() {
     return;
   }
 
-  /** @type {string|null} */
   const tokenHash = _getRecoveryTokenHash();
   if (!tokenHash) {
     msgEl.textContent = 'Lien invalide — merci de redemander une réinitialisation.';
@@ -373,7 +361,6 @@ async function confirmPasswordReset() {
   }
 
   history.replaceState(null, '', window.location.pathname);
-
   await _sb.auth.signOut();
   sv('f-reset-pass', '');
   sv('f-reset-pass-confirm', '');
@@ -382,7 +369,135 @@ async function confirmPasswordReset() {
 }
 
 // ─────────────────────────────────────────────
-// 7. CONTRÔLE D'ACCÈS — inchangé
+// 7. CHANGEMENT DE MOT DE PASSE FORCÉ (première connexion, comptes
+// créés sans email avec un mot de passe temporaire — voir
+// profiles.must_change_password)
+// ─────────────────────────────────────────────
+
+/**
+ * Affiche le panneau "vous devez changer votre mot de passe",
+ * déclenché par doLogin()/_checkSessionOnLoad() quand
+ * profile.must_change_password est vrai.
+ * @returns {void}
+ */
+function _showForcedPasswordChangeForm() {
+  el('login-screen').style.display    = '';
+  el('app').classList.remove('on');
+  el('login-form').style.display      = 'none';
+  el('login-forgot').style.display    = 'none';
+  el('login-reset').style.display     = 'none';
+  el('login-forcepass').style.display = '';
+}
+
+/**
+ * Valide et applique le nouveau mot de passe choisi lors d'un
+ * changement forcé, puis lève l'obligation (clear_must_change_password)
+ * et poursuit normalement la connexion.
+ * @returns {Promise<void>}
+ */
+async function confirmForcedPasswordChange() {
+  /** @type {string} */
+  const newPassword = v('f-forcepass-new');
+  /** @type {string} */
+  const confirmPassword = v('f-forcepass-confirm');
+  const msgEl = el('login-forcepass-msg');
+
+  if (!newPassword || newPassword.length < 10) {
+    msgEl.textContent = 'Le mot de passe doit contenir au moins 10 caractères.';
+    msgEl.className   = 'login-err show';
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    msgEl.textContent = 'Les deux mots de passe ne correspondent pas.';
+    msgEl.className   = 'login-err show';
+    return;
+  }
+
+  const { error } = await _sb.auth.updateUser({ password: newPassword });
+  if (error) {
+    msgEl.textContent = 'Erreur : ' + error.message;
+    msgEl.className   = 'login-err show';
+    return;
+  }
+
+  const { error: rpcError } = await _sb.rpc('clear_must_change_password');
+  if (rpcError) {
+    msgEl.textContent = 'Erreur : ' + rpcError.message;
+    msgEl.className   = 'login-err show';
+    return;
+  }
+
+  /** @type {{ data: { session: Object|null } }} */
+  const { data: { session } } = await _sb.auth.getSession();
+  /** @type {User | null} */
+  const profile = await _fetchProfile(session.user.id);
+
+  sv('f-forcepass-new', '');
+  sv('f-forcepass-confirm', '');
+
+  CU = profile;
+  _resetSessionTimer();
+
+  el('login-screen').style.display = 'none';
+  el('app').classList.add('on');
+  buildSidebar();
+  updateSBUser();
+  navigate('dashboard');
+  showToast('Mot de passe mis à jour.', 'success');
+}
+
+// ─────────────────────────────────────────────
+// 8. CHANGEMENT DE MOT DE PASSE VOLONTAIRE (à tout moment, une fois
+// connecté — bouton dans la barre latérale, au-dessus de Déconnexion)
+// ─────────────────────────────────────────────
+
+/**
+ * Ouvre la modale de changement de mot de passe volontaire.
+ * @returns {void}
+ */
+function openChangePasswordModal() {
+  sv('cp-new', '');
+  sv('cp-confirm', '');
+  el('cp-err').classList.remove('show');
+  openModal('m-change-pass');
+}
+
+/**
+ * Valide et applique le nouveau mot de passe (utilisateur déjà
+ * connecté, aucun jeton nécessaire — la session active suffit).
+ * @returns {Promise<void>}
+ */
+async function submitChangePassword() {
+  /** @type {string} */
+  const newPassword = v('cp-new');
+  /** @type {string} */
+  const confirmPassword = v('cp-confirm');
+  const errorEl = el('cp-err');
+
+  if (!newPassword || newPassword.length < 10) {
+    errorEl.textContent = 'Le mot de passe doit contenir au moins 10 caractères.';
+    errorEl.classList.add('show');
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    errorEl.textContent = 'Les deux mots de passe ne correspondent pas.';
+    errorEl.classList.add('show');
+    return;
+  }
+
+  const { error } = await _sb.auth.updateUser({ password: newPassword });
+  if (error) {
+    errorEl.textContent = 'Erreur : ' + error.message;
+    errorEl.classList.add('show');
+    return;
+  }
+
+  closeModal('m-change-pass');
+  showToast('Mot de passe mis à jour.', 'success');
+}
+
+// ─────────────────────────────────────────────
+// 9. CONTRÔLE D'ACCÈS — inchangé
 // ─────────────────────────────────────────────
 
 /**
@@ -395,7 +510,7 @@ function hasPerm(permissionId) {
 }
 
 // ─────────────────────────────────────────────
-// 8. HELPERS CHAMP MOT DE PASSE — inchangé
+// 10. HELPERS CHAMP MOT DE PASSE — inchangé
 // ─────────────────────────────────────────────
 
 /**
