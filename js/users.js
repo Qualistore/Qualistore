@@ -1,23 +1,17 @@
 // ══════════════════════════════════════════════════════════════
 // USERS — Gestion des utilisateurs
-// Dépend de : storage.js (CU), supabase.js (_sb, sbDeleteWhere),
-//   auth.js (hasPerm, togglePass), ui.js, config.js (PIDS, DPERMS,
-//   PERMISSION_GROUPS)
+// Dépend de : storage.js (CU), supabase.js (_sb, sbSelect,
+//   sbDeleteWhere), auth.js (hasPerm, togglePass), ui.js,
+//   config.js (PIDS, DPERMS, PERMISSION_GROUPS)
 //
-// ⚠️ CHANGÉ (v5) :
-//  - Le champ Statut est désormais verrouillé (non modifiable par
-//    l'admin) tant que le compte est au statut 'invitation' — il
-//    ne doit passer à 'actif' QUE via l'activation par
-//    l'utilisateur lui-même (activate_own_profile), jamais par une
-//    modification manuelle qui laisserait un compte "actif" sans
-//    mot de passe défini. Redevient modifiable (Actif/Inactif) une
-//    fois le compte réellement activé.
-//  - Nouveau bouton "Réinitialiser le mot de passe" (comptes déjà
-//    actifs uniquement) : envoie un email de réinitialisation si le
-//    compte a un email réel, sinon ouvre une modale permettant à
-//    l'admin de saisir lui-même un nouveau mot de passe temporaire
-//    (l'utilisateur devra le changer à sa prochaine connexion,
-//    comme à la création initiale).
+// ⚠️ CHANGÉ (v7) : la modale "Nouvel utilisateur / Modifier
+// l'utilisateur" ne peut plus se fermer implicitement (clic sur le
+// fond sombre, touche Échap) — seuls les boutons "Annuler" et
+// "Enregistrer" la ferment désormais, pour ne jamais perdre une
+// saisie par accident. Implémenté sans dépendre du mécanisme de
+// fermeture existant (inconnu depuis ce fichier) : un écouteur en
+// phase de capture intercepte et bloque ces deux déclencheurs
+// avant qu'ils n'atteignent quelque gestionnaire que ce soit.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -49,8 +43,17 @@
  */
 
 /**
- * Magasin. Seules .id et .nom sont accédées dans ce fichier.
+ * Magasin.
  * @typedef {Object} Magasin
+ * @property {string} id
+ * @property {string} nom
+ * @property {string} [enseigne] - Nom d'enseigne (texte historique, conservé).
+ * @property {string} [enseigne_id] - Référence vers Enseigne.id (nouveau, prioritaire quand présent).
+ */
+
+/**
+ * Enseigne.
+ * @typedef {Object} Enseigne
  * @property {string} id
  * @property {string} nom
  */
@@ -96,6 +99,27 @@ let _cachedProfiles = [];
  * @type {string|null}
  */
 let _resetPasswordTargetUserId = null;
+
+/**
+ * Sélection réelle des magasins assignés dans la modale en cours —
+ * seule source de vérité, indépendante du filtre par enseigne
+ * affiché à l'écran (qui ne fait que masquer/afficher des cases).
+ * @type {Set<string>}
+ */
+let _selectedMagasinIds = new Set();
+
+/**
+ * Enseignes chargées à l'ouverture de la modale utilisateur.
+ * @type {Enseigne[]}
+ */
+let _cachedEnseignes = [];
+
+/**
+ * Empêche d'installer plusieurs fois le verrou anti-fermeture de la
+ * modale utilisateur (voir _installUserModalCloseLock).
+ * @type {boolean}
+ */
+let _userModalLockInstalled = false;
 
 // ─────────────────────────────────────────────
 // 2. HELPERS DE RENDU
@@ -209,11 +233,59 @@ async function renderUsers() {
 // ─────────────────────────────────────────────
 
 /**
- * Ouvre la modale de création ou d'édition d'un utilisateur.
- * @param {string} [userId] - Référence vers User.id à éditer ; absent/falsy pour une création.
+ * Empêche la modale utilisateur de se fermer implicitement (clic
+ * sur le fond sombre en dehors du contenu, touche Échap) — seuls
+ * les boutons "Annuler" (closeModal explicite) et "Enregistrer"
+ * (saveUser, qui appelle closeModal en cas de succès) doivent
+ * pouvoir la fermer. Écouteurs posés en phase de CAPTURE sur
+ * document, donc exécutés avant tout gestionnaire de fermeture
+ * existant, quel qu'il soit — n'a besoin d'aucune connaissance du
+ * mécanisme de fermeture actuel pour fonctionner. Installé une
+ * seule fois.
  * @returns {void}
  */
-function openUserModal(userId) {
+function _installUserModalCloseLock() {
+  if (_userModalLockInstalled) return;
+  _userModalLockInstalled = true;
+
+  document.addEventListener('click', (e) => {
+    /** @type {HTMLElement | null} */
+    const modal = el('m-user');
+    if (!modal) return;
+    /** @type {boolean} */
+    const isOpen = window.getComputedStyle(modal).display !== 'none';
+    // Un clic qui atterrit exactement sur le fond de la modale (pas
+    // sur son contenu, ni sur un bouton) correspond à e.target === modal.
+    if (isOpen && e.target === modal) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    /** @type {HTMLElement | null} */
+    const modal = el('m-user');
+    if (!modal) return;
+    /** @type {boolean} */
+    const isOpen = window.getComputedStyle(modal).display !== 'none';
+    if (isOpen) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+}
+
+/**
+ * Ouvre la modale de création ou d'édition d'un utilisateur.
+ * Asynchrone : charge la liste des enseignes avant d'afficher le
+ * filtre de sélection des magasins.
+ * @param {string} [userId] - Référence vers User.id à éditer ; absent/falsy pour une création.
+ * @returns {Promise<void>}
+ */
+async function openUserModal(userId) {
+  _installUserModalCloseLock();
+
   /** @type {boolean} */
   const isEdit = !!userId;
 
@@ -227,7 +299,7 @@ function openUserModal(userId) {
   el('u-invite-hint').style.display = isEdit ? 'none' : '';
   el('u-login').disabled = isEdit;
 
-  _buildStoreCheckboxes();
+  await _buildStoreCheckboxes();
   _buildPermissionsSection();
 
   if (isEdit) {
@@ -240,16 +312,108 @@ function openUserModal(userId) {
 }
 
 /**
+ * Charge les enseignes et prépare le filtre + la liste des
+ * magasins (rendu initial, avant sélection connue — voir
+ * _populateUserForm / _resetUserForm qui déclenchent le rendu réel
+ * une fois _selectedMagasinIds initialisé).
+ * @returns {Promise<void>}
+ */
+async function _buildStoreCheckboxes() {
+  _cachedEnseignes = (await sbSelect('enseignes')) || [];
+  _ensureEnseigneFilter();
+}
+
+/**
+ * Crée (si besoin) le filtre "Enseigne" au-dessus de la liste des
+ * magasins de la modale.
  * @returns {void}
  */
-function _buildStoreCheckboxes() {
+function _ensureEnseigneFilter() {
+  /** @type {HTMLSelectElement | null} */
+  let filterEl = /** @type {any} */ (el('u-mag-enseigne-filter'));
+  if (!filterEl) {
+    filterEl = document.createElement('select');
+    filterEl.id = 'u-mag-enseigne-filter';
+    filterEl.className = 'form-control';
+    filterEl.style.marginBottom = '8px';
+    filterEl.onchange = _renderStoreCheckboxesForFilter;
+    const container = el('u-mag-cbs');
+    container.parentNode.insertBefore(filterEl, container);
+  }
+  filterEl.innerHTML = '<option value="">Toutes les enseignes</option>' +
+    _cachedEnseignes.map(e => `<option value="${e.id}">${e.nom}</option>`).join('');
+}
+
+/**
+ * Retourne les magasins appartenant à une enseigne donnée (par
+ * enseigne_id si présent, sinon par correspondance du nom texte
+ * historique — pour ne perdre aucun magasin pas encore rattaché).
+ * @param {string} enseigneId
+ * @returns {Magasin[]}
+ */
+function _magasinsForEnseigne(enseigneId) {
+  /** @type {Enseigne | undefined} */
+  const enseigne = _cachedEnseignes.find(e => e.id === enseigneId);
+  return DB.magasins.filter(m =>
+    m.enseigne_id === enseigneId || (!m.enseigne_id && enseigne && m.enseigne === enseigne.nom)
+  );
+}
+
+/**
+ * Reconstruit les cases à cocher des magasins visibles pour
+ * l'enseigne actuellement choisie dans le filtre (ou tous les
+ * magasins si aucun filtre sélectionné). L'état coché reflète
+ * _selectedMagasinIds, seule source de vérité pour la sélection
+ * réelle (qui peut porter sur plusieurs enseignes à la fois).
+ * @returns {void}
+ */
+function _renderStoreCheckboxesForFilter() {
+  /** @type {HTMLSelectElement | null} */
+  const filterEl = /** @type {any} */ (el('u-mag-enseigne-filter'));
+  /** @type {string} */
+  const enseigneId = filterEl ? filterEl.value : '';
+
+  /** @type {Magasin[]} */
+  const filteredMagasins = enseigneId ? _magasinsForEnseigne(enseigneId) : DB.magasins;
+
   const container = el('u-mag-cbs');
-  container.innerHTML = DB.magasins.length
-    ? DB.magasins.map(m => `
+  container.innerHTML = filteredMagasins.length
+    ? filteredMagasins.map(m => `
         <label class="cb-item">
-          <input type="checkbox" value="${m.id}" class="mcb"> ${m.nom}
+          <input type="checkbox" value="${m.id}" class="mcb" ${_selectedMagasinIds.has(m.id) ? 'checked' : ''}
+            onchange="_onStoreCheckboxChange(this)"> ${m.nom}
         </label>`).join('')
-    : '<span class="tm tsm">Aucun magasin créé</span>';
+    : '<span class="tm tsm">Aucun magasin pour cette enseigne</span>';
+
+  _updateStoreSelectionCount();
+}
+
+/**
+ * @param {HTMLInputElement} checkbox
+ * @returns {void}
+ */
+function _onStoreCheckboxChange(checkbox) {
+  if (checkbox.checked) _selectedMagasinIds.add(checkbox.value);
+  else _selectedMagasinIds.delete(checkbox.value);
+  _updateStoreSelectionCount();
+}
+
+/**
+ * Affiche le nombre total de magasins sélectionnés, toutes
+ * enseignes confondues — utile car le filtre masque les autres.
+ * @returns {void}
+ */
+function _updateStoreSelectionCount() {
+  /** @type {HTMLElement | null} */
+  let countEl = el('u-mag-count');
+  if (!countEl) {
+    countEl = document.createElement('div');
+    countEl.id = 'u-mag-count';
+    countEl.className = 'tsm tm';
+    countEl.style.marginTop = '6px';
+    el('u-mag-cbs').parentNode.appendChild(countEl);
+  }
+  countEl.textContent = `${_selectedMagasinIds.size} magasin(s) sélectionné(s) au total (toutes enseignes confondues)`;
 }
 
 /**
@@ -377,18 +541,13 @@ function _populateUserForm(userId) {
   sv('u-nom', user.nom);
   sv('u-login', _isInternalLogin(user.login) ? '(compte sans email)' : user.login);
 
-  // Le statut ne peut être modifié manuellement que pour un compte
-  // déjà activé — jamais pendant qu'il est en attente d'activation,
-  // pour éviter qu'un compte se retrouve marqué "actif" sans avoir
-  // jamais défini de mot de passe.
   el('u-statut').value = (user.statut === 'invitation') ? 'actif' : user.statut;
   el('u-statut').disabled = (user.statut === 'invitation');
 
   el('u-role').value = user.role;
 
-  document.querySelectorAll('.mcb').forEach(cb => {
-    cb.checked = (user.magasins || []).includes(cb.value);
-  });
+  _selectedMagasinIds = new Set(user.magasins || []);
+  _renderStoreCheckboxesForFilter();
 
   PIDS.forEach(permId => {
     const checkbox = el('p-' + permId);
@@ -419,6 +578,9 @@ function _resetUserForm() {
   });
   el('u-mag-grp').style.display = 'none';
 
+  _selectedMagasinIds = new Set();
+  _renderStoreCheckboxesForFilter();
+
   const resendBtn = el('u-resend-btn');
   if (resendBtn) resendBtn.style.display = 'none';
   const resetPwBtn = el('u-resetpw-btn');
@@ -438,7 +600,8 @@ function onRoleChange(applyDefaults = true) {
   if (!applyDefaults) return;
 
   if (role === 'direction') {
-    document.querySelectorAll('.mcb').forEach(cb => { cb.checked = true; });
+    _selectedMagasinIds = new Set(DB.magasins.map(m => m.id));
+    _renderStoreCheckboxesForFilter();
   }
 
   if (DPERMS[role]) {
@@ -450,11 +613,20 @@ function onRoleChange(applyDefaults = true) {
 }
 
 /**
+ * Sélectionne ou désélectionne tous les magasins actuellement
+ * affichés (donc ceux de l'enseigne choisie dans le filtre, ou
+ * tous les magasins si "Toutes les enseignes" est sélectionné) —
+ * pas nécessairement tous les magasins de l'application.
  * @param {boolean} selectAll
  * @returns {void}
  */
 function toggleAllMags(selectAll) {
-  document.querySelectorAll('.mcb').forEach(cb => { cb.checked = selectAll; });
+  document.querySelectorAll('.mcb').forEach(cb => {
+    cb.checked = selectAll;
+    if (selectAll) _selectedMagasinIds.add(cb.value);
+    else _selectedMagasinIds.delete(cb.value);
+  });
+  _updateStoreSelectionCount();
 }
 
 // ─────────────────────────────────────────────
@@ -469,9 +641,7 @@ function _readStoreAndPermsFromForm() {
   const role = el('u-role').value;
 
   /** @type {string[]} */
-  const magasins = role === 'admin'
-    ? []
-    : [...document.querySelectorAll('.mcb:checked')].map(cb => cb.value);
+  const magasins = role === 'admin' ? [] : [..._selectedMagasinIds];
 
   /** @type {UserPerms} */
   const perms = {};
