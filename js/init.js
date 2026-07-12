@@ -16,27 +16,25 @@
 // ─────────────────────────────────────────────
 
 /**
- * Point d'entrée : charge la DB, restaure la session, construit
+ * Point d'entrée : restaure la session AVANT de charger la DB, construit
  * l'UI initiale et lie les écouteurs globaux de l'application.
+ *
+ * ⚠️ CORRIGÉ (à nouveau) : loadDB() était appelé AVANT
+ * _checkSessionOnLoad(). Or loadDB() interroge Supabase, et les
+ * policies RLS (`to authenticated`) exigent que la session soit déjà
+ * attachée au client Supabase pour renvoyer les lignes — sinon la
+ * requête ne renvoie PAS une erreur, elle renvoie silencieusement un
+ * tableau vide. Résultat observé : DB.magasins / DB.enseignes vides
+ * pour un compte admin au chargement, alors qu'une requête manuelle
+ * après coup renvoie bien les données. _checkSessionOnLoad() n'a
+ * aucune dépendance envers DB/loadDB(), l'inversion est donc sans
+ * risque. Ordre correct : session d'abord, DB ensuite.
  * @param {Event} _event - Événement DOM 'DOMContentLoaded' (non utilisé).
  * @returns {Promise<void>}
  */
 document.addEventListener('DOMContentLoaded', async () => {
   _clearAppCaches();
 
-  // ⚠️ CORRIGÉ : _checkSessionOnLoad() (restauration de la session
-  // Supabase Auth) doit impérativement s'exécuter AVANT loadDB().
-  // loadDB() interroge des tables désormais protégées par RLS
-  // (magasins, audits, ncs, actions, alertes, grille_custom...), qui
-  // exigent une session authentifiée. Avec l'ancien ordre, loadDB()
-  // partait une fraction de seconde trop tôt — avant que la session ne
-  // soit rétablie — et Supabase traitait alors ces requêtes comme
-  // anonymes : la RLS filtrait silencieusement TOUTES les lignes (sans
-  // la moindre erreur console), donnant l'impression que les données
-  // avaient disparu alors qu'elles étaient toujours bien en base.
-  // _checkSessionOnLoad() ne dépend d'aucune donnée chargée par
-  // loadDB() (uniquement de la session Supabase Auth + de la table
-  // `profiles`), inverser l'ordre est donc sans risque.
   await _checkSessionOnLoad();
 
   try {
