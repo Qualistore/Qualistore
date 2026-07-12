@@ -107,7 +107,8 @@ function renderRapportQualimetre() {
 
   const listEl = el('rq-audit-list');
   const delBtn = el('rq-del-btn');
-  if (delBtn) delBtn.style.display = (CU && CU.role === 'admin') ? '' : 'none';
+  // ⚠️ CORRIGÉ : CU.role==='admin' -> droit granulaire report_delete_audits.
+  if (delBtn) delBtn.style.display = hasPerm('report_delete_audits') ? '' : 'none';
 
   if (!audits.length) {
     listEl.innerHTML = '<div class="empty-state" style="padding:16px"><p>Aucun audit Qualimètre.</p></div>';
@@ -177,8 +178,12 @@ function genRapportQualimetre() {
   );
 
   el('rq-preview').style.display     = '';
-  el('rq-print-btn').style.display   = '';
-  el('rq-annexes-btn').style.display = hasAnyPhotos ? '' : 'none';
+  // ⚠️ CORRIGÉ : boutons d'export désormais gated par report_qualimetre_export
+  // (voir/générer un aperçu n'implique pas forcément le droit d'exporter/imprimer).
+  /** @type {boolean} */
+  const canExport = hasPerm('report_qualimetre_export');
+  el('rq-print-btn').style.display   = canExport ? '' : 'none';
+  el('rq-annexes-btn').style.display = (canExport && hasAnyPhotos) ? '' : 'none';
   el('rq-preview').scrollIntoView({ behavior: 'smooth' });
 }
 

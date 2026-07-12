@@ -493,8 +493,9 @@ function _gqRender() {
   const storeId  = v('gq-mag-sel');
   /** @type {string} */
   const zoneId   = v('gq-zone-sel') || QM_ZONES[0]?.id;
+  // ⚠️ CORRIGÉ : 'isAdmin' -> droit granulaire qgrid_manage.
   /** @type {boolean} */
-  const isAdmin  = CU && CU.role === 'admin';
+  const isAdmin  = hasPerm('qgrid_manage');
 
   _gqUpdateAdminButtons(isAdmin);
   _gqUpdateScopeLabel(storeId);

@@ -120,7 +120,8 @@ function renderRap() {
   const listEl  = el('r-audit-list');
   const delBtn  = el('r-del-btn');
 
-  if (delBtn) delBtn.style.display = (CU && CU.role === 'admin') ? '' : 'none';
+  // ⚠️ CORRIGÉ : CU.role==='admin' -> droit granulaire report_delete_audits.
+  if (delBtn) delBtn.style.display = hasPerm('report_delete_audits') ? '' : 'none';
 
   if (!audits.length) {
     listEl.innerHTML = '<div class="empty-state" style="padding:16px"><p>Aucun audit.</p></div>';
@@ -199,7 +200,9 @@ function genRapport() {
   _pendingAnnexes = _collectAnnexes(audits);
 
   el('rap-preview').style.display = '';
-  el('r-print-btn').style.display = '';
+  // ⚠️ AJOUTÉ : le bouton d'export (PDF + annexes) n'était relié à
+  // aucun droit — gated maintenant par report_fsqs_export.
+  el('r-print-btn').style.display = hasPerm('report_fsqs_export') ? '' : 'none';
   el('rap-preview').scrollIntoView({ behavior: 'smooth' });
 }
 
