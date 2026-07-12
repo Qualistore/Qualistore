@@ -102,6 +102,14 @@ function renderActions() {
   const filterMagId       = v('flt-act-mag');
   /** @type {string} */
   const filterStatus      = v('flt-act-stat');
+  // ⚠️ AJOUTÉ : filtre par date précise (calendrier natif) — filtre sur
+  // la date de l'audit d'origine de la NC liée (NC.date, voir
+  // submitAudit audits.js), la même donnée qu'affiche désormais la
+  // colonne "Date de l'audit" (_buildActionRow ci-dessous). Une action
+  // sans NC retrouvée (cas normalement impossible en usage normal) est
+  // exclue par ce filtre dès qu'une date est sélectionnée.
+  /** @type {string} */
+  const filterDate         = v('flt-act-date') || '';
 
   populateMagSelect(el('flt-act-mag'));
 
@@ -118,6 +126,13 @@ function renderActions() {
     if (store) actions = actions.filter(a => a.mag === store.nom);
   }
   if (filterStatus) actions = actions.filter(a => a.statut === filterStatus);
+  if (filterDate) {
+    actions = actions.filter(a => {
+      /** @type {NC | undefined} */
+      const linkedNc = DB.ncs.find(nc => nc.id === a.ncId);
+      return linkedNc && linkedNc.date === filterDate;
+    });
+  }
 
   el('act-cnt').textContent = `${actions.length} action(s)`;
 
@@ -138,7 +153,7 @@ function renderActions() {
   });
 
   if (!actions.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">
       <i class="ti ti-tool"></i><p>Aucune action corrective.</p>
     </div></td></tr>`;
     return;
@@ -178,9 +193,9 @@ function renderActions() {
     /** @type {number} */
     const zoneTotal = [...byCat.values()].reduce((sum, acts) => sum + acts.length, 0);
 
-    return `<tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm" style="text-transform:none;font-weight:400">(${zoneTotal})</span></td></tr>
+    return `<tr class="tbl-group-row"><td colspan="9">${zone} <span class="tsm" style="text-transform:none;font-weight:400">(${zoneTotal})</span></td></tr>
       ${sortedCats.map(cat => `
-        <tr class="tbl-subgroup-row"><td colspan="8">${cat} <span class="tsm tm">(${byCat.get(cat).length})</span></td></tr>
+        <tr class="tbl-subgroup-row"><td colspan="9">${cat} <span class="tsm tm">(${byCat.get(cat).length})</span></td></tr>
         ${byCat.get(cat).map(action => _buildActionRow(action, canEdit, canDelete)).join('')}
       `).join('')}`;
   }).join('');
@@ -224,6 +239,7 @@ function _buildActionRow(action, canEdit, canDelete) {
     </td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px">${action.mag}</td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px">${action.resp}</td>
+    <td style="font-size:12px;vertical-align:top;padding-top:14px;color:var(--text2)">${fd(linkedNc?.date)}</td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px;color:${isOverdue ? 'var(--danger)' : 'inherit'}">
       ${isOverdue ? '<i class="ti ti-clock"></i> ' : ''}${fd(action.ech)}
     </td>

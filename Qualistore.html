@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QualiStore</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/app.css?v=1">
+<link rel="stylesheet" href="css/app.css?v=2">
 </head>
 <body>
 
@@ -239,11 +239,12 @@
             <select class="form-control" style="width:auto" id="flt-nc-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
             <select class="form-control" style="width:auto" id="flt-nc-crit" onchange="renderNC()"><option value="">Toutes criticités</option><option>Critique</option><option>Majeure</option><option>Mineure</option></select>
             <select class="form-control" style="width:auto" id="flt-nc-stat" onchange="renderNC()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
+            <input type="date" class="form-control" style="width:auto" id="flt-nc-date" onchange="renderNC()" title="Filtrer par date de l'audit">
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="tsm tm" id="nc-cnt"></span>
-            <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(true)"><i class="ti ti-check-all"></i> Tout</button>
-            <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(false)"><i class="ti ti-x"></i> Aucun</button>
+            <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(true)"><i class="ti ti-check-all"></i> Tout sélectionner</button>
+            <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(false)"><i class="ti ti-x"></i> Tout désélectionner</button>
             <button class="btn btn-primary btn-sm" onclick="exportSelectedNC()"><i class="ti ti-file-download"></i> Exporter sélection</button>
             <button class="btn btn-danger btn-sm" id="nc-del-sel-btn" style="display:none" onclick="deleteSelectedNC()"><i class="ti ti-trash"></i> Supprimer sélection</button>
           </div>
@@ -264,7 +265,7 @@
               </button>
             </div>
           </div>
-          <div class="tbl-wrap"><table><thead><tr><th style="width:32px"></th><th>Magasin</th><th>Rayon</th><th>Description</th><th>Criticité</th><th>Échéance</th><th>Statut</th><th></th></tr></thead><tbody id="nc-tb"></tbody></table></div>
+          <div class="tbl-wrap"><table><thead><tr><th style="width:32px"></th><th>Magasin</th><th>Rayon</th><th>Description</th><th>Criticité</th><th>Date de l'audit</th><th>Échéance</th><th>Statut</th><th></th></tr></thead><tbody id="nc-tb"></tbody></table></div>
         </div>
         <!-- Tableau archivé -->
         <div class="card" id="nc-archive-card">
@@ -282,9 +283,10 @@
                 <option value="month">Mois en cours</option>
                 <option value="month30">30 derniers jours</option>
               </select>
+              <input type="date" class="form-control" style="width:auto" id="flt-arch-date" onchange="renderNC()" title="Filtrer par date de l'audit">
               <button class="btn btn-secondary btn-sm" onclick="exportNCArchivePDF()"><i class="ti ti-file-download"></i> Exporter PDF</button>
             </div>
-            <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Description</th><th>Commentaire de suivi</th><th>Criticité</th><th>Clôturée le</th><th></th></tr></thead><tbody id="nc-archive-tb"></tbody></table></div>
+            <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Description</th><th>Commentaire de suivi</th><th>Criticité</th><th>Date de l'audit</th><th>Clôturée le</th><th></th></tr></thead><tbody id="nc-archive-tb"></tbody></table></div>
           </div>
         </div>
       </div>
@@ -295,16 +297,17 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <select class="form-control" style="width:auto" id="flt-act-mag" onchange="renderActions()"><option value="">Tous les magasins</option></select>
             <select class="form-control" style="width:auto" id="flt-act-stat" onchange="renderActions()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
+            <input type="date" class="form-control" style="width:auto" id="flt-act-date" onchange="renderActions()" title="Filtrer par date de l'audit">
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="tsm tm" id="act-cnt"></span>
-            <button class="btn btn-secondary btn-sm" id="act-toggle-all-btn" style="display:none" onclick="toggleAllActions(true)"><i class="ti ti-check-all"></i> Tout</button>
-            <button class="btn btn-secondary btn-sm" id="act-toggle-none-btn" style="display:none" onclick="toggleAllActions(false)"><i class="ti ti-x"></i> Aucun</button>
+            <button class="btn btn-secondary btn-sm" id="act-toggle-all-btn" style="display:none" onclick="toggleAllActions(true)"><i class="ti ti-check-all"></i> Tout sélectionner</button>
+            <button class="btn btn-secondary btn-sm" id="act-toggle-none-btn" style="display:none" onclick="toggleAllActions(false)"><i class="ti ti-x"></i> Tout désélectionner</button>
             <button class="btn btn-danger btn-sm" id="act-del-sel-btn" style="display:none" onclick="deleteSelectedActions()"><i class="ti ti-trash"></i> Supprimer sélection</button>
           </div>
         </div>
         <div class="card">
-          <div class="tbl-wrap"><table><thead><tr><th style="width:32px"></th><th>Description</th><th>Magasin</th><th>Responsable</th><th>Échéance</th><th>Priorité</th><th>Statut</th><th></th></tr></thead><tbody id="act-tb"></tbody></table></div>
+          <div class="tbl-wrap"><table><thead><tr><th style="width:32px"></th><th>Description</th><th>Magasin</th><th>Responsable</th><th>Date de l'audit</th><th>Échéance</th><th>Priorité</th><th>Statut</th><th></th></tr></thead><tbody id="act-tb"></tbody></table></div>
         </div>
       </div>
 
@@ -1304,41 +1307,41 @@
 </html>
 
 <!-- Librairies externes -->
-<script src="js/jspdf.umd.min.js?v=1"></script>
-<script src="js/html2canvas.min.js?v=1"></script>
-<script src="js/chart.umd.min.js?v=1"></script>
+<script src="js/jspdf.umd.min.js?v=2"></script>
+<script src="js/html2canvas.min.js?v=2"></script>
+<script src="js/chart.umd.min.js?v=2"></script>
 
 <!-- Infrastructure -->
-<script src="js/config.js?v=1"></script>
+<script src="js/config.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase.js?v=1"></script>
-<script src="js/db/supabase/storage.js?v=1"></script>
-<script src="js/auth.js?v=1"></script>
-<script src="js/ui.js?v=1"></script>
+<script src="js/supabase.js?v=2"></script>
+<script src="js/db/supabase/storage.js?v=2"></script>
+<script src="js/auth.js?v=2"></script>
+<script src="js/ui.js?v=2"></script>
 
 <!-- Import de référentiels (chargé avant grille-qualimetre.js, qui réutilise detectConceptMapping/normalizeRows/_resolveOrCreateZoneFromDocument) -->
-<script src="js/import/import-detect.js?v=1"></script>
-<script src="js/import/import-normalize.js?v=1"></script>
-<script src="js/import/import-grille.js?v=1"></script>
+<script src="js/import/import-detect.js?v=2"></script>
+<script src="js/import/import-normalize.js?v=2"></script>
+<script src="js/import/import-grille.js?v=2"></script>
 
 <!-- Modules métier -->
-<script src="js/dashboard.js?v=1"></script>
-<script src="js/audits.js?v=1"></script>
-<script src="js/nc.js?v=1"></script>
-<script src="js/actions.js?v=1"></script>
-<script src="js/magasins.js?v=1"></script>
-<script src="js/rayons.js?v=1"></script>
-<script src="js/grille.js?v=1"></script>
-<script src="js/alertes.js?v=1"></script>
-<script src="js/users.js?v=1"></script>
-<script src="js/rapports-fsqs.js?v=1"></script>
-<script src="js/import/grille-qualimetre.js?v=1"></script> 
-<script src="js/qualimetre.js?v=1"></script>
-<script src="js/audit-qualimetre.js?v=1"></script>
-<script src="js/rapport-qualimetre.js?v=1"></script>
+<script src="js/dashboard.js?v=2"></script>
+<script src="js/audits.js?v=2"></script>
+<script src="js/nc.js?v=2"></script>
+<script src="js/actions.js?v=2"></script>
+<script src="js/magasins.js?v=2"></script>
+<script src="js/rayons.js?v=2"></script>
+<script src="js/grille.js?v=2"></script>
+<script src="js/alertes.js?v=2"></script>
+<script src="js/users.js?v=2"></script>
+<script src="js/rapports-fsqs.js?v=2"></script>
+<script src="js/import/grille-qualimetre.js?v=2"></script> 
+<script src="js/qualimetre.js?v=2"></script>
+<script src="js/audit-qualimetre.js?v=2"></script>
+<script src="js/rapport-qualimetre.js?v=2"></script>
 
 <!-- Point d'entrée -->
-<script src="js/init.js?v=1"></script>
+<script src="js/init.js?v=2"></script>
 
 </body>
 </html>

@@ -256,6 +256,13 @@ function renderNC() {
   const filterCrit = v('flt-nc-crit');
   /** @type {string} */
   const filterStat = v('flt-nc-stat') || '';
+  // ⚠️ AJOUTÉ : filtre par date précise (calendrier natif, en plus du
+  // filtre de période déjà présent sur l'export PDF) — filtre sur
+  // NC.date, c'est-à-dire la date de validation de l'audit d'origine
+  // (voir submitAudit, audits.js), la même donnée qu'affiche désormais
+  // la colonne "Date de l'audit" (_buildNcRow ci-dessous).
+  /** @type {string} */
+  const filterDate = v('flt-nc-date') || '';
   // ⚠️ CORRIGÉ : 'isAdmin' unique remplacé par deux droits distincts —
   // supprimer une sélection de NC (nc_delete) et éditer une NC
   // (nc_edit_status et/ou nc_edit_deadline) ne sont plus forcément la
@@ -275,6 +282,7 @@ function renderNC() {
   if (filterRay)  activeNcs = activeNcs.filter(nc => nc.rayon  === filterRay);
   if (filterCrit) activeNcs = activeNcs.filter(nc => nc.crit   === filterCrit);
   if (filterStat) activeNcs = activeNcs.filter(nc => nc.statut === filterStat);
+  if (filterDate) activeNcs = activeNcs.filter(nc => nc.date   === filterDate);
 
   el('nc-cnt').textContent = `${activeNcs.length} NC active(s)`;
 
@@ -293,7 +301,7 @@ function renderNC() {
   const tbody = el('nc-tb');
 
   if (!activeNcs.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="padding:28px">
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state" style="padding:28px">
       <i class="ti ti-circle-check" style="color:var(--success);font-size:36px"></i>
       <p>Aucune non-conformité active.</p>
     </div></td></tr>`;
@@ -326,9 +334,9 @@ function renderNC() {
     /** @type {number} */
     const zoneTotal = [...byCat.values()].reduce((sum, ncs) => sum + ncs.length, 0);
 
-    return `<tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm" style="text-transform:none;font-weight:400">(${zoneTotal})</span></td></tr>
+    return `<tr class="tbl-group-row"><td colspan="9">${zone} <span class="tsm" style="text-transform:none;font-weight:400">(${zoneTotal})</span></td></tr>
       ${sortedCats.map(cat => `
-        <tr class="tbl-subgroup-row"><td colspan="8">${cat} <span class="tsm tm">(${byCat.get(cat).length})</span></td></tr>
+        <tr class="tbl-subgroup-row"><td colspan="9">${cat} <span class="tsm tm">(${byCat.get(cat).length})</span></td></tr>
         ${byCat.get(cat).map(nc => _buildNcRow(nc, canEditRow)).join('')}
       `).join('')}`;
   }).join('');
@@ -363,6 +371,7 @@ function _buildNcRow(nc, canEdit) {
       ${photosHtml}
     </td>
     <td style="vertical-align:top;padding-top:14px">${critBdg(nc.crit)}</td>
+    <td style="font-size:12px;vertical-align:top;padding-top:14px;color:var(--text2)">${fd(nc.date)}</td>
     <td style="font-size:12px;vertical-align:top;padding-top:14px;color:${isOverdue ? 'var(--danger)' : 'inherit'}">${fd(nc.dl)}</td>
     <td style="vertical-align:top;padding-top:14px">${statBdg(nc.statut)}</td>
     <td style="vertical-align:top;padding-top:10px">
@@ -436,6 +445,12 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
   const archRay  = v('flt-arch-ray')    || '';
   /** @type {string} */
   const archPer  = v('flt-arch-period') || '';
+  // ⚠️ AJOUTÉ : filtre par date précise, indépendant du filtre de
+  // période (qui filtre par closedDate) — celui-ci filtre par NC.date
+  // (date de validation de l'audit d'origine), la même donnée que la
+  // nouvelle colonne "Date de l'audit" (_buildNcArchiveRow ci-dessous).
+  /** @type {string} */
+  const archDate = v('flt-arch-date') || '';
   // ⚠️ CORRIGÉ : rouvrir (nc_reopen) et supprimer (nc_delete) une NC
   // archivée sont deux droits distincts dans le nouveau système.
   /** @type {boolean} */
@@ -460,6 +475,7 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
 
   if (filterCrit) archives = archives.filter(nc => nc.crit === filterCrit);
   if (archPer)    archives = _filterByPeriod(archives, archPer, 'closedDate');
+  if (archDate)   archives = archives.filter(nc => nc.date === archDate);
 
   const countBadge = el('nc-archive-cnt');
   if (countBadge) countBadge.textContent = archives.length;
@@ -511,6 +527,7 @@ function _buildNcArchiveRow(nc, canReopen, canDelete) {
         : '<span class="tsm tm">–</span>'}
     </td>
     <td style="vertical-align:top;padding-top:12px">${critBdg(nc.crit)}</td>
+    <td style="font-size:12px;vertical-align:top;padding-top:12px;color:var(--text2)">${fd(nc.date)}</td>
     <td style="font-size:12px;vertical-align:top;padding-top:12px;color:var(--success)">${nc.closedDate ? fd(nc.closedDate) : '–'}</td>
     <td style="vertical-align:top;padding-top:10px">
       <div class="act-btns">
@@ -801,6 +818,11 @@ function exportNCActivePDF() {
   const filterStat = v('flt-nc-stat');
   /** @type {string} */
   const period     = v('flt-nc-export-period') || '';
+  // ⚠️ AJOUTÉ : le filtre par date précise (flt-nc-date) s'applique
+  // aussi à l'export PDF, pour que le PDF corresponde toujours à ce qui
+  // est affiché à l'écran.
+  /** @type {string} */
+  const filterDate = v('flt-nc-date') || '';
 
   /** @type {NC[]} */
   let list = [...DB.ncs].reverse().filter(nc =>
@@ -810,6 +832,7 @@ function exportNCActivePDF() {
   if (filterRay)  list = list.filter(nc => nc.rayon  === filterRay);
   if (filterCrit) list = list.filter(nc => nc.crit   === filterCrit);
   if (filterStat) list = list.filter(nc => nc.statut === filterStat);
+  if (filterDate) list = list.filter(nc => nc.date   === filterDate);
   if (period)     list = _filterByPeriod(list, period, 'date');
 
   if (!list.length) { alert('Aucune non-conformité active à exporter pour cette sélection.'); return; }
@@ -936,14 +959,20 @@ function exportNCArchivePDF() {
   const archRay  = v('flt-arch-ray')    || '';
   /** @type {string} */
   const period   = v('flt-arch-period') || '';
+  // ⚠️ AJOUTÉ : le filtre par date précise (flt-arch-date) s'applique
+  // aussi à l'export PDF, pour que le PDF corresponde toujours à ce qui
+  // est affiché à l'écran.
+  /** @type {string} */
+  const archDate = v('flt-arch-date') || '';
 
   /** @type {NC[]} */
   let archives = [...DB.ncs].reverse().filter(nc =>
     (storeIds.includes(nc.mid) || nc.mid === '') && nc.statut === 'Clôturée'
   );
-  if (archMag) archives = archives.filter(nc => nc.mid   === archMag);
-  if (archRay) archives = archives.filter(nc => nc.rayon === archRay);
-  if (period)  archives = _filterByPeriod(archives, period, 'closedDate');
+  if (archMag)  archives = archives.filter(nc => nc.mid   === archMag);
+  if (archRay)  archives = archives.filter(nc => nc.rayon === archRay);
+  if (archDate) archives = archives.filter(nc => nc.date  === archDate);
+  if (period)   archives = _filterByPeriod(archives, period, 'closedDate');
 
   if (!archives.length) { alert('Aucune NC clôturée à exporter pour cette sélection.'); return; }
 
