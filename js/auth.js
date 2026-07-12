@@ -130,8 +130,27 @@ async function _checkSessionOnLoad() {
     return;
   }
 
+  // ⚠️ CORRIGÉ : _sb.auth.getSession() peut renvoyer une session vide
+  // si le SDK Supabase n'a pas encore fini de lire le jeton persisté
+  // depuis le stockage local au moment de l'appel — createClient()
+  // lance cette lecture en arrière-plan de façon asynchrone, et rien
+  // ne garantit qu'elle soit terminée au moment où _checkSessionOnLoad()
+  // s'exécute (appelée le plus tôt possible au chargement de la page,
+  // voir init.js). C'est le scénario classique "toujours déconnecté
+  // après un rafraîchissement alors que persistSession est activé".
+  // On attend désormais l'évènement 'INITIAL_SESSION' (déclenché une
+  // fois cette lecture terminée, garanti de refléter fidèlement le
+  // jeton réellement stocké) plutôt que d'appeler getSession()
+  // directement — pattern documenté par Supabase pour ce cas précis.
   /** @type {{ data: { session: Object|null } }} */
-  const { data: { session } } = await _sb.auth.getSession();
+  const { data: { session } } = await new Promise(resolve => {
+    /** @type {{ data: { subscription: Object } }} */
+    const { data: { subscription } } = _sb.auth.onAuthStateChange((event, initialSession) => {
+      if (event !== 'INITIAL_SESSION') return;
+      subscription.unsubscribe();
+      resolve({ data: { session: initialSession } });
+    });
+  });
   if (!session) { CU = null; return; }
 
   /** @type {User | null} */
