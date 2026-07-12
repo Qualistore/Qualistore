@@ -7,7 +7,6 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
-</head>
 <body>
 
 <!-- LOGIN -->
@@ -16,21 +15,86 @@
     <div class="login-logo">
 <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">      <p style="color:var(--text2);font-size:13px;margin-top:4px">Gestion de la qualité alimentaire</p>
     </div>
-    <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
-    <div class="form-group">
-      <label class="form-label">Identifiant</label>
-      <input class="form-control" type="text" id="f-login" placeholder="Votre identifiant" autocomplete="username">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Mot de passe</label>
-      <div class="pw-wrap">
-        <input class="form-control" type="password" id="f-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-        <button class="pw-eye" type="button" onclick="togglePass('f-pass',this)"><i class="ti ti-eye"></i></button>
+
+    <div id="login-form">
+      <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
+      <div class="form-group">
+        <label class="form-label">Identifiant</label>
+        <input class="form-control" type="text" id="f-login" placeholder="Votre identifiant" autocomplete="username">
       </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+          <button class="pw-eye" type="button" onclick="togglePass('f-pass',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
+        <i class="ti ti-login"></i> Se connecter
+      </button>
+      <button type="button" style="background:none;border:none;color:var(--primary);font-size:12px;margin-top:12px;cursor:pointer;width:100%;text-align:center" onclick="showForgotPasswordForm()">
+        Mot de passe oublié ?
+      </button>
     </div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
-      <i class="ti ti-login"></i> Se connecter
-    </button>
+
+    <div id="login-forgot" style="display:none">
+      <p class="tsm tm" style="margin-bottom:12px">Saisissez votre email pour recevoir un lien de réinitialisation.</p>
+      <div class="login-err" id="login-forgot-msg"></div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-control" type="email" id="f-forgot-email" placeholder="vous@exemple.com">
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="requestPasswordReset()">
+        <i class="ti ti-send"></i> Envoyer le lien
+      </button>
+      <button type="button" style="background:none;border:none;color:var(--text2);font-size:12px;margin-top:12px;cursor:pointer;width:100%;text-align:center" onclick="showLoginForm()">
+        <i class="ti ti-arrow-left"></i> Retour à la connexion
+      </button>
+    </div>
+
+    <div id="login-reset" style="display:none">
+      <p class="tsm tm" style="margin-bottom:12px">Choisissez un nouveau mot de passe.</p>
+      <div class="login-err" id="login-reset-msg"></div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-reset-pass" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('f-reset-pass',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-reset-pass-confirm" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('f-reset-pass-confirm',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="confirmPasswordReset()">
+        <i class="ti ti-check"></i> Valider
+      </button>
+    </div>
+
+    <div id="login-forcepass" style="display:none">
+      <p class="tsm tm" style="margin-bottom:12px">Pour votre sécurité, choisissez un nouveau mot de passe avant de continuer.</p>
+      <div class="login-err" id="login-forcepass-msg"></div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-forcepass-new" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('f-forcepass-new',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="f-forcepass-confirm" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('f-forcepass-confirm',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="confirmForcedPasswordChange()">
+        <i class="ti ti-check"></i> Valider et continuer
+      </button>
+    </div>
 
   </div>
 </div>
@@ -48,6 +112,7 @@
       <div>
         <div style="font-size:12px;font-weight:500" id="sb-name">–</div>
         <div style="font-size:10px;opacity:.6" id="sb-role">–</div>
+        <button class="btn-logout" style="margin-bottom:4px" onclick="openChangePasswordModal()"><i class="ti ti-key" style="font-size:13px"></i> Changer le mot de passe</button>
         <button class="btn-logout" onclick="doLogout()"><i class="ti ti-logout" style="font-size:13px"></i> Déconnexion</button>
       </div>
     </div>
@@ -148,7 +213,7 @@
           <span class="tsm tm" id="drafts-cnt"></span>
         </div>
         <div class="card">
-          <div class="tbl-wrap"><table><thead><tr><th>Type</th><th>Magasin</th><th>Rayon</th><th>Date</th><th>Auditeur</th><th></th></tr></thead><tbody id="drafts-tb"></tbody></table></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Date</th><th>Auditeur</th><th></th></tr></thead><tbody id="drafts-tb"></tbody></table></div>
         </div>
       </div>
       
@@ -503,17 +568,10 @@
       <input type="hidden" id="u-id">
       <div class="form-row">
         <div class="form-group"><label class="form-label">Nom complet *</label><input class="form-control" id="u-nom" placeholder="Prénom Nom"></div>
-        <div class="form-group"><label class="form-label">Identifiant (login) *</label><input class="form-control" id="u-login" placeholder="prenom.nom" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label">Identifiant (login) *</label><input class="form-control" id="u-login" placeholder="prenom.nom ou email" autocomplete="off"></div>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Mot de passe *</label>
-          <div class="pw-wrap">
-            <input class="form-control" type="password" id="u-mdp" placeholder="••••••••" autocomplete="new-password">
-            <button class="pw-eye" type="button" onclick="togglePass('u-mdp',this)"><i class="ti ti-eye"></i></button>
-          </div>
-          <div class="form-hint" id="u-mdp-hint" style="display:none">Laisser vide pour ne pas modifier</div>
-        </div>
+      <div class="form-hint" id="u-invite-hint">Laissez vide pour un compte sans email (identifiant + mot de passe provisoire générés automatiquement), ou saisissez un email pour envoyer une invitation.</div>
+      <div class="form-row" id="u-statut-grp" style="display:none">
         <div class="form-group"><label class="form-label">Statut</label><select class="form-control" id="u-statut"><option value="actif">Actif</option><option value="inactif">Inactif</option></select></div>
       </div>
       <hr class="divider">
@@ -539,34 +597,67 @@
       <hr class="divider">
       <div class="form-group">
         <label class="form-label">Droits sur l'application</label>
-        <div class="perm-sec">
-          <div class="perm-title">Audits &amp; Qualité</div>
-          <div class="cb-group">
-            <label class="cb-item"><input type="checkbox" id="p-aud-r"> Consulter les audits</label>
-            <label class="cb-item"><input type="checkbox" id="p-aud-w"> Créer des audits (FSQS &amp; Qualimètre)</label>
-            <label class="cb-item"><input type="checkbox" id="p-nc"> Gérer les non-conformités</label>
-            <label class="cb-item"><input type="checkbox" id="p-ac"> Gérer les actions correctives</label>
-          </div>
-        </div>
-        <div class="perm-sec">
-          <div class="perm-title">Données</div>
-          <div class="cb-group">
-            <label class="cb-item"><input type="checkbox" id="p-mag"> Gérer les magasins</label>
-            <label class="cb-item"><input type="checkbox" id="p-rap"> Accéder aux rapports (FSQS &amp; Qualimètre)</label>
-            <label class="cb-item"><input type="checkbox" id="p-grille"> Modifier la grille d'audit</label>
-          </div>
-        </div>
-        <div class="perm-sec">
-          <div class="perm-title">Administration</div>
-          <div class="cb-group">
-            <label class="cb-item"><input type="checkbox" id="p-usr"> Gérer les utilisateurs</label>
-          </div>
-        </div>
+        <div id="u-perms-container"></div>
       </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" onclick="closeModal('m-user')">Annuler</button>
       <button class="btn btn-primary" onclick="saveUser()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CHANGEMENT DE MOT DE PASSE VOLONTAIRE -->
+<div class="modal-ov" id="m-change-pass">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-key" style="color:var(--primary)"></i> Changer le mot de passe</div>
+      <button class="btn-x" onclick="closeModal('m-change-pass')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="cp-err"></div>
+      <div class="form-group">
+        <label class="form-label">Nouveau mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="cp-new" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('cp-new',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmer le mot de passe</label>
+        <div class="pw-wrap">
+          <input class="form-control" type="password" id="cp-confirm" placeholder="••••••••" autocomplete="new-password">
+          <button class="pw-eye" type="button" onclick="togglePass('cp-confirm',this)"><i class="ti ti-eye"></i></button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-change-pass')">Annuler</button>
+      <button class="btn btn-primary" onclick="submitChangePassword()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NOUVEAUX IDENTIFIANTS (compte sans email) -->
+<div class="modal-ov" id="m-new-credentials">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-key" style="color:var(--primary)"></i> Identifiants générés</div>
+      <button class="btn-x" onclick="closeModal('m-new-credentials')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="tsm tm" style="margin-bottom:12px">Communiquez ces identifiants à <strong id="cred-nom"></strong> — un changement de mot de passe sera exigé à sa première connexion.</p>
+      <div class="form-group">
+        <label class="form-label">Identifiant</label>
+        <div class="form-control" style="background:var(--bg)" id="cred-identifier"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe provisoire</label>
+        <div class="form-control" style="background:var(--bg);font-weight:600" id="cred-password"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" onclick="closeModal('m-new-credentials')">Fermer</button>
     </div>
   </div>
 </div>
@@ -737,7 +828,7 @@
   <div class="modal">
     <div class="modal-hdr">
       <div class="modal-title" style="color:var(--danger-dark)" id="m-alert-title"><i class="ti ti-bell-ringing"></i> Nouvelle alerte terrain</div>
-      <button class="btn-x" onclick="pauseAlert()">&times;</button>
+      <button class="btn-x" onclick="closeModal('m-alert')">&times;</button>
     </div>
     <div class="modal-body">
       <div class="form-err" id="al-err"></div>
@@ -798,7 +889,7 @@
       </div>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-secondary" onclick="pauseAlert()">Annuler</button>
+      <button class="btn btn-secondary" onclick="closeModal('m-alert')">Annuler</button>
       <button class="btn btn-danger" id="al-save-btn" onclick="saveAlert()"><i class="ti ti-bell-ringing"></i> Envoyer l'alerte</button>
     </div>
   </div>
