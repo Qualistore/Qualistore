@@ -102,14 +102,17 @@ function renderActions() {
   const filterMagId       = v('flt-act-mag');
   /** @type {string} */
   const filterStatus      = v('flt-act-stat');
-  // ⚠️ AJOUTÉ : filtre par date précise (calendrier natif) — filtre sur
-  // la date de l'audit d'origine de la NC liée (NC.date, voir
-  // submitAudit audits.js), la même donnée qu'affiche désormais la
-  // colonne "Date de l'audit" (_buildActionRow ci-dessous). Une action
-  // sans NC retrouvée (cas normalement impossible en usage normal) est
-  // exclue par ce filtre dès qu'une date est sélectionnée.
+  // ⚠️ CHANGÉ : filtre "date précise" et filtre de période sont
+  // désormais un seul menu combiné (#flt-act-period + #flt-act-date,
+  // voir _toggleDateFilterInput, ui.js), filtrant sur la date de
+  // l'audit d'origine de la NC liée (NC.date) — même principe que NC
+  // actives/archivées (voir nc.js, _applyDateFilter). Une action sans
+  // NC retrouvée (cas normalement impossible en usage normal) est
+  // exclue dès qu'un filtre de date est actif.
   /** @type {string} */
-  const filterDate         = v('flt-act-date') || '';
+  const periodValue        = v('flt-act-period') || 'all';
+  /** @type {string} */
+  const exactDateValue     = v('flt-act-date') || '';
 
   populateMagSelect(el('flt-act-mag'));
 
@@ -126,11 +129,19 @@ function renderActions() {
     if (store) actions = actions.filter(a => a.mag === store.nom);
   }
   if (filterStatus) actions = actions.filter(a => a.statut === filterStatus);
-  if (filterDate) {
+  if (periodValue === 'date' && exactDateValue) {
     actions = actions.filter(a => {
       /** @type {NC | undefined} */
       const linkedNc = DB.ncs.find(nc => nc.id === a.ncId);
-      return linkedNc && linkedNc.date === filterDate;
+      return linkedNc && linkedNc.date === exactDateValue;
+    });
+  } else if (periodValue !== 'all' && periodValue !== 'date') {
+    /** @type {Date} */
+    const cutoff = _periodCutoffDate(periodValue);
+    actions = actions.filter(a => {
+      /** @type {NC | undefined} */
+      const linkedNc = DB.ncs.find(nc => nc.id === a.ncId);
+      return linkedNc && linkedNc.date && new Date(linkedNc.date) >= cutoff;
     });
   }
 

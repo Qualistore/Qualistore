@@ -322,6 +322,22 @@ function overdue(dateString) {
 }
 
 /**
+ * Affiche ou masque l'input date associé à un menu de période, selon
+ * que ce menu est actuellement réglé sur l'option "D'une date précise"
+ * (valeur 'date') — utilisée par les filtres combinés période/date
+ * précise des onglets NC actives, NC archivées et Actions correctives
+ * (voir renderNC, renderNCArchives, nc.js ; renderActions, actions.js).
+ * @param {string} periodSelectId - Id du <select> de période.
+ * @param {string} dateInputId - Id de l'<input type="date"> associé.
+ * @returns {void}
+ */
+function _toggleDateFilterInput(periodSelectId, dateInputId) {
+  /** @type {HTMLElement | null} */
+  const dateInput = el(dateInputId);
+  if (dateInput) dateInput.style.display = v(periodSelectId) === 'date' ? '' : 'none';
+}
+
+/**
  * Génère le HTML d'un badge de statut (Ouverte, En cours, Clôturée…).
  * Gère à la fois les formes féminines et masculines, bien que seules
  * les formes féminines ('Ouverte', 'Clôturée') aient été observées

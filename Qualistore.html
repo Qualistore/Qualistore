@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QualiStore</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/app.css?v=3">
+<link rel="stylesheet" href="css/app.css?v=4">
 </head>
 <body>
 
@@ -239,7 +239,15 @@
             <select class="form-control" style="width:auto" id="flt-nc-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
             <select class="form-control" style="width:auto" id="flt-nc-crit" onchange="renderNC()"><option value="">Toutes criticités</option><option>Critique</option><option>Majeure</option><option>Mineure</option></select>
             <select class="form-control" style="width:auto" id="flt-nc-stat" onchange="renderNC()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
-            <input type="date" class="form-control" style="width:auto" id="flt-nc-date" onchange="renderNC()" title="Filtrer par date de l'audit">
+            <select class="form-control" style="width:auto" id="flt-nc-period" onchange="_toggleDateFilterInput('flt-nc-period','flt-nc-date');renderNC()">
+              <option value="all">Toutes les Non-Conformités</option>
+              <option value="date">D'une date précise</option>
+              <option value="month">Mois en cours</option>
+              <option value="month30">30 derniers jours</option>
+              <option value="month3">3 derniers mois</option>
+              <option value="month6">6 derniers mois</option>
+            </select>
+            <input type="date" class="form-control" style="width:auto;display:none" id="flt-nc-date" onchange="renderNC()" title="Filtrer par date de l'audit">
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="tsm tm" id="nc-cnt"></span>
@@ -253,17 +261,9 @@
         <div class="card mb-6">
           <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
             <div class="card-title"><i class="ti ti-alert-triangle" style="color:var(--danger)"></i> Non-conformités actives</div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <select class="form-control" style="width:auto;font-size:12px;padding:4px 8px" id="flt-nc-export-period">
-                <option value="">Toutes périodes</option>
-                <option value="week">Cette semaine</option>
-                <option value="month">Mois en cours</option>
-                <option value="month30">30 derniers jours</option>
-              </select>
-              <button class="btn btn-secondary btn-sm" onclick="exportNCActivePDF()">
-                <i class="ti ti-file-download"></i> Exporter PDF
-              </button>
-            </div>
+            <button class="btn btn-secondary btn-sm" onclick="exportNCActivePDF()">
+              <i class="ti ti-file-download"></i> Exporter PDF
+            </button>
           </div>
           <div class="tbl-wrap"><table><thead><tr><th style="width:32px"></th><th>Magasin</th><th>Rayon</th><th>Description</th><th>Criticité</th><th>Date de l'audit</th><th>Échéance</th><th>Statut</th><th></th></tr></thead><tbody id="nc-tb"></tbody></table></div>
         </div>
@@ -277,13 +277,15 @@
             <div style="padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <select class="form-control" style="width:auto" id="flt-arch-mag" onchange="renderNC()"><option value="">Tous les magasins</option></select>
               <select class="form-control" style="width:auto" id="flt-arch-ray" onchange="renderNC()"><option value="">Tous les rayons</option><option>Boucherie</option><option>Boulangerie</option><option>Drive</option><option>Marée</option><option>Charcuterie</option><option>Fromage</option><option>Fruits & Légumes</option><option>Traiteur</option><option>Snacking</option><option>Pâtisserie</option></select>
-              <select class="form-control" style="width:auto" id="flt-arch-period" onchange="renderNC()">
-                <option value="">Toutes périodes</option>
-                <option value="week">Cette semaine</option>
+              <select class="form-control" style="width:auto" id="flt-arch-period" onchange="_toggleDateFilterInput('flt-arch-period','flt-arch-date');renderNC()">
+                <option value="all">Toutes les Non-Conformités</option>
+                <option value="date">D'une date précise</option>
                 <option value="month">Mois en cours</option>
                 <option value="month30">30 derniers jours</option>
+                <option value="month3">3 derniers mois</option>
+                <option value="month6">6 derniers mois</option>
               </select>
-              <input type="date" class="form-control" style="width:auto" id="flt-arch-date" onchange="renderNC()" title="Filtrer par date de l'audit">
+              <input type="date" class="form-control" style="width:auto;display:none" id="flt-arch-date" onchange="renderNC()" title="Filtrer par date de l'audit">
               <button class="btn btn-secondary btn-sm" onclick="exportNCArchivePDF()"><i class="ti ti-file-download"></i> Exporter PDF</button>
             </div>
             <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Description</th><th>Commentaire de suivi</th><th>Criticité</th><th>Date de l'audit</th><th>Clôturée le</th><th></th></tr></thead><tbody id="nc-archive-tb"></tbody></table></div>
@@ -297,7 +299,15 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <select class="form-control" style="width:auto" id="flt-act-mag" onchange="renderActions()"><option value="">Tous les magasins</option></select>
             <select class="form-control" style="width:auto" id="flt-act-stat" onchange="renderActions()"><option value="">Tous statuts</option><option>Ouverte</option><option>En cours</option></select>
-            <input type="date" class="form-control" style="width:auto" id="flt-act-date" onchange="renderActions()" title="Filtrer par date de l'audit">
+            <select class="form-control" style="width:auto" id="flt-act-period" onchange="_toggleDateFilterInput('flt-act-period','flt-act-date');renderActions()">
+              <option value="all">Toutes les actions correctives</option>
+              <option value="date">D'une date précise</option>
+              <option value="month">Mois en cours</option>
+              <option value="month30">30 derniers jours</option>
+              <option value="month3">3 derniers mois</option>
+              <option value="month6">6 derniers mois</option>
+            </select>
+            <input type="date" class="form-control" style="width:auto;display:none" id="flt-act-date" onchange="renderActions()" title="Filtrer par date de l'audit">
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="tsm tm" id="act-cnt"></span>
@@ -1308,41 +1318,41 @@
 </html>
 
 <!-- Librairies externes -->
-<script src="js/jspdf.umd.min.js?v=3"></script>
-<script src="js/html2canvas.min.js?v=3"></script>
-<script src="js/chart.umd.min.js?v=3"></script>
+<script src="js/jspdf.umd.min.js?v=4"></script>
+<script src="js/html2canvas.min.js?v=4"></script>
+<script src="js/chart.umd.min.js?v=4"></script>
 
 <!-- Infrastructure -->
-<script src="js/config.js?v=3"></script>
+<script src="js/config.js?v=4"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase.js?v=3"></script>
-<script src="js/db/supabase/storage.js?v=3"></script>
-<script src="js/auth.js?v=3"></script>
-<script src="js/ui.js?v=3"></script>
+<script src="js/supabase.js?v=4"></script>
+<script src="js/db/supabase/storage.js?v=4"></script>
+<script src="js/auth.js?v=4"></script>
+<script src="js/ui.js?v=4"></script>
 
 <!-- Import de référentiels (chargé avant grille-qualimetre.js, qui réutilise detectConceptMapping/normalizeRows/_resolveOrCreateZoneFromDocument) -->
-<script src="js/import/import-detect.js?v=3"></script>
-<script src="js/import/import-normalize.js?v=3"></script>
-<script src="js/import/import-grille.js?v=3"></script>
+<script src="js/import/import-detect.js?v=4"></script>
+<script src="js/import/import-normalize.js?v=4"></script>
+<script src="js/import/import-grille.js?v=4"></script>
 
 <!-- Modules métier -->
-<script src="js/dashboard.js?v=3"></script>
-<script src="js/audits.js?v=3"></script>
-<script src="js/nc.js?v=3"></script>
-<script src="js/actions.js?v=3"></script>
-<script src="js/magasins.js?v=3"></script>
-<script src="js/rayons.js?v=3"></script>
-<script src="js/grille.js?v=3"></script>
-<script src="js/alertes.js?v=3"></script>
-<script src="js/users.js?v=3"></script>
-<script src="js/rapports-fsqs.js?v=3"></script>
-<script src="js/import/grille-qualimetre.js?v=3"></script> 
-<script src="js/qualimetre.js?v=3"></script>
-<script src="js/audit-qualimetre.js?v=3"></script>
-<script src="js/rapport-qualimetre.js?v=3"></script>
+<script src="js/dashboard.js?v=4"></script>
+<script src="js/audits.js?v=4"></script>
+<script src="js/nc.js?v=4"></script>
+<script src="js/actions.js?v=4"></script>
+<script src="js/magasins.js?v=4"></script>
+<script src="js/rayons.js?v=4"></script>
+<script src="js/grille.js?v=4"></script>
+<script src="js/alertes.js?v=4"></script>
+<script src="js/users.js?v=4"></script>
+<script src="js/rapports-fsqs.js?v=4"></script>
+<script src="js/import/grille-qualimetre.js?v=4"></script> 
+<script src="js/qualimetre.js?v=4"></script>
+<script src="js/audit-qualimetre.js?v=4"></script>
+<script src="js/rapport-qualimetre.js?v=4"></script>
 
 <!-- Point d'entrée -->
-<script src="js/init.js?v=3"></script>
+<script src="js/init.js?v=4"></script>
 
 </body>
 </html>

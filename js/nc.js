@@ -119,6 +119,8 @@ const NC_PERIOD_LABELS = {
   week:    'Cette semaine',
   month:   'Mois en cours',
   month30: '30 derniers jours',
+  month3:  '3 derniers mois',
+  month6:  '6 derniers mois',
 };
 
 // ─────────────────────────────────────────────
@@ -256,13 +258,6 @@ function renderNC() {
   const filterCrit = v('flt-nc-crit');
   /** @type {string} */
   const filterStat = v('flt-nc-stat') || '';
-  // ⚠️ AJOUTÉ : filtre par date précise (calendrier natif, en plus du
-  // filtre de période déjà présent sur l'export PDF) — filtre sur
-  // NC.date, c'est-à-dire la date de validation de l'audit d'origine
-  // (voir submitAudit, audits.js), la même donnée qu'affiche désormais
-  // la colonne "Date de l'audit" (_buildNcRow ci-dessous).
-  /** @type {string} */
-  const filterDate = v('flt-nc-date') || '';
   // ⚠️ CORRIGÉ : 'isAdmin' unique remplacé par deux droits distincts —
   // supprimer une sélection de NC (nc_delete) et éditer une NC
   // (nc_edit_status et/ou nc_edit_deadline) ne sont plus forcément la
@@ -282,7 +277,12 @@ function renderNC() {
   if (filterRay)  activeNcs = activeNcs.filter(nc => nc.rayon  === filterRay);
   if (filterCrit) activeNcs = activeNcs.filter(nc => nc.crit   === filterCrit);
   if (filterStat) activeNcs = activeNcs.filter(nc => nc.statut === filterStat);
-  if (filterDate) activeNcs = activeNcs.filter(nc => nc.date   === filterDate);
+  // ⚠️ CHANGÉ : le filtre "date précise" et le filtre de période
+  // (auparavant réservé à l'export PDF, voir exportNCActivePDF) sont
+  // désormais un seul menu combiné (#flt-nc-period + #flt-nc-date,
+  // voir _toggleDateFilterInput, ui.js) qui filtre aussi la liste
+  // affichée à l'écran, sur la date de l'audit (NC.date).
+  activeNcs = _applyDateFilter(activeNcs, 'flt-nc-period', 'flt-nc-date', 'date');
 
   el('nc-cnt').textContent = `${activeNcs.length} NC active(s)`;
 
@@ -443,14 +443,11 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
   const archMag  = v('flt-arch-mag')    || '';
   /** @type {string} */
   const archRay  = v('flt-arch-ray')    || '';
-  /** @type {string} */
-  const archPer  = v('flt-arch-period') || '';
-  // ⚠️ AJOUTÉ : filtre par date précise, indépendant du filtre de
-  // période (qui filtre par closedDate) — celui-ci filtre par NC.date
-  // (date de validation de l'audit d'origine), la même donnée que la
-  // nouvelle colonne "Date de l'audit" (_buildNcArchiveRow ci-dessous).
-  /** @type {string} */
-  const archDate = v('flt-arch-date') || '';
+  // ⚠️ CHANGÉ : le filtre de période (auparavant sur closedDate, date
+  // de clôture) et le filtre "date précise" (sur NC.date, date de
+  // l'audit) sont désormais un seul menu combiné (#flt-arch-period +
+  // #flt-arch-date), filtrant uniformément sur NC.date — cohérent avec
+  // NC actives et Actions, qui n'ont pas de notion de date de clôture.
   // ⚠️ CORRIGÉ : rouvrir (nc_reopen) et supprimer (nc_delete) une NC
   // archivée sont deux droits distincts dans le nouveau système.
   /** @type {boolean} */
@@ -474,8 +471,7 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
   else if (filterRay)  archives = archives.filter(nc => nc.rayon === filterRay);
 
   if (filterCrit) archives = archives.filter(nc => nc.crit === filterCrit);
-  if (archPer)    archives = _filterByPeriod(archives, archPer, 'closedDate');
-  if (archDate)   archives = archives.filter(nc => nc.date === archDate);
+  archives = _applyDateFilter(archives, 'flt-arch-period', 'flt-arch-date', 'date');
 
   const countBadge = el('nc-archive-cnt');
   if (countBadge) countBadge.textContent = archives.length;
@@ -487,8 +483,10 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
   if (!tbody) return;
 
   if (!archives.length) {
+    /** @type {boolean} */
+    const hasDateFilter = (v('flt-arch-period') || 'all') !== 'all';
     tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="padding:20px">
-      <p>Aucune NC clôturée${archPer ? ' sur cette période' : ''}.</p>
+      <p>Aucune NC clôturée${hasDateFilter ? ' pour ce filtre de date' : ''}.</p>
     </div></td></tr>`;
     return;
   }
@@ -698,6 +696,27 @@ function deleteSelectedNC() {
 // ─────────────────────────────────────────────
 
 /**
+ * Construit le libellé lisible du filtre période/date précise
+ * actuellement sélectionné dans un menu combiné (#flt-nc-period,
+ * #flt-arch-period), pour affichage dans le sous-titre des exports PDF
+ * (voir exportNCActivePDF, exportNCArchivePDF).
+ * @param {string} periodSelectId - Id du <select> de période.
+ * @param {string} dateInputId - Id de l'<input type="date"> associé.
+ * @returns {string}
+ */
+function _buildPeriodLabel(periodSelectId, dateInputId) {
+  /** @type {string} */
+  const period = v(periodSelectId) || 'all';
+  if (period === 'all') return 'Toutes les Non-Conformités';
+  if (period === 'date') {
+    /** @type {string} */
+    const exactDate = v(dateInputId) || '';
+    return exactDate ? `Date : ${fd(exactDate)}` : 'Toutes les Non-Conformités';
+  }
+  return NC_PERIOD_LABELS[period] || 'Toutes les Non-Conformités';
+}
+
+/**
  * Filtre une liste d'entités selon une période glissante sur un
  * champ date donné.
  * @param {Array<Object>} list - Liste d'entités possédant le champ `dateField`.
@@ -706,11 +725,54 @@ function deleteSelectedNC() {
  * @returns {Array<Object>} Sous-ensemble de `list` dont `dateField` est postérieur ou égal à la date de coupure.
  */
 function _filterByPeriod(list, period, dateField) {
+  /** @type {Date} */
+  const cutoff = _periodCutoffDate(period);
+  return list.filter(item => item[dateField] && new Date(item[dateField]) >= cutoff);
+}
+
+/**
+ * Calcule la date de coupure correspondant à une clé de période (voir
+ * _filterByPeriod) — extrait pour être réutilisable quand la
+ * comparaison ne porte pas directement sur un tableau d'entités (voir
+ * renderActions, actions.js, qui doit d'abord résoudre la date via la
+ * NC liée à chaque action avant de comparer).
+ * @param {PdfExportPeriod | string} period
+ * @returns {Date}
+ */
+function _periodCutoffDate(period) {
   const cutoff = new Date();
   if      (period === 'week')    { const day = cutoff.getDay() || 7; cutoff.setDate(cutoff.getDate() - day + 1); cutoff.setHours(0, 0, 0, 0); }
   else if (period === 'month')   { cutoff.setDate(1); cutoff.setHours(0, 0, 0, 0); }
   else if (period === 'month30') { cutoff.setDate(cutoff.getDate() - 30); cutoff.setHours(0, 0, 0, 0); }
-  return list.filter(item => item[dateField] && new Date(item[dateField]) >= cutoff);
+  else if (period === 'month3')  { cutoff.setMonth(cutoff.getMonth() - 3); cutoff.setHours(0, 0, 0, 0); }
+  else if (period === 'month6')  { cutoff.setMonth(cutoff.getMonth() - 6); cutoff.setHours(0, 0, 0, 0); }
+  return cutoff;
+}
+
+/**
+ * Applique le filtre combiné période/date précise (menu #flt-nc-period
+ * ou #flt-arch-period, associé à un input date affiché uniquement pour
+ * l'option "D'une date précise" — voir _toggleDateFilterInput, ui.js)
+ * à une liste d'entités portant un champ date. Valeurs possibles du
+ * menu : 'all' (aucun filtre, valeur par défaut), 'date' (date exacte,
+ * lit dateInputId), ou une clé de période consommée par
+ * _filterByPeriod ('month'|'month30'|'month3'|'month6').
+ * @param {Array<Object>} list - Liste d'entités possédant le champ `dateField`.
+ * @param {string} periodSelectId - Id du <select> de période.
+ * @param {string} dateInputId - Id de l'<input type="date"> associé.
+ * @param {string} dateField - Nom du champ date à utiliser (ex : 'date').
+ * @returns {Array<Object>}
+ */
+function _applyDateFilter(list, periodSelectId, dateInputId, dateField) {
+  /** @type {string} */
+  const period = v(periodSelectId) || 'all';
+  if (period === 'all') return list;
+  if (period === 'date') {
+    /** @type {string} */
+    const exactDate = v(dateInputId) || '';
+    return exactDate ? list.filter(item => item[dateField] === exactDate) : list;
+  }
+  return _filterByPeriod(list, period, dateField);
 }
 
 /**
@@ -816,13 +878,6 @@ function exportNCActivePDF() {
   const filterCrit = v('flt-nc-crit');
   /** @type {string} */
   const filterStat = v('flt-nc-stat');
-  /** @type {string} */
-  const period     = v('flt-nc-export-period') || '';
-  // ⚠️ AJOUTÉ : le filtre par date précise (flt-nc-date) s'applique
-  // aussi à l'export PDF, pour que le PDF corresponde toujours à ce qui
-  // est affiché à l'écran.
-  /** @type {string} */
-  const filterDate = v('flt-nc-date') || '';
 
   /** @type {NC[]} */
   let list = [...DB.ncs].reverse().filter(nc =>
@@ -832,13 +887,16 @@ function exportNCActivePDF() {
   if (filterRay)  list = list.filter(nc => nc.rayon  === filterRay);
   if (filterCrit) list = list.filter(nc => nc.crit   === filterCrit);
   if (filterStat) list = list.filter(nc => nc.statut === filterStat);
-  if (filterDate) list = list.filter(nc => nc.date   === filterDate);
-  if (period)     list = _filterByPeriod(list, period, 'date');
+  // ⚠️ CHANGÉ : l'export PDF respecte désormais le même menu combiné
+  // période/date précise que le tableau affiché à l'écran (voir
+  // renderNC ci-dessus) — plus de sélecteur de période séparé pour
+  // l'export (#flt-nc-export-period, supprimé du HTML).
+  list = _applyDateFilter(list, 'flt-nc-period', 'flt-nc-date', 'date');
 
   if (!list.length) { alert('Aucune non-conformité active à exporter pour cette sélection.'); return; }
 
   /** @type {string} */
-  const periodLabel = NC_PERIOD_LABELS[period] || 'Toutes périodes';
+  const periodLabel = _buildPeriodLabel('flt-nc-period', 'flt-nc-date');
   /** @type {string} */
   const magLabel    = (filterMag && DB.magasins.find(m => m.id === filterMag)?.nom) || 'Tous les magasins';
   /** @type {string} */
@@ -957,27 +1015,23 @@ function exportNCArchivePDF() {
   const archMag  = v('flt-arch-mag')    || '';
   /** @type {string} */
   const archRay  = v('flt-arch-ray')    || '';
-  /** @type {string} */
-  const period   = v('flt-arch-period') || '';
-  // ⚠️ AJOUTÉ : le filtre par date précise (flt-arch-date) s'applique
-  // aussi à l'export PDF, pour que le PDF corresponde toujours à ce qui
-  // est affiché à l'écran.
-  /** @type {string} */
-  const archDate = v('flt-arch-date') || '';
 
   /** @type {NC[]} */
   let archives = [...DB.ncs].reverse().filter(nc =>
     (storeIds.includes(nc.mid) || nc.mid === '') && nc.statut === 'Clôturée'
   );
-  if (archMag)  archives = archives.filter(nc => nc.mid   === archMag);
-  if (archRay)  archives = archives.filter(nc => nc.rayon === archRay);
-  if (archDate) archives = archives.filter(nc => nc.date  === archDate);
-  if (period)   archives = _filterByPeriod(archives, period, 'closedDate');
+  if (archMag) archives = archives.filter(nc => nc.mid   === archMag);
+  if (archRay) archives = archives.filter(nc => nc.rayon === archRay);
+  // ⚠️ CHANGÉ : même menu combiné période/date précise que le tableau
+  // affiché à l'écran (voir renderNCArchives), filtrant uniformément
+  // sur la date de l'audit (NC.date) — remplace l'ancien filtre par
+  // date de clôture réservé à l'export.
+  archives = _applyDateFilter(archives, 'flt-arch-period', 'flt-arch-date', 'date');
 
   if (!archives.length) { alert('Aucune NC clôturée à exporter pour cette sélection.'); return; }
 
   /** @type {string} */
-  const periodLabel = NC_PERIOD_LABELS[period] || 'Toutes périodes';
+  const periodLabel = _buildPeriodLabel('flt-arch-period', 'flt-arch-date');
   /** @type {string} */
   const magLabel    = (archMag && DB.magasins.find(m => m.id === archMag)?.nom) || 'Tous les magasins';
 
