@@ -288,9 +288,9 @@ const IMPORT_FORMAT_INFO = {
     <span style="color:#15803d">Exemple : <code style="background:#fff;padding:1px 5px;border-radius:4px">Boucherie;Température;Temp. chambre froide;Critique;10</code></span>`,
 
   xlsx: `<strong style="color:var(--text);font-size:13px">Format Excel (.xlsx / .xls)</strong><br>
-    La 1ère feuille du classeur est utilisée.<br>
+    Un seul onglet : traité comme un CSV. Plusieurs onglets : chaque onglet est apparié automatiquement à un rayon d'après son nom, l'onglet "Tutoriel" est ignoré, et l'onglet "Commun" est ajouté à tous les rayons du classeur.<br>
     Les colonnes sont détectées automatiquement par leur en-tête (zone, point de contrôle, méthode, criticité, commentaire…), quel que soit leur ordre.<br>
-    <span style="color:#15803d">Le mapping détecté est affiché et modifiable avant import.</span>`,
+    <span style="color:#15803d">Le rayon et la zone de chaque ligne restent corrigeables individuellement dans l'aperçu avant import.</span>`,
 
   pdf: `<strong style="color:var(--text);font-size:13px">Format PDF</strong><br>
     Le texte du PDF est extrait et analysé ligne par ligne, puis les colonnes sont détectées automatiquement comme pour un fichier CSV.<br>

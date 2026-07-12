@@ -2,7 +2,17 @@
 // IMPORT-GRILLE — Import de grille d'audit (CSV / XLSX / PDF)
 // Dépend de : storage.js (DB, CU), config.js (CDN_SHEETJS, CDN_PDFJS, CDN_PDFJS_WORKER, IMPORT_FORMAT_INFO), ui.js,
 //             import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
-//             import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap)
+//             import-normalize.js (normalizeRows, findDuplicateRows, NormalizedImportRow, DuplicateMap),
+//             rayons.js (getKnownRayons, getZonesForRayon)
+//
+// ⚠️ AJOUTÉ : classeur Excel multi-onglets — voir _importMultiSheetXlsx,
+// _resolveKnownRayonName, _isTutorialSheetLabel. Un onglet "Tutoriel"
+// est ignoré, un onglet "Commun"/"Commune" est dupliqué dans tous les
+// autres rayons détectés dans le classeur (même principe que les
+// sections "commun" déjà gérées à l'intérieur d'un seul onglet/CSV,
+// voir _isCommonZoneLabel plus bas), et chaque autre onglet est
+// apparié automatiquement à un rayon déjà connu d'après son nom
+// (exact, puis approché). Le classeur à un seul onglet reste inchangé.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -197,6 +207,125 @@ function _isCommonZoneLabel(zoneLabel) {
   /** @type {string} */
   const stripped = String(zoneLabel || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return IMPORT_COMMON_ZONE_PATTERN.test(stripped);
+}
+
+/**
+ * Motif reconnaissant un onglet "Tutoriel" (singulier ou pluriel) —
+ * jamais traité comme un rayon ni comme l'onglet "Commun" : ignoré
+ * intégralement à l'import d'un classeur Excel multi-onglets (voir
+ * _importMultiSheetXlsx). Volontairement restrictif (le mot entier),
+ * même principe que IMPORT_COMMON_ZONE_PATTERN, pour ne jamais ignorer
+ * à tort un rayon réel qui contiendrait ce mot.
+ * @type {RegExp}
+ */
+const IMPORT_TUTORIAL_SHEET_PATTERN = /^tutoriels?$/i;
+
+/**
+ * Indique si un nom d'onglet Excel désigne l'onglet "Tutoriel" à
+ * ignorer (voir IMPORT_TUTORIAL_SHEET_PATTERN), par comparaison sur le
+ * texte normalisé (trim, accents retirés) — même logique que
+ * _isCommonZoneLabel ci-dessus.
+ * @param {string} sheetName
+ * @returns {boolean}
+ */
+function _isTutorialSheetLabel(sheetName) {
+  /** @type {string} */
+  const stripped = String(sheetName || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return IMPORT_TUTORIAL_SHEET_PATTERN.test(stripped);
+}
+
+/**
+ * Normalise un texte pour comparaison approximative (espaces
+ * superflus réduits, casse uniformisée, accents supprimés) — utilisée
+ * uniquement pour apparier un nom d'onglet Excel à un rayon déjà
+ * connu, voir _resolveKnownRayonName.
+ * @param {string} text
+ * @returns {string}
+ */
+function _normalizeForMatching(text) {
+  return String(text || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+}
+
+/**
+ * Distance de Levenshtein entre deux chaînes (nombre minimal
+ * d'insertions/suppressions/substitutions pour passer de l'une à
+ * l'autre) — utilisée par _resolveKnownRayonName pour tolérer une
+ * petite différence de frappe entre le nom d'un onglet Excel et un
+ * rayon déjà connu (accent oublié, faute isolée...), avec un seuil
+ * resserré pour ne jamais apparier deux rayons réellement différents.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function _levenshteinDistance(a, b) {
+  /** @type {number[][]} */
+  const d = [];
+  for (let i = 0; i <= a.length; i++) d.push([i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = a[i - 1] === b[j - 1]
+        ? d[i - 1][j - 1]
+        : 1 + Math.min(d[i - 1][j], d[i][j - 1], d[i - 1][j - 1]);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/**
+ * Apparie le nom d'un onglet Excel à un rayon FSQS déjà connu
+ * (getKnownRayons(), rayons.js) : correspondance exacte (casse et
+ * accents ignorés) en priorité, puis approchée (l'un contient l'autre,
+ * ou une distance de Levenshtein faible) si aucune correspondance
+ * exacte n'est trouvée — couvre les petits écarts attendus entre un
+ * nom d'onglet et un nom de rayon (espace en trop, accent oublié,
+ * singulier/pluriel...).
+ *
+ * Si aucun rayon connu ne correspond, même approximativement, le nom
+ * de l'onglet est retourné tel quel (trim() uniquement) : comme tout
+ * rayon absent de getKnownRayons(), il sera créé à la volée à la
+ * confirmation de l'import (voir _importIntoGrille) — jamais rejeté,
+ * jamais deviné au-delà de ce que l'onglet indique réellement.
+ * @param {string} sheetName
+ * @param {string[]} knownRayons - getKnownRayons() (rayons.js), passé en paramètre pour rester testable sans dépendre d'un état global implicite ici.
+ * @returns {string} Le rayon connu apparié (à sa casse canonique existante), ou le nom de l'onglet tel quel si aucune correspondance suffisante.
+ */
+function _resolveKnownRayonName(sheetName, knownRayons) {
+  /** @type {string} */
+  const trimmedName = String(sheetName || '').trim();
+  /** @type {string} */
+  const normalizedName = _normalizeForMatching(trimmedName);
+  if (!normalizedName) return trimmedName;
+
+  /** @type {string | undefined} */
+  const exactMatch = knownRayons.find(rayon => _normalizeForMatching(rayon) === normalizedName);
+  if (exactMatch) return exactMatch;
+
+  /** @type {string | undefined} */
+  const containsMatch = knownRayons.find(rayon => {
+    /** @type {string} */
+    const normalizedRayon = _normalizeForMatching(rayon);
+    return normalizedRayon.length > 2 && normalizedName.length > 2 &&
+      (normalizedRayon.includes(normalizedName) || normalizedName.includes(normalizedRayon));
+  });
+  if (containsMatch) return containsMatch;
+
+  /** @type {{rayon: string, distance: number} | null} */
+  let closest = null;
+  knownRayons.forEach(rayon => {
+    /** @type {string} */
+    const normalizedRayon = _normalizeForMatching(rayon);
+    /** @type {number} */
+    const threshold = Math.min(3, Math.max(1, Math.floor(Math.max(normalizedRayon.length, normalizedName.length) * 0.2)));
+    /** @type {number} */
+    const distance = _levenshteinDistance(normalizedRayon, normalizedName);
+    if (distance <= threshold && (!closest || distance < closest.distance)) {
+      closest = { rayon, distance };
+    }
+  });
+  if (closest) return closest.rayon;
+
+  return trimmedName;
 }
 
 // ─────────────────────────────────────────────
@@ -846,8 +975,17 @@ function _forceZoneMappingToDetectedColumn(detection, rawRows) {
 // ── XLSX ──
 
 /**
- * Charge SheetJS si nécessaire, puis lit et parse un fichier
- * XLSX/XLS.
+ * Charge SheetJS si nécessaire, puis lit un fichier XLSX/XLS et
+ * l'aiguille vers le parseur mono-onglet (comportement historique) ou
+ * multi-onglets (voir _importMultiSheetXlsx) selon le nombre
+ * d'onglets du classeur.
+ *
+ * ⚠️ AJOUTÉ : un classeur à un seul onglet suit exactement le chemin
+ * d'avant (_importSingleXlsxSheet, extrait tel quel de cette fonction).
+ * Dès que le classeur contient plus d'un onglet — cible 'grille'
+ * uniquement, voir la note dans _buildPreviewRow — chaque onglet est
+ * apparié à un rayon d'après son nom (_importMultiSheetXlsx), sauf
+ * l'onglet "Tutoriel" qui est entièrement ignoré.
  * @param {File} file
  * @returns {Promise<void>}
  */
@@ -866,28 +1004,214 @@ async function _importXLSX(file) {
   reader.onload = event => {
     try {
       /** @type {Object} Classeur XLSX (librairie SheetJS, non typée en détail). */
-      const workbook  = XLSX.read(new Uint8Array(event.target.result), { type: 'array' });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      /** @type {string[][]} */
-      const cellRows  = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-        .filter(row => row.join('').trim())
-        .map(row => row.map(c => String(c)));
+      const workbook = XLSX.read(new Uint8Array(event.target.result), { type: 'array' });
 
-      /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean, sectionCount: number}} */
-      const { rawRows, usedHeaderRow, sectionCount } = buildRawRowsFromCellRows(cellRows);
-      /** @type {DetectionResult} */
-      const detection = _forceZoneMappingToDetectedColumn(detectConceptMapping(rawRows), rawRows);
-      /** @type {NormalizedImportRow[]} */
-      const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
+      if (_importTarget === 'qualimetre' || workbook.SheetNames.length <= 1) {
+        _importSingleXlsxSheet(workbook, workbook.SheetNames[0]);
+        return;
+      }
 
-      /** @type {string} */
-      const readMessage = `${cellRows.length} ligne(s) lue(s) depuis "${workbook.SheetNames[0]}"${usedHeaderRow ? '' : ' (sans en-tête détecté)'}${sectionCount > 1 ? ` — ${sectionCount} zones détectées` : ''}`;
-      _showImportPreview(normalized, detection, rawRows, readMessage);
+      /** @type {string[]} */
+      const usableSheetNames = workbook.SheetNames.filter(name => !_isTutorialSheetLabel(name));
+      if (!usableSheetNames.length) {
+        alert('Ce classeur ne contient aucun onglet exploitable (uniquement un onglet "Tutoriel").');
+        return;
+      }
+
+      _importMultiSheetXlsx(workbook, usableSheetNames);
     } catch (error) {
       alert('Erreur lors de la lecture du fichier Excel : ' + error.message);
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+/**
+ * Convertit une feuille SheetJS en tableau de lignes de cellules
+ * (chaînes), en retirant les lignes entièrement vides — factorisé
+ * depuis l'ancienne _importXLSX pour être appelé une fois par onglet
+ * lors d'un classeur multi-onglets (voir _importMultiSheetXlsx).
+ * @param {Object} worksheet - Feuille SheetJS (workbook.Sheets[name]).
+ * @returns {string[][]}
+ */
+function _sheetToCellRows(worksheet) {
+  return XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
+    .filter(row => row.join('').trim())
+    .map(row => row.map(c => String(c)));
+}
+
+/**
+ * Importe un classeur Excel à un seul onglet exploitable —
+ * comportement historique, inchangé, extrait de _importXLSX pour être
+ * partagé avec le cas où un classeur multi-onglets ne contient en
+ * réalité qu'un seul onglet utile après avoir ignoré "Tutoriel".
+ * @param {Object} workbook - Classeur SheetJS.
+ * @param {string} sheetName - Nom de l'onglet à lire.
+ * @returns {void}
+ */
+function _importSingleXlsxSheet(workbook, sheetName) {
+  /** @type {Object} */
+  const worksheet = workbook.Sheets[sheetName];
+  /** @type {string[][]} */
+  const cellRows  = _sheetToCellRows(worksheet);
+
+  /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean, sectionCount: number}} */
+  const { rawRows, usedHeaderRow, sectionCount } = buildRawRowsFromCellRows(cellRows);
+  /** @type {DetectionResult} */
+  const detection = _forceZoneMappingToDetectedColumn(detectConceptMapping(rawRows), rawRows);
+  /** @type {NormalizedImportRow[]} */
+  const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
+
+  /** @type {string} */
+  const readMessage = `${cellRows.length} ligne(s) lue(s) depuis "${sheetName}"${usedHeaderRow ? '' : ' (sans en-tête détecté)'}${sectionCount > 1 ? ` — ${sectionCount} zones détectées` : ''}`;
+  _showImportPreview(normalized, detection, rawRows, readMessage);
+}
+
+/**
+ * Importe un classeur Excel multi-onglets (cible 'grille' uniquement) :
+ * chaque onglet est traité indépendamment (son propre découpage en
+ * sections/zones, sa propre détection de colonnes — voir
+ * buildRawRowsFromCellRows/detectConceptMapping), puis ses lignes sont
+ * assignées au rayon apparié à son nom (voir _resolveKnownRayonName).
+ * Un onglet "Commun"/"Commune" (voir _isCommonZoneLabel, réutilisée ici
+ * telle quelle) n'est jamais traité comme un rayon à part entière : ses
+ * lignes sont dupliquées vers TOUS les autres rayons apparus dans le
+ * classeur, en plus des lignes propres à chaque rayon. Sans aucun autre
+ * onglet-rayon dans le classeur, les lignes de l'onglet "Commun" sont
+ * conservées sans rayon cible (visibles en rouge dans l'aperçu, comme
+ * toute ligne sans rayon assigné) plutôt que perdues.
+ * @param {Object} workbook - Classeur SheetJS.
+ * @param {string[]} sheetNames - Noms d'onglets exploitables ("Tutoriel" déjà exclu, voir _importXLSX).
+ * @returns {void}
+ */
+function _importMultiSheetXlsx(workbook, sheetNames) {
+  /** @type {string[]} */
+  const commonSheetNames = sheetNames.filter(_isCommonZoneLabel);
+  /** @type {string[]} */
+  const rayonSheetNames  = sheetNames.filter(name => !_isCommonZoneLabel(name));
+
+  /** @type {string[]} */
+  const knownRayons = getKnownRayons();
+  /** @type {Record<string, string>} Nom d'onglet -> rayon apparié. */
+  const rayonBySheet = {};
+  rayonSheetNames.forEach(name => { rayonBySheet[name] = _resolveKnownRayonName(name, knownRayons); });
+  /** @type {string[]} Rayons distincts réellement présents dans ce classeur (hors "Commun"), cible des onglets "Commun". */
+  const allResolvedRayons = [...new Set(Object.values(rayonBySheet))];
+
+  /** @type {{sheetName: string, targetRayons: string[], normalizedRows: NormalizedImportRow[], parsedRows: ImportParsedRow[]}[]} */
+  const sheetResults = [];
+  /** @type {number} */
+  let totalCellRows = 0;
+  /** @type {number} */
+  let totalSections = 0;
+  /** @type {boolean} */
+  let anyUsedHeaderRow = false;
+
+  /**
+   * Traite un onglet et pousse son résultat dans sheetResults.
+   * @param {string} sheetName
+   * @param {string[]} targetRayons
+   * @returns {void}
+   */
+  function processSheet(sheetName, targetRayons) {
+    /** @type {string[][]} */
+    const cellRows = _sheetToCellRows(workbook.Sheets[sheetName]);
+    if (!cellRows.length) return;
+    totalCellRows += cellRows.length;
+
+    /** @type {{rawRows: RawImportRow[], usedHeaderRow: boolean, sectionCount: number}} */
+    const { rawRows, usedHeaderRow, sectionCount } = buildRawRowsFromCellRows(cellRows);
+    if (usedHeaderRow) anyUsedHeaderRow = true;
+    totalSections += sectionCount;
+
+    /** @type {DetectionResult} */
+    const detection = _forceZoneMappingToDetectedColumn(detectConceptMapping(rawRows), rawRows);
+    /** @type {NormalizedImportRow[]} */
+    const normalized = normalizeRows(rawRows, detection.mapping, detection.unmappedHeaders);
+
+    sheetResults.push({
+      sheetName,
+      targetRayons,
+      normalizedRows: normalized,
+      parsedRows: _buildParsedRows(normalized, targetRayons),
+    });
+  }
+
+  rayonSheetNames.forEach(name => processSheet(name, [rayonBySheet[name]]));
+  commonSheetNames.forEach(name => processSheet(name, allResolvedRayons));
+
+  /** @type {string} */
+  const readMessage = `${totalCellRows} ligne(s) lue(s) sur ${sheetResults.length} onglet(s)${anyUsedHeaderRow ? '' : ' (sans en-tête détecté)'}${totalSections > sheetResults.length ? ` — ${totalSections} zones détectées` : ''}`;
+
+  _showMultiSheetImportPreview(sheetResults, readMessage);
+}
+
+/**
+ * Affiche l'aperçu combiné d'un import Excel multi-onglets (voir
+ * _importMultiSheetXlsx) : concatène les lignes de tous les onglets
+ * traités dans _importRows, calcule les doublons potentiels sur
+ * l'ensemble combiné (voir findDuplicateRows), et remplace le bloc de
+ * correction du mapping de colonnes par un résumé en lecture seule des
+ * onglets détectés (voir _buildMultiSheetSummaryBlock) — un mapping de
+ * colonnes unique n'aurait pas de sens ici puisque chaque onglet a sa
+ * propre détection. Chaque ligne du tableau reste individuellement
+ * corrigeable comme d'habitude (rayon, zone, intitulé...).
+ * @param {{sheetName: string, targetRayons: string[], normalizedRows: NormalizedImportRow[], parsedRows: ImportParsedRow[]}[]} sheetResults
+ * @param {string} readMessage
+ * @returns {void}
+ */
+function _showMultiSheetImportPreview(sheetResults, readMessage) {
+  _importRawRows   = [];
+  _importDetection = null;
+  _importRows      = sheetResults.flatMap(s => s.parsedRows);
+
+  /** @type {NormalizedImportRow[]} */
+  const combinedNormalizedRows = sheetResults.flatMap(s => s.normalizedRows);
+  /** @type {DuplicateMap} */
+  const duplicates = findDuplicateRows(combinedNormalizedRows);
+
+  el('imp-preview').style.display     = '';
+  el('imp-preview-title').textContent = `Aperçu — ${readMessage}`;
+  el('imp-mapping-block').innerHTML   = _buildMultiSheetSummaryBlock(sheetResults);
+  el('imp-preview-tb').innerHTML      = _importRows.map((row, i) => _buildPreviewRow(row, i, duplicates.has(i))).join('');
+
+  el('imp-warnings').innerHTML = '';
+
+  if (el('imp-bulk-rayon-cbs')) {
+    el('imp-bulk-rayon-cbs').innerHTML = getKnownRayons().map(rayon =>
+      `<label class="cb-item" style="font-size:11px"><input type="checkbox" class="imp-bulk-rayon-cb" value="${_escapeHtmlAttr(rayon)}"> ${rayon}</label>`
+    ).join('');
+  }
+  sv('imp-bulk-zone', '');
+  if (el('imp-bulk-clear-rayons')) el('imp-bulk-clear-rayons').checked = false;
+  _updateBulkAssignBar();
+
+  _refreshImportPreviewCounters();
+}
+
+/**
+ * Construit le résumé en lecture seule affiché à la place du bloc de
+ * mapping de colonnes pour un import Excel multi-onglets (voir
+ * _showMultiSheetImportPreview) : liste chaque onglet traité avec le
+ * rayon auquel il a été apparié et le nombre de lignes qui en sont
+ * issues.
+ * @param {{sheetName: string, targetRayons: string[], parsedRows: ImportParsedRow[]}[]} sheetResults
+ * @returns {string}
+ */
+function _buildMultiSheetSummaryBlock(sheetResults) {
+  /** @type {string} */
+  const rows = sheetResults.map(s => `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:12px">
+    <span><i class="ti ti-file-spreadsheet" style="color:var(--text3)"></i> ${_escapeHtml(s.sheetName)}</span>
+    <span style="color:var(--text2)">→ ${s.targetRayons.map(r => _escapeHtml(r)).join(', ') || '—'} <span class="tsm tm">(${s.parsedRows.length} ligne(s))</span></span>
+  </div>`).join('');
+
+  return `<div style="background:var(--bg);border-radius:var(--radius);padding:14px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span class="tsm fw6" style="color:var(--text)"><i class="ti ti-layout-grid"></i> Onglets détectés → rayon apparié</span>
+      <span class="tsm tm">Corrigez ligne par ligne si besoin</span>
+    </div>
+    ${rows}
+  </div>`;
 }
 
 // ── PDF ──
@@ -1140,25 +1464,34 @@ function _normalizeCrit(crit) {
  * @param {string} readMessage - Message affiché dans le titre de l'aperçu (ex : nombre de lignes lues).
  * @returns {void}
  */
-function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
-  _importRows  = [];
-  _importRawRows = rawRows;
-  _importDetection = detection;
-
-  /** @type {ImportParsedRow[]} */
-  const previewRows = [];
+/**
+ * Construit les ImportParsedRow à partir de lignes déjà normalisées,
+ * SANS toucher à l'état global (_importRows) ni au DOM — extrait de
+ * _showImportPreview pour être réutilisable indépendamment par onglet
+ * lors d'un import Excel multi-onglets (voir _importMultiSheetXlsx),
+ * où chaque onglet produit son propre lot de lignes avec son propre
+ * rayon cible, avant qu'un seul rendu final ne combine tous les
+ * onglets (voir _showMultiSheetImportPreview).
+ * @param {NormalizedImportRow[]} normalizedRows
+ * @param {string[]} targetRayons - Rayon(s) cible(s) appliqué(s) par défaut à toutes les lignes produites ici (identique pour toutes, ajustable ensuite ligne par ligne dans l'aperçu, comme aujourd'hui).
+ * @returns {ImportParsedRow[]}
+ */
+function _buildParsedRows(normalizedRows, targetRayons) {
   /** @type {boolean} */
   const isQualimetreTarget = _importTarget === 'qualimetre';
 
   // Casse canonique : fusionne les zones déjà connues de tous les
-  // rayons par défaut sélectionnés (pas seulement le premier), pour
-  // que la correspondance fonctionne quel que soit le rayon visé.
+  // rayons cibles (pas seulement le premier), pour que la
+  // correspondance fonctionne quel que soit le rayon visé.
   /** @type {string[]} */
   const knownZones = isQualimetreTarget ? [] : [...new Set(
-    _importDefaultRayons.flatMap(rayon => getZonesForRayon(rayon))
+    targetRayons.flatMap(rayon => getZonesForRayon(rayon))
   )];
 
-  normalizedRows.forEach((row, index) => {
+  /** @type {ImportParsedRow[]} */
+  const rows = [];
+
+  normalizedRows.forEach(row => {
     if (!row.zone && !row.q) return;
 
     /** @type {string} */
@@ -1169,17 +1502,16 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
     const resolvedZone = matchingKnownZone || rawZone;
 
     /** @type {GrilleCriticite} */
-    const normalizedCrit  = _normalizeCrit(row.crit) || _importDefaultCrit;
+    const normalizedCrit = _normalizeCrit(row.crit) || _importDefaultCrit;
     /** @type {number} */
-    const poids           = parseInt(row.poids) || IMPORT_DEFAULT_POIDS[normalizedCrit];
+    const poids          = parseInt(row.poids) || IMPORT_DEFAULT_POIDS[normalizedCrit];
 
     /** @type {boolean} */
     const isValid = !!row.q.trim();
 
-    /** @type {ImportParsedRow} */
-    const parsedRow = {
+    rows.push({
       zoneRaw:      row.zone,
-      targetRayons: isQualimetreTarget ? [] : [..._importDefaultRayons],
+      targetRayons: isQualimetreTarget ? [] : [...targetRayons],
       targetStores: (!isQualimetreTarget && _importDefaultStore) ? [_importDefaultStore] : [],
       targetEnseigne: (isQualimetreTarget || _importDefaultStore) ? '' : _importDefaultEnseigne,
       zone:         isQualimetreTarget ? '' : resolvedZone,
@@ -1191,11 +1523,23 @@ function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
       p:            poids,
       valid:        isValid,
       extra:        row.extra || '',
-    };
-
-    _importRows.push(parsedRow);
-    previewRows.push(parsedRow);
+    });
   });
+
+  return rows;
+}
+
+function _showImportPreview(normalizedRows, detection, rawRows, readMessage) {
+  _importRawRows   = rawRows;
+  _importDetection = detection;
+  // ⚠️ AJOUTÉ : construction des lignes déléguée à _buildParsedRows
+  // (extraite ci-dessous), réutilisable indépendamment par onglet lors
+  // d'un import Excel multi-onglets (voir _importMultiSheetXlsx) —
+  // comportement strictement inchangé pour ce chemin mono-fichier.
+  _importRows = _buildParsedRows(normalizedRows, _importDefaultRayons);
+
+  /** @type {ImportParsedRow[]} */
+  const previewRows = _importRows;
 
   el('imp-preview').style.display    = '';
   el('imp-preview-title').textContent = `Aperçu — ${readMessage}`;
