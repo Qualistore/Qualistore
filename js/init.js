@@ -65,6 +65,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 /**
  * Vide les caches navigateur (JS/CSS) pour forcer la mise à jour des assets.
+ *
+ * ⚠️ PRÉCISION : cette fonction agit uniquement sur l'API Cache Storage
+ * (utilisée par les Service Workers). Ce projet n'en enregistre aucun,
+ * donc cette fonction n'a aujourd'hui aucun effet réel sur le cache HTTP
+ * classique du navigateur (celui qui met en cache les <script src> et
+ * <link href>). Pour forcer un rechargement des fichiers JS/CSS modifiés
+ * — notamment sur tablette/smartphone où ce cache est très agressif —
+ * voir le paramètre ?v= ajouté aux balises <script>/<link> dans
+ * Qualistore.html (à incrémenter à chaque déploiement).
  * @returns {void}
  */
 function _clearAppCaches() {
