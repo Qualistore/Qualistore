@@ -12,6 +12,12 @@
 // l'Edge Function, qui construit l'identifiant ET en fait le mot de
 // passe par défaut (voir invite-user-v6.js) — l'utilisateur devra
 // le changer dès sa première connexion.
+//
+// ⚠️ CORRIGÉ (v9) : _createNewUser() affiche désormais les
+// identifiants générés (compte sans email) AVANT le rafraîchissement
+// de la liste, et non plus après — voir le commentaire dans cette
+// fonction pour le détail du bug corrigé (fenêtre d'identifiants
+// jamais affichée en cas d'erreur silencieuse pendant renderUsers()).
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -751,12 +757,39 @@ async function _createNewUser(nom, prenom, nomFamille, role, magasins, perms, er
   }
 
   closeModal('m-user');
-  await renderUsers();
 
-  if (data && data.mode === 'no-email') {
+  // ⚠️ CORRIGÉ (v9) : on affiche IMMÉDIATEMENT les identifiants
+  // générés pour un compte sans email, AVANT tout autre traitement
+  // (y compris le rafraîchissement de la liste). Ce mot de passe
+  // temporaire n'est affiché qu'une seule fois et ne peut plus être
+  // récupéré ensuite (il n'est stocké que sous forme hachée côté
+  // Supabase Auth) — si son affichage dépendait d'une étape pouvant
+  // échouer (comme le rechargement de la liste), la moindre erreur
+  // silencieuse (réseau, latence, etc.) empêchait l'admin de jamais
+  // voir ce mot de passe, sans qu'aucun message n'apparaisse à
+  // l'écran.
+  //
+  // Détection de secours : au cas où la Edge Function renverrait un
+  // jour une forme légèrement différente, on considère aussi que
+  // c'est un compte sans email si un identifiant ET un mot de passe
+  // temporaire sont présents dans la réponse, même sans le champ
+  // "mode".
+  /** @type {boolean} */
+  const isNoEmailAccount = !!(data && (data.mode === 'no-email' || (data.identifier && data.tempPassword)));
+
+  if (isNoEmailAccount) {
     _showGeneratedCredentials(nom, data.identifier, data.tempPassword);
   } else {
     showToast(`Invitation envoyée à ${email}.`, 'success');
+  }
+
+  try {
+    await renderUsers();
+  } catch (renderError) {
+    // Ne doit jamais faire disparaître la fenêtre d'identifiants déjà
+    // affichée : on journalise seulement l'erreur. La liste se
+    // remettra à jour au prochain rechargement de la page.
+    console.error('Erreur lors du rafraîchissement de la liste des utilisateurs :', renderError);
   }
 }
 
