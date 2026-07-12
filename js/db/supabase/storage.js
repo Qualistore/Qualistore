@@ -28,14 +28,29 @@
  * @property {number} [usr]   - Gestion des utilisateurs.
  */
 
-// ⚠️ CHANGÉ (sécurisation des mots de passe) : les comptes utilisateurs
-// ne sont plus stockés ni gérés dans DB / la table `users` (mots de
-// passe en base64/btoa, jamais un vrai hash). L'authentification et le
-// profil applicatif vivent désormais entièrement côté Supabase Auth +
-// table `profiles` (voir auth.js, users.js). Ce fichier ne charge,
-// ne pousse et ne référence plus `DB.users` du tout — CU (l'utilisateur
-// connecté) provient uniquement de la session Supabase Auth (auth.js),
-// jamais rafraîchi depuis une DB locale.
+/**
+ * ⚠️ TYPEDEF LEGACY — CONSERVÉE UNIQUEMENT À TITRE HISTORIQUE, NE PLUS
+ * INSTANCIER. Décrivait les lignes de l'ancienne table Supabase
+ * `users`, dans laquelle .pwd contenait un "mot de passe" encodé en
+ * base64 (btoa) — donc trivialement réversible (atob()), PAS un hash.
+ * Ce système est intégralement remplacé par Supabase Auth (table
+ * interne auth.users, jamais accessible en lecture depuis le client,
+ * hachage bcrypt côté serveur) + la table applicative `profiles` pour
+ * le rôle/magasins/permissions — voir auth.js (doLogin, hasPerm) et
+ * users.js (renderUsers, saveUser). DB.users (section 3 ci-dessous)
+ * est désormais TOUJOURS un tableau vide et n'est plus jamais
+ * synchronisé avec Supabase (voir loadDB, _pushToSupabase) — conservé
+ * uniquement en cas de référence résiduelle ailleurs dans le projet.
+ * @typedef {Object} User
+ * @property {string} id
+ * @property {string} nom
+ * @property {string} login
+ * @property {string} pwd - Mot de passe encodé en base64 (btoa). TODO TYPE : à confirmer que ce n'est pas un hash réel ailleurs dans le projet.
+ * @property {string} role - Valeur observée : 'admin'. Autres rôles possibles non confirmés ici.
+ * @property {string} statut - Valeur observée : 'actif'. Autres valeurs non confirmées ici.
+ * @property {string[]} magasins - Tableau d'IDs de magasins assignés (Magasin.id). CONFIRMÉ par users.js (saveUser, _buildUserStoresList) ; toujours vide pour le rôle 'admin'.
+ * @property {UserPerms} perms
+ */
 
 /**
  * Magasin (point de vente). Aucune propriété de cet objet n'est lue
@@ -174,6 +189,7 @@
  * Structure racine de la base de données applicative, maintenue en
  * mémoire et synchronisée avec localStorage + Supabase.
  * @typedef {Object} DB
+ * @property {User[]} users - ⚠️ LEGACY, TOUJOURS VIDE. Voir note de sécurité sur le typedef User plus haut : ce tableau n'est plus jamais chargé ni écrit vers Supabase (voir loadDB, _pushToSupabase). Les comptes réels sont dans `profiles` (voir users.js).
  * @property {Magasin[]} magasins
  * @property {Audit[]} audits
  * @property {NC[]} ncs
@@ -276,12 +292,23 @@ function _setPendingSync(value) {
 // ─────────────────────────────────────────────
 
 /**
- * Construit une structure DB par défaut, avec un unique compte
- * administrateur et toutes les collections vides.
+ * Construit une structure DB par défaut, toutes collections vides.
+ *
+ * ⚠️ CORRIGÉ (sécurité) : contenait auparavant un compte admin par
+ * défaut avec `pwd: btoa('admin')` — btoa() est un simple encodage
+ * base64, PAS un hash : trivialement réversible (atob()) par
+ * quiconque a accès au code source ou à la table Supabase
+ * correspondante. L'authentification réelle passe intégralement par
+ * Supabase Auth (auth.users, haché côté serveur) + `profiles` — voir
+ * auth.js/users.js. DB.users est désormais TOUJOURS vide et n'est
+ * plus jamais synchronisé avec Supabase (voir loadDB,
+ * _pushToSupabase) ; conservé comme tableau vide uniquement pour ne
+ * rien casser si un autre fichier y fait encore référence.
  * @returns {DB}
  */
 function _buildDefaultDB() {
   return {
+    users: [],
     magasins:          [],
     enseignes:         [],
     audits:            [],
@@ -383,6 +410,13 @@ async function loadDB() {
     ]);
 
     DB = {
+      // ⚠️ CORRIGÉ (sécurité) : n'interroge plus jamais la table
+      // Supabase `users` (legacy, mots de passe en base64 réversible —
+      // voir _buildDefaultDB). Les comptes réels vivent dans
+      // auth.users (Supabase Auth) + `profiles` (voir auth.js,
+      // users.js). Conservé à [] pour compatibilité si du code
+      // ancien lit encore DB.users quelque part.
+      users:    [],
       magasins: magasins || [],
       audits:   audits   || [],
       ncs:      ncs      || [],
@@ -411,6 +445,13 @@ async function loadDB() {
     // dans l'onglet Rapports FSQS (voir DATA_RETENTION_WARNING_DAYS,
     // daysUntilAuditCleanup, _buildAuditCheckboxRow dans rapports-fsqs.js).
     _cleanStaleData();
+
+    // Rafraîchir l'utilisateur connecté depuis la DB à jour
+    if (CU) {
+      /** @type {User | undefined} */
+      const freshUser = DB.users.find(u => u.id === CU.id);
+      CU = freshUser || null;
+    }
   } catch (error) {
     console.warn('⚠️ Supabase inaccessible — mode hors ligne :', error.message);
     _setPendingSync(true);
@@ -669,8 +710,13 @@ function uid() {
  * Si `tables` est omis, toutes les tables connues sont synchronisées.
  * En cas d'échec (réseau, etc.), positionne _pendingSyncToSupabase
  * à true pour permettre une resynchronisation ultérieure.
+ *
+ * ⚠️ CORRIGÉ (sécurité) : ne pousse plus jamais DB.users vers la
+ * table Supabase `users` (legacy, mots de passe en base64
+ * réversible — voir _buildDefaultDB). Les comptes réels sont gérés
+ * exclusivement via Supabase Auth + `profiles` (voir users.js).
  * @param {string[]} [tables] - Sous-ensemble de clés de DB à synchroniser
- *   (ex : 'audits', 'magasins', 'grilleCustom', 'qualimetreCustom'...).
+ *   (ex : 'audits', 'grilleCustom', 'qualimetreCustom'...).
  * @returns {Promise<void>}
  */
 async function _pushToSupabase(tables) {

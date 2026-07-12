@@ -1560,14 +1560,38 @@ function _buildDraftRow(draft) {
   const canResume = hasPerm('draft_resume') && isOwnOrVisible;
   /** @type {boolean} */
   const canDelete = hasPerm('draft_delete') && isOwnOrVisible;
+  // ⚠️ AJOUTÉ : troisième origine possible de brouillon — alerte
+  // terrain mise en pause (voir _snapshotCurrentAlertAsDraft/
+  // resumeAlertDraft, alertes.js). Même principe de dispatch que la
+  // distinction FSQS/Qualimètre déjà en place.
   /** @type {string} */
   const resumeFn  = draft.type === 'qualimetre'
     ? `resumeQualDraft('${draft.id}')`
-    : `resumeDraft('${draft.id}')`;
+    : draft.type === 'alerte'
+      ? `resumeAlertDraft('${draft.id}')`
+      : `resumeDraft('${draft.id}')`;
+
+  // ⚠️ AJOUTÉ : badge de type, pour distinguer les 3 origines
+  // possibles d'un brouillon dans la même table partagée (voir Type
+  // dans l'en-tête, Qualistore.html).
+  /** @type {string} */
+  const typeBadge = draft.type === 'qualimetre'
+    ? '<span class="badge" style="background:#eef2ff;color:#3730a3">Qualimètre</span>'
+    : draft.type === 'alerte'
+      ? '<span class="badge" style="background:#fef2f2;color:#b91c1c">Alerte</span>'
+      : '<span class="badge" style="background:#f0fdf4;color:#166534">Audit FSQS</span>';
+  // Pour un brouillon d'alerte, draft.rayon contient le titre de
+  // l'alerte (pas un vrai nom de rayon, voir alertes.js) — rIcon()
+  // n'a alors aucun sens, on l'omet.
+  /** @type {string} */
+  const rayonCellContent = draft.type === 'alerte'
+    ? draft.rayon
+    : `${rIcon(draft.rayon)} ${draft.rayon}`;
 
   return `<tr>
+    <td>${typeBadge}</td>
     <td>${draft.mag}</td>
-    <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(draft.rayon)} ${draft.rayon}</td>
+    <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rayonCellContent}</td>
     <td>${fd(draft.date)}</td>
     <td>${draft.aud}</td>
     <td>

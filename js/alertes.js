@@ -15,6 +15,23 @@
 //    vide pour les NC d'alerte) — cette hypothèse n'est pas
 //    confirmée par ce fichier ; elle pourrait correspondre à un
 //    autre flux non observé.
+//
+//    ⚠️ AJOUTÉ : une alerte terrain non encore envoyée peut désormais
+//    être sauvegardée comme "brouillon" (voir _snapshotCurrentAlertAsDraft),
+//    dans la MÊME table Supabase `drafts` que les brouillons d'audit
+//    FSQS/Qualimètre (audits.js/audit-qualimetre.js) — aucune nouvelle
+//    colonne Supabase créée, pour éviter tout risque de rupture de
+//    schéma. Distinction par la colonne existante `type` ('alerte'),
+//    même principe que 'qualimetre' pour les audits Qualimètre (voir
+//    le typedef Draft, audits.js). Les champs propres à l'alerte
+//    (type d'alerte, gravité, photos, documents) sont empaquetés dans
+//    la colonne générique existante `answers` (déjà une colonne JSON
+//    ouverte côté Supabase) sous des clés préfixées '__alert' — voir
+//    _snapshotCurrentAlertAsDraft/resumeAlertDraft. Les colonnes
+//    génériques `rayon`/`aud` de la table `drafts` sont réutilisées
+//    pour afficher respectivement le titre de l'alerte et le nom du
+//    signataire dans la page Brouillons (qui n'a pas de colonne dédiée
+//    "type d'alerte") — voir _buildDraftRow, audits.js.
 // ─────────────────────────────────────────────
 
 /**
@@ -105,6 +122,18 @@
  * @property {string} alertId - Référence vers Alerte.id.
  */
 
+/**
+ * Brouillon générique (voir le typedef canonique Draft, audits.js).
+ * Rappelé ici uniquement pour documenter les clés que ce fichier lit/
+ * écrit dans le champ générique `answers` lorsque type==='alerte' —
+ * voir _snapshotCurrentAlertAsDraft/resumeAlertDraft.
+ * @typedef {Object} AlertDraftPayload
+ * @property {AlertType} [__alertType]
+ * @property {AlertGravite} [__alertGravite]
+ * @property {string[]} [__alertPhotos]
+ * @property {AlertDocument[]} [__alertDocuments]
+ */
+
 // ─────────────────────────────────────────────
 // 1. CONSTANTES
 // ─────────────────────────────────────────────
@@ -155,6 +184,16 @@ let _alertPendingDocuments = [];
  */
 let _editingAlertId = null;
 
+/**
+ * ⚠️ AJOUTÉ : id du brouillon (table `drafts`) associé à l'alerte en
+ * cours de CRÉATION (jamais renseigné en modification, voir
+ * _snapshotCurrentAlertAsDraft), pour pouvoir le supprimer une fois
+ * l'alerte définitivement envoyée (voir saveAlert) — même principe
+ * que _currentDraftId dans audits.js.
+ * @type {string | null}
+ */
+let _currentAlertDraftId = null;
+
 // ─────────────────────────────────────────────
 // 3. MODAL NOUVELLE ALERTE
 // ─────────────────────────────────────────────
@@ -170,13 +209,19 @@ let _editingAlertId = null;
  * (voir saveAlert) — seule l'Alerte elle-même est mise à jour. Permet
  * notamment d'ajouter des documents (avis de passage, rapport,
  * facture...) après la création initiale de l'alerte.
+ *
+ * ⚠️ AJOUTÉ : réinitialise systématiquement _currentAlertDraftId — une
+ * ouverture "normale" (création neuve ou modification d'une alerte
+ * déjà envoyée) ne doit jamais hériter d'un ancien brouillon en
+ * attente ; seule resumeAlertDraft() le renseigne explicitement.
  * @param {string} [alertId] - Référence vers Alerte.id ; absent = création.
  * @returns {void}
  */
 function openAlertModal(alertId) {
   /** @type {Alerte | undefined} */
   const alert = alertId ? DB.alertes.find(a => a.id === alertId) : undefined;
-  _editingAlertId = alert ? alert.id : null;
+  _editingAlertId      = alert ? alert.id : null;
+  _currentAlertDraftId = null;
 
   el('al-err').classList.remove('show');
   sv('al-titre', alert ? alert.titre : '');
@@ -221,6 +266,12 @@ function openAlertModal(alertId) {
  * la création initiale ne sont PAS régénérées ni resynchronisées
  * (limite connue : un changement de titre/gravité ici ne se répercute
  * pas sur leur description).
+ *
+ * ⚠️ AJOUTÉ : si l'alerte envoyée provenait d'un brouillon repris
+ * (voir resumeAlertDraft, _currentAlertDraftId renseigné), ce
+ * brouillon est supprimé une fois l'alerte définitivement enregistrée
+ * — même logique que submitAudit() (audits.js) pour les brouillons
+ * d'audit.
  * @returns {void}
  */
 function saveAlert() {
@@ -305,19 +356,30 @@ function saveAlert() {
     _createActionFromAlert({ storeId: storeId, storeName: store.nom || '', title, reporter, deadline, gravity, alertId });
 
     updateNcBadge();
+
+    // ⚠️ AJOUTÉ : l'alerte est désormais définitivement enregistrée —
+    // si elle provenait d'un brouillon (resumeAlertDraft), ce
+    // brouillon n'a plus lieu d'être.
+    if (_currentAlertDraftId) {
+      DB.drafts = DB.drafts.filter(d => d.id !== _currentAlertDraftId);
+      sbDeleteWhere('drafts', 'id', _currentAlertDraftId);
+      save(['drafts']);
+    }
   }
 
   save();
   closeModal('m-alert');
   _alertPendingPhotos    = [];
   _alertPendingDocuments = [];
-  _editingAlertId = null;
+  _editingAlertId        = null;
+  _currentAlertDraftId   = null;
 
   // Rafraîchit toute page déjà ouverte pouvant afficher cette alerte
   // (via sa NC/Action liée) ou l'alerte elle-même, pour une mise à
   // jour immédiate sans rechargement manuel.
   if (el('page-nc')?.classList.contains('active'))      renderNC();
   if (el('page-actions')?.classList.contains('active')) renderActions();
+  if (el('page-brouillons')?.classList.contains('active') && typeof renderDrafts === 'function') renderDrafts();
   renderDash();
 }
 
@@ -392,6 +454,172 @@ function _createActionFromAlert({ storeId, storeName, title, reporter, deadline,
     statut:  'Ouverte',
     alertId,
   });
+}
+
+// ─────────────────────────────────────────────
+// 3bis. BROUILLONS D'ALERTE (mise en pause avant envoi)
+//
+// ⚠️ AJOUTÉ : jusqu'ici, fermer la modale d'alerte sans cliquer sur
+// "Envoyer l'alerte" (clic en dehors de la modale, ou touche Échap)
+// perdait purement et simplement toute la saisie en cours, y compris
+// les photos déjà envoyées vers Supabase Storage (handleAlertPhotos
+// les uploade dès leur sélection, pas seulement à l'enregistrement —
+// elles devenaient orphelines). Reproduit ici le même mécanisme de
+// "pause -> brouillon" que les audits FSQS/Qualimètre (voir
+// _snapshotCurrentAuditAsDraft, audits.js), dans la MÊME table
+// `drafts` (voir la note de sécurité en tête de fichier sur pourquoi
+// aucune nouvelle colonne Supabase n'a été nécessaire).
+// ─────────────────────────────────────────────
+
+/**
+ * Sauvegarde un instantané de l'alerte terrain en cours de saisie
+ * comme brouillon (table `drafts`, discriminée par type:'alerte' —
+ * voir _buildDraftRow, audits.js). Ne fait rien en mode modification
+ * d'une alerte déjà existante (_editingAlertId défini) : abandonner
+ * une modification laisse l'alerte d'origine intacte, inutile de
+ * créer un brouillon fantôme pour ce cas. Ne fait rien non plus si
+ * rien n'a encore été saisi (aucun magasin/titre/type/gravité choisi,
+ * et aucune photo/document déjà ajouté) — évite de polluer Brouillons
+ * à chaque ouverture/fermeture immédiate de la modale sans saisie.
+ * @returns {Object | null} Le brouillon sauvegardé, ou null si rien à sauvegarder.
+ */
+function _snapshotCurrentAlertAsDraft() {
+  if (_editingAlertId) return null;
+
+  /** @type {string} */
+  const storeId  = v('al-mag');
+  /** @type {string} */
+  const title    = v('al-titre').trim();
+  /** @type {AlertType} */
+  const type     = v('al-type');
+  /** @type {AlertGravite} */
+  const gravity  = v('al-gravite');
+  /** @type {string} */
+  const reporter = v('al-signale').trim();
+  /** @type {string} */
+  const comment  = v('al-cmt');
+
+  /** @type {boolean} */
+  const hasAnyContent = !!(storeId || title || type || gravity ||
+    _alertPendingPhotos.length || _alertPendingDocuments.length);
+  if (!hasAnyContent) return null;
+
+  /** @type {Magasin | {}} */
+  const store = DB.magasins.find(m => m.id === storeId) || {};
+  /** @type {string} */
+  const draftId = _currentAlertDraftId || 'DRF-' + uid();
+  _currentAlertDraftId = draftId;
+
+  /** @type {Object} */
+  const draft = {
+    id: draftId,
+    type: 'alerte',
+    mid: storeId,
+    mag: store.nom || '',
+    // Colonnes génériques de la table `drafts` réutilisées pour
+    // l'affichage dans la page Brouillons (voir _buildDraftRow,
+    // audits.js) — pas de colonne dédiée "type d'alerte" côté Supabase.
+    rayon: title || '(sans titre)',
+    aud: reporter,
+    date: today(),
+    cmt: comment,
+    // Champs propres à l'alerte, empaquetés dans la colonne générique
+    // `answers` (déjà une colonne JSON ouverte) — voir AlertDraftPayload.
+    answers: {
+      __alertType: type,
+      __alertGravite: gravity,
+      __alertPhotos: [..._alertPendingPhotos],
+      __alertDocuments: [..._alertPendingDocuments],
+    },
+    createdAt: today(),
+    uid: CU ? CU.id : '',
+  };
+
+  /** @type {number} */
+  const existingIndex = DB.drafts.findIndex(d => d.id === draftId);
+  if (existingIndex >= 0) DB.drafts[existingIndex] = draft;
+  else DB.drafts.push(draft);
+
+  save(['drafts']);
+  sbUpsert('drafts', [draft]);
+
+  return draft;
+}
+
+/**
+ * Met la saisie d'alerte terrain en cours en pause : sauvegarde un
+ * brouillon (voir _snapshotCurrentAlertAsDraft) si quelque chose a
+ * déjà été saisi, ferme la modale, réinitialise l'état. Appelée au
+ * clic en dehors de la modale (voir _bindModalOverlayClose, init.js).
+ *
+ * ⚠️ Pour que le bouton "Annuler" de la modale d'alerte bénéficie
+ * aussi de cette sauvegarde (au lieu de fermer sèchement sans rien
+ * garder), remplacez son attribut onclick="closeModal('m-alert')" par
+ * onclick="pauseAlert()" dans Qualistore.html — non modifié ici, ce
+ * fichier ne contenant pas le HTML de la modale.
+ * @returns {void}
+ */
+function pauseAlert() {
+  /** @type {Object | null} */
+  const draft = _snapshotCurrentAlertAsDraft();
+
+  closeModal('m-alert');
+  _alertPendingPhotos    = [];
+  _alertPendingDocuments = [];
+  _editingAlertId        = null;
+  _currentAlertDraftId   = null;
+
+  if (draft) showToast('Alerte mise en pause — retrouvez-la dans Brouillons', 'success');
+}
+
+/**
+ * Reprend un brouillon d'alerte terrain (voir _buildDraftRow,
+ * audits.js, pour la répartition selon draft.type). Restaure les
+ * champs de la modale de création puis l'ouvre, prête à continuer la
+ * saisie ou à l'envoyer.
+ * @param {string} draftId - Référence vers Draft.id.
+ * @returns {void}
+ */
+function resumeAlertDraft(draftId) {
+  /** @type {Object | undefined} */
+  const draft = DB.drafts.find(d => d.id === draftId);
+  if (!draft) return;
+
+  /** @type {AlertDraftPayload} */
+  const payload = draft.answers || {};
+
+  _currentAlertDraftId  = draftId;
+  _editingAlertId       = null;
+  _alertPendingPhotos    = [...(payload.__alertPhotos    || [])];
+  _alertPendingDocuments = [...(payload.__alertDocuments || [])];
+
+  el('al-err').classList.remove('show');
+  sv('al-titre', draft.rayon === '(sans titre)' ? '' : (draft.rayon || ''));
+  sv('al-cmt', draft.cmt || '');
+  sv('al-signale', draft.aud || (CU ? CU.nom : ''));
+  el('al-type').value    = payload.__alertType    || '';
+  el('al-gravite').value = payload.__alertGravite || '';
+  _renderAlertPhotoPreviews();
+  _renderAlertDocumentPreviews();
+
+  const select = el('al-mag');
+  select.innerHTML =
+    '<option value="">Sélectionner...</option>' +
+    DB.magasins
+      .filter(m => visibleMids().includes(m.id) && m.statut === 'actif')
+      .map(m => `<option value="${m.id}">${m.nom}</option>`)
+      .join('');
+  select.value = draft.mid || '';
+
+  /** @type {HTMLElement | null} */
+  const titleEl = el('m-alert-title');
+  if (titleEl) titleEl.innerHTML = '<i class="ti ti-bell-ringing"></i> Reprendre l\'alerte';
+
+  /** @type {HTMLElement | null} */
+  const saveBtn = el('al-save-btn');
+  if (saveBtn) saveBtn.innerHTML = '<i class="ti ti-bell-ringing"></i> Envoyer l\'alerte';
+
+  openModal('m-alert');
 }
 
 // ─────────────────────────────────────────────
