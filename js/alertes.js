@@ -760,8 +760,16 @@ function _buildAlertItem(alert) {
   const icon    = ALERT_TYPE_ICONS[alert.type] || 'ti-bell';
   /** @type {string} */
   const escapedTitle = alert.titre.replace(/'/g, "\\'");
+  // ⚠️ CORRIGÉ : "Modifier"/"Clôturer" n'étaient reliés à aucun droit
+  // (visibles pour tout le monde) ; "Supprimer" vérifiait CU.role
+  // directement. Les trois utilisent désormais les droits granulaires
+  // dédiés (alert_edit, alert_close, alert_delete).
   /** @type {boolean} */
-  const isAdmin = CU && CU.role === 'admin';
+  const canEdit  = hasPerm('alert_edit');
+  /** @type {boolean} */
+  const canClose = hasPerm('alert_close');
+  /** @type {boolean} */
+  const canDelete = hasPerm('alert_delete');
 
   /** @type {string} */
   const photosHtml = alert.photos?.length
@@ -814,13 +822,13 @@ function _buildAlertItem(alert) {
       ${photosHtml}
       ${documentsHtml}
     </div>
-    <button class="btn btn-secondary btn-sm" onclick="openAlertModal('${alert.id}')" title="Modifier">
+    ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="openAlertModal('${alert.id}')" title="Modifier">
       <i class="ti ti-pencil"></i>
-    </button>
-    <button class="btn btn-secondary btn-sm" onclick="closeAlerte('${alert.id}')" title="Clôturer">
+    </button>` : ''}
+    ${canClose ? `<button class="btn btn-secondary btn-sm" onclick="closeAlerte('${alert.id}')" title="Clôturer">
       <i class="ti ti-check"></i>
-    </button>
-    ${isAdmin
+    </button>` : ''}
+    ${canDelete
       ? `<button class="btn btn-danger btn-sm" onclick="confirmDel('alert','${alert.id}','${escapedTitle}')">
            <i class="ti ti-trash"></i>
          </button>`

@@ -224,8 +224,9 @@ function renderAudits() {
   el('aud-cnt').textContent = `${audits.length} audit(s)`;
 
   const tbody  = el('aud-tb');
+  // ⚠️ CORRIGÉ : CU.role==='admin' -> droit granulaire report_delete_audits.
   /** @type {boolean} */
-  const isAdmin = CU && CU.role === 'admin';
+  const isAdmin = hasPerm('report_delete_audits');
 
   if (!audits.length) {
     tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">
@@ -445,7 +446,7 @@ function openAuditModal() {
   el('a-ray').disabled = true;
 
   el('a-date').value    = today();
-  el('a-date').readOnly = !(CU && CU.role === 'admin');
+  el('a-date').readOnly = !hasPerm('audit_edit_date');
   el('a-aud').value     = CU ? CU.nom : '';
 
   el('as1').style.display = '';
@@ -510,7 +511,10 @@ function auditNext() {
     el('as2').style.display = '';
     el('a-ray-ttl').textContent = ray;
     el('a-prev').style.display  = '';
-    el('a-pause').style.display = '';
+    // ⚠️ AJOUTÉ : le bouton Pause (enregistrer comme brouillon) n'était
+    // relié à aucun droit — gated maintenant par draft_save, cohérent
+    // avec la policy RLS d'insertion sur la table `drafts`.
+    el('a-pause').style.display = hasPerm('draft_save') ? '' : 'none';
     el('a-next').innerHTML = 'Valider l\'audit <i class="ti ti-check"></i>';
     auditStep = 1;
   } else if (auditStep === 1) {
@@ -1461,7 +1465,7 @@ async function resumeDraft(draftId) {
   populateRayonSelect(el('a-ray'), true);
   el('a-ray').value     = draft.rayon;
   el('a-date').value    = draft.date;
-  el('a-date').readOnly = !(CU && CU.role === 'admin');
+  el('a-date').readOnly = !hasPerm('audit_edit_date');
   el('a-aud').value     = draft.aud;
   sv('a-cmt', draft.cmt || '');
 
@@ -1469,7 +1473,7 @@ async function resumeDraft(draftId) {
   el('as2').style.display = '';
   el('as3').style.display = 'none';
   el('a-prev').style.display  = '';
-  el('a-pause').style.display = '';
+  el('a-pause').style.display = hasPerm('draft_save') ? '' : 'none';
   el('a-next').innerHTML = 'Valider l\'audit <i class="ti ti-check"></i>';
 
   /**
@@ -1516,10 +1520,14 @@ function renderDrafts() {
   const tbody = el('drafts-tb');
   if (!tbody) return;
 
+  // ⚠️ CORRIGÉ : "admin voit tout, les autres voient seulement les
+  // leurs" -> droits granulaires draft_view_others / draft_view_own.
   /** @type {Draft[]} */
-  const drafts = CU && CU.role === 'admin'
+  const drafts = hasPerm('draft_view_others')
     ? [...DB.drafts].reverse()
-    : [...DB.drafts].reverse().filter(d => d.uid === CU.id);
+    : hasPerm('draft_view_own')
+      ? [...DB.drafts].reverse().filter(d => CU && d.uid === CU.id)
+      : [];
 
   el('drafts-cnt').textContent = `${drafts.length} brouillon(s)`;
 
@@ -1542,10 +1550,16 @@ function renderDrafts() {
  * @returns {string}
  */
 function _buildDraftRow(draft) {
+  // ⚠️ CORRIGÉ : "propriétaire ou admin" -> droits granulaires
+  // draft_resume/draft_delete, combinés à la même règle de visibilité
+  // que côté RLS (06-rls-final.sql) : agir sur le brouillon d'un autre
+  // exige en plus draft_view_others ; sur le sien, uid suffit.
   /** @type {boolean} */
-  const isOwner  = CU && (CU.id === draft.uid || CU.role === 'admin');
+  const isOwnOrVisible = CU && (hasPerm('draft_view_others') || CU.id === draft.uid);
   /** @type {boolean} */
-  const canDelete = isOwner;
+  const canResume = hasPerm('draft_resume') && isOwnOrVisible;
+  /** @type {boolean} */
+  const canDelete = hasPerm('draft_delete') && isOwnOrVisible;
   /** @type {string} */
   const resumeFn  = draft.type === 'qualimetre'
     ? `resumeQualDraft('${draft.id}')`
@@ -1558,7 +1572,7 @@ function _buildDraftRow(draft) {
     <td>${draft.aud}</td>
     <td>
       <div class="act-btns">
-        ${isOwner  ? `<button class="btn btn-primary btn-sm" onclick="${resumeFn}"><i class="ti ti-player-play"></i> Reprendre</button>` : ''}
+        ${canResume ? `<button class="btn btn-primary btn-sm" onclick="${resumeFn}"><i class="ti ti-player-play"></i> Reprendre</button>` : ''}
         ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="deleteDraft('${draft.id}')"><i class="ti ti-trash"></i></button>` : ''}
       </div>
     </td>

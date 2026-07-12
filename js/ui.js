@@ -733,13 +733,17 @@ function _buildHeaderActions(isCollaborateur) {
         <i class="ti ti-plus"></i> Nouvel audit
        </button>`
     : '';
+  // ⚠️ CORRIGÉ : le bouton "Alerte terrain" était auparavant toujours
+  // visible, quel que soit l'utilisateur — gated maintenant par le
+  // droit granulaire alert_create, comme le reste.
+  /** @type {string} */
+  const alertButton = hasPerm('alert_create')
+    ? `<button class="btn btn-danger" onclick="openAlertModal()">
+         <i class="ti ti-bell-ringing"></i> Alerte terrain
+       </button>`
+    : '';
 
-  el('hdr-actions').innerHTML =
-    `<button class="btn btn-danger" onclick="openAlertModal()">
-       <i class="ti ti-bell-ringing"></i> Alerte terrain
-     </button>
-     ${auditButton}
-     ${qualButton}`;
+  el('hdr-actions').innerHTML = `${alertButton}${auditButton}${qualButton}`;
 }
 
 /**

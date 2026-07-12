@@ -88,8 +88,12 @@ async function renderMag() {
   const storeIds  = visibleMids();
   /** @type {Magasin[]} */
   const myStores  = DB.magasins.filter(m => storeIds.includes(m.id));
+  // ⚠️ CORRIGÉ : 'mag' était l'ancienne clé de permission (système à 8
+  // droits), remplacée par 'store_manage' dans le nouveau système à 42
+  // droits granulaires — 'mag' n'existe plus dans aucun profil créé ou
+  // modifié depuis la migration, ce contrôle ne servait donc plus à rien.
   /** @type {boolean} */
-  const canManage = hasPerm('mag');
+  const canManage = hasPerm('store_manage');
 
   el('btn-add-mag').style.display = canManage ? '' : 'none';
   el('mag-cnt').textContent = `${myStores.length} magasin(s)`;
@@ -259,10 +263,6 @@ async function openMagModal(storeId) {
  * Remplit le select des directeurs assignables (rôle 'directeur',
  * statut 'actif'), et présélectionne le directeur actuel du magasin
  * en édition s'il y en a un.
- * ⚠️ CHANGÉ : re-fetch défensivement _magDirectorsCache (table
- * `profiles`) si elle est encore vide — la modale magasin peut en
- * théorie être ouverte avant que renderMag() n'ait eu l'occasion de la
- * peupler.
  * @param {string | false} currentStoreId - Magasin.id en cours d'édition, ou `false` en création.
  * @returns {Promise<void>}
  */
@@ -544,8 +544,10 @@ function deleteEnseigne(nom) {
 function renderEnseignes() {
   /** @type {string[]} */
   const enseignes = getKnownEnseignes();
+  // ⚠️ CORRIGÉ : 'mag' (ancienne clé, système à 8 droits) -> 'brand_manage'
+  // (nouveau système à 42 droits granulaires, groupe "Magasins & enseignes").
   /** @type {boolean} */
-  const canManage = hasPerm('mag');
+  const canManage = hasPerm('brand_manage');
 
   el('ens-cnt').textContent = `${enseignes.length} enseigne(s)`;
 

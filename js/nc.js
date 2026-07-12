@@ -129,21 +129,15 @@ const NC_PERIOD_LABELS = {
 let _ncArchiveOpen = false;
 
 // ─────────────────────────────────────────────
-// 3. CONTRÔLE D'ACCÈS
-// ─────────────────────────────────────────────
-
-/**
- * Vérifie si l'utilisateur connecté peut éditer les NC (admin, rôle
- * 'fsqs', ou permission explicite 'nc').
- * @returns {boolean|0|undefined}
- */
-function canEditNC() {
-  return CU && (CU.role === 'admin' || CU.role === 'fsqs' || CU.perms?.['nc']);
-}
-
-// ─────────────────────────────────────────────
 // 4. RENDU — NC ACTIVES
 // ─────────────────────────────────────────────
+// ⚠️ CORRIGÉ : canEditNC() (ancienne fonction, vérifiait
+// CU.role==='admin'||'fsqs'||CU.perms?.['nc'], la clé 'nc' n'existe
+// plus dans le nouveau système à 42 droits) a été supprimée — chaque
+// bouton/action ci-dessous vérifie désormais directement le droit
+// granulaire qui le concerne réellement (nc_view, nc_edit_status,
+// nc_edit_deadline, nc_delete, nc_reopen), au lieu d'un contrôle
+// générique unique partagé entre plusieurs écrans différents.
 
 /**
  * Libellé de repli pour une sous-section (GrillePoint.cat) absente
@@ -262,8 +256,14 @@ function renderNC() {
   const filterCrit = v('flt-nc-crit');
   /** @type {string} */
   const filterStat = v('flt-nc-stat') || '';
+  // ⚠️ CORRIGÉ : 'isAdmin' unique remplacé par deux droits distincts —
+  // supprimer une sélection de NC (nc_delete) et éditer une NC
+  // (nc_edit_status et/ou nc_edit_deadline) ne sont plus forcément la
+  // même personne.
   /** @type {boolean} */
-  const isAdmin    = CU && CU.role === 'admin';
+  const canDeleteSelected = hasPerm('nc_delete');
+  /** @type {boolean} */
+  const canEditRow = hasPerm('nc_edit_status') || hasPerm('nc_edit_deadline');
 
   populateMagSelect(el('flt-nc-mag'));
 
@@ -279,7 +279,16 @@ function renderNC() {
   el('nc-cnt').textContent = `${activeNcs.length} NC active(s)`;
 
   const deleteButton = el('nc-del-sel-btn');
-  if (deleteButton) deleteButton.style.display = isAdmin ? '' : 'none';
+  if (deleteButton) deleteButton.style.display = canDeleteSelected ? '' : 'none';
+
+  // ⚠️ AJOUTÉ : les 3 boutons d'export PDF/sélection n'étaient reliés à
+  // aucun droit (toujours visibles, codés en dur dans Qualistore.html) —
+  // gated maintenant par nc_export.
+  /** @type {boolean} */
+  const canExport = hasPerm('nc_export');
+  ['nc-export-sel-btn', 'nc-export-active-btn'].forEach(id => {
+    if (el(id)) el(id).style.display = canExport ? '' : 'none';
+  });
 
   const tbody = el('nc-tb');
 
@@ -320,7 +329,7 @@ function renderNC() {
     return `<tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm" style="text-transform:none;font-weight:400">(${zoneTotal})</span></td></tr>
       ${sortedCats.map(cat => `
         <tr class="tbl-subgroup-row"><td colspan="8">${cat} <span class="tsm tm">(${byCat.get(cat).length})</span></td></tr>
-        ${byCat.get(cat).map(nc => _buildNcRow(nc, isAdmin)).join('')}
+        ${byCat.get(cat).map(nc => _buildNcRow(nc, canEditRow)).join('')}
       `).join('')}`;
   }).join('');
   renderNCArchives(filterMag, filterRay, filterCrit);
@@ -330,10 +339,10 @@ function renderNC() {
  * Construit la ligne `<tr>` HTML d'une NC active (avec case à
  * cocher de sélection et photos liées).
  * @param {NC} nc
- * @param {boolean} isAdmin - Si vrai, affiche le bouton d'édition.
+ * @param {boolean} canEdit - Si vrai (nc_edit_status ou nc_edit_deadline), affiche le bouton d'édition.
  * @returns {string}
  */
-function _buildNcRow(nc, isAdmin) {
+function _buildNcRow(nc, canEdit) {
   /** @type {boolean} */
   const isOverdue = overdue(nc.dl) && nc.statut === 'Ouverte';
   /** @type {string} */
@@ -358,7 +367,7 @@ function _buildNcRow(nc, isAdmin) {
     <td style="vertical-align:top;padding-top:14px">${statBdg(nc.statut)}</td>
     <td style="vertical-align:top;padding-top:10px">
       <div class="act-btns">
-        ${isAdmin ? `<button class="btn btn-secondary btn-sm" title="Modifier" onclick="openNCEdit('${nc.id}')"><i class="ti ti-pencil"></i></button>` : ''}
+        ${canEdit ? `<button class="btn btn-secondary btn-sm" title="Modifier" onclick="openNCEdit('${nc.id}')"><i class="ti ti-pencil"></i></button>` : ''}
       </div>
     </td>
   </tr>`;
@@ -427,8 +436,12 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
   const archRay  = v('flt-arch-ray')    || '';
   /** @type {string} */
   const archPer  = v('flt-arch-period') || '';
+  // ⚠️ CORRIGÉ : rouvrir (nc_reopen) et supprimer (nc_delete) une NC
+  // archivée sont deux droits distincts dans le nouveau système.
   /** @type {boolean} */
-  const isAdmin  = CU && CU.role === 'admin';
+  const canReopen = hasPerm('nc_reopen');
+  /** @type {boolean} */
+  const canDelete = hasPerm('nc_delete');
 
   // Peupler le select des archives si vide
   const archMagSel = el('flt-arch-mag');
@@ -451,6 +464,9 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
   const countBadge = el('nc-archive-cnt');
   if (countBadge) countBadge.textContent = archives.length;
 
+  const archiveExportBtn = el('nc-export-archive-btn');
+  if (archiveExportBtn) archiveExportBtn.style.display = hasPerm('nc_export') ? '' : 'none';
+
   const tbody = el('nc-archive-tb');
   if (!tbody) return;
 
@@ -461,7 +477,7 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
     return;
   }
 
-  tbody.innerHTML = archives.map(nc => _buildNcArchiveRow(nc, isAdmin)).join('');
+  tbody.innerHTML = archives.map(nc => _buildNcArchiveRow(nc, canReopen, canDelete)).join('');
 }
 
 /**
@@ -469,10 +485,11 @@ function renderNCArchives(filterMag, filterRay, filterCrit) {
  * commentaire de suivi (NC ou, à défaut, action liée) et les
  * boutons de réouverture/suppression réservés aux admins.
  * @param {NC} nc
- * @param {boolean} isAdmin
+ * @param {boolean} canReopen - Droit nc_reopen.
+ * @param {boolean} canDelete - Droit nc_delete.
  * @returns {string}
  */
-function _buildNcArchiveRow(nc, isAdmin) {
+function _buildNcArchiveRow(nc, canReopen, canDelete) {
   /** @type {Action | undefined} */
   const action    = DB.actions.find(a => a.ncId === nc.id);
   /** @type {string} */
@@ -497,8 +514,8 @@ function _buildNcArchiveRow(nc, isAdmin) {
     <td style="font-size:12px;vertical-align:top;padding-top:12px;color:var(--success)">${nc.closedDate ? fd(nc.closedDate) : '–'}</td>
     <td style="vertical-align:top;padding-top:10px">
       <div class="act-btns">
-        ${isAdmin ? `<button class="btn btn-secondary btn-sm" title="Rouvrir" onclick="reopenNC('${escapedId}')"><i class="ti ti-refresh"></i></button>` : ''}
-        ${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="confirmDel('nc','${escapedId}','${escapedId}')"><i class="ti ti-trash"></i></button>` : ''}
+        ${canReopen ? `<button class="btn btn-secondary btn-sm" title="Rouvrir" onclick="reopenNC('${escapedId}')"><i class="ti ti-refresh"></i></button>` : ''}
+        ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="confirmDel('nc','${escapedId}','${escapedId}')"><i class="ti ti-trash"></i></button>` : ''}
       </div>
     </td>
   </tr>`;
@@ -540,7 +557,7 @@ function openNCEdit(ncId) {
   sv('nc-edit-cmt', nc.cmt || '');
 
   const deadlineGroup = el('nc-edit-dl-group');
-  if (deadlineGroup) deadlineGroup.style.display = (CU && CU.role === 'admin') ? '' : 'none';
+  if (deadlineGroup) deadlineGroup.style.display = hasPerm('nc_edit_deadline') ? '' : 'none';
   sv('nc-edit-dl', nc.dl || '');
 
   openModal('m-nc-edit');
@@ -563,8 +580,9 @@ function saveNCEdit() {
   nc.statut = el('nc-edit-statut').value;
   nc.cmt    = v('nc-edit-cmt').trim();
 
-  // Admin peut modifier l'échéance et la répercuter sur l'action liée
-  if (CU && CU.role === 'admin') {
+  // Seul un utilisateur avec le droit nc_edit_deadline peut modifier
+  // l'échéance et la répercuter sur l'action liée.
+  if (hasPerm('nc_edit_deadline')) {
     /** @type {string} */
     const newDeadline = v('nc-edit-dl');
     if (newDeadline) {

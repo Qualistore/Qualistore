@@ -217,6 +217,11 @@ function showGrilleCardsView() {
   el('grille-detail-view').style.display = 'none';
   el('grille-cards-view').style.display  = '';
 
+  // ⚠️ AJOUTÉ : le bouton "Nouveau rayon" n'était relié à aucun droit
+  // (toujours visible, codé en dur dans Qualistore.html) — gated
+  // maintenant par grid_create_rayon.
+  if (el('btn-create-rayon')) el('btn-create-rayon').style.display = hasPerm('grid_create_rayon') ? '' : 'none';
+
   /** @type {string[]} */
   const rayons = getKnownRayons();
 
@@ -284,27 +289,35 @@ function showRayonDetail(rayon) {
   el('grille-cards-view').style.display  = 'none';
   el('grille-detail-view').style.display = '';
 
+  // ⚠️ CORRIGÉ : 'isAdmin' unique remplacé par les droits granulaires
+  // réellement concernés par chaque bouton (grid_edit_rayon,
+  // grid_edit_point, grid_delete) au lieu d'un contrôle générique.
   /** @type {boolean} */
-  const isAdmin = CU && CU.role === 'admin';
-  if (el('btn-rename-rayon')) el('btn-rename-rayon').style.display = isAdmin ? '' : 'none';
-  if (el('btn-delete-rayon')) el('btn-delete-rayon').style.display = isAdmin ? '' : 'none';
+  const canEditRayon  = hasPerm('grid_edit_rayon');
+  /** @type {boolean} */
+  const canEditPoint  = hasPerm('grid_edit_point');
+  /** @type {boolean} */
+  const canDeleteGrid = hasPerm('grid_delete');
+
+  if (el('btn-rename-rayon')) el('btn-rename-rayon').style.display = canEditRayon ? '' : 'none';
+  if (el('btn-delete-rayon')) el('btn-delete-rayon').style.display = canDeleteGrid ? '' : 'none';
 
   el('grille-ttl').textContent = resolvedRayon;
 
   const addButton = el('btn-add-ctrl');
-  if (addButton) addButton.style.display = isAdmin ? '' : 'none';
-  if (el('btn-find-duplicates')) el('btn-find-duplicates').style.display = isAdmin ? '' : 'none';
+  if (addButton) addButton.style.display = canEditPoint ? '' : 'none';
+  if (el('btn-find-duplicates')) el('btn-find-duplicates').style.display = canEditPoint ? '' : 'none';
 
   /** @type {GrillePoint[]} */
   const allPoints = getGrille(resolvedRayon, storeId, enseigneArg);
 
   if (el('btn-clear-ctrl-points')) {
-    el('btn-clear-ctrl-points').style.display = (isAdmin && allPoints.length > 0) ? '' : 'none';
+    el('btn-clear-ctrl-points').style.display = (canDeleteGrid && allPoints.length > 0) ? '' : 'none';
   }
 
   if (!allPoints.length) {
     /** @type {string} */
-    const helpText = isAdmin
+    const helpText = canEditPoint
       ? 'Utilisez « Importer » ou « Ajouter un point » pour commencer.'
       : 'Les points seront ajoutés par l\'administrateur.';
     el('grille-body').innerHTML = `<div class="tsm tm" style="padding:24px;text-align:center">Aucun point de contrôle pour ce rayon.<br>${helpText}</div>`;
@@ -315,7 +328,7 @@ function showRayonDetail(rayon) {
   const zones = getZonesForRayon(resolvedRayon, storeId, enseigneArg);
 
   el('grille-body').innerHTML = zones
-    .map(zone => _buildZoneSection(zone, allPoints.filter(p => ((p.zone && p.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) === zone), resolvedRayon, storeId, isAdmin))
+    .map(zone => _buildZoneSection(zone, allPoints.filter(p => ((p.zone && p.zone.trim()) || IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE) === zone), resolvedRayon, storeId, canEditRayon))
     .join('');
 }
 
@@ -375,14 +388,14 @@ function showGrille() {
  * @param {GrillePoint[]} points - Points appartenant à cette zone.
  * @param {string} rayon
  * @param {string} storeId - Référence vers Magasin.id ; chaîne vide = grille commune.
- * @param {boolean} isAdmin
+ * @param {boolean} canEditRayon - Droit grid_edit_rayon.
  * @returns {string}
  */
-function _buildZoneSection(zone, points, rayon, storeId, isAdmin) {
+function _buildZoneSection(zone, points, rayon, storeId, canEditRayon) {
   /** @type {string[]} */
   const categories = [...new Set(points.map(point => point.cat || 'Général'))];
   /** @type {string} */
-  const renameButton = isAdmin && zone !== IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE
+  const renameButton = canEditRayon && zone !== IMPORT_UNCLASSIFIED_ZONE_LABEL_GRILLE
     ? `<button class="btn btn-secondary btn-sm" style="padding:2px 6px" onclick="openRenameGrilleZonePrompt('${_escapeHtmlAttr(rayon)}','${_escapeHtmlAttr(zone)}','${_escapeHtmlAttr(storeId)}')" aria-label="Renommer cette zone" title="Renommer cette zone"><i class="ti ti-pencil" style="font-size:12px"></i></button>`
     : '';
 
@@ -458,8 +471,9 @@ function _buildCategorySection(category, points, rayon, storeId) {
  * @returns {string}
  */
 function _buildPointRow(point, rayon, storeId) {
+  // ⚠️ CORRIGÉ : 'isAdmin' -> droit granulaire grid_edit_point.
   /** @type {boolean} */
-  const isAdmin = CU && CU.role === 'admin';
+  const canEditPoint = hasPerm('grid_edit_point');
   /** @type {boolean} */
   const isCommon = point._scope === 'common';
   /** @type {string} */
@@ -485,7 +499,7 @@ function _buildPointRow(point, rayon, storeId) {
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
       ${critBdg(point.c)}
       <span class="tsm tm" style="white-space:nowrap">Poids : <strong>${point.p}</strong></span>
-      ${isAdmin ? _buildPointActions(rayon, isCommon ? '' : storeId, point.id) : ''}
+      ${canEditPoint ? _buildPointActions(rayon, isCommon ? '' : storeId, point.id) : ''}
     </div>
   </div>`;
 }

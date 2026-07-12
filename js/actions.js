@@ -121,14 +121,20 @@ function renderActions() {
 
   el('act-cnt').textContent = `${actions.length} action(s)`;
 
+  // ⚠️ CORRIGÉ : dépendait auparavant de canEditNC() (nc.js), une
+  // fonction pensée pour l'édition des NC — ce contrôle concerne en
+  // réalité l'édition du STATUT d'une action corrective, un droit
+  // distinct (action_edit_status) dans le nouveau système à 42 droits.
+  // 'isAdmin' remplacé par action_delete, seul droit réellement
+  // concerné par la sélection/suppression en masse ci-dessous.
   /** @type {boolean} */
-  const canEdit = canEditNC();
+  const canEdit   = hasPerm('action_edit_status');
   /** @type {boolean} */
-  const isAdmin = CU && CU.role === 'admin';
-  const tbody   = el('act-tb');
+  const canDelete = hasPerm('action_delete');
+  const tbody     = el('act-tb');
 
   ['act-toggle-all-btn', 'act-toggle-none-btn', 'act-del-sel-btn'].forEach(id => {
-    if (el(id)) el(id).style.display = isAdmin ? '' : 'none';
+    if (el(id)) el(id).style.display = canDelete ? '' : 'none';
   });
 
   if (!actions.length) {
@@ -175,7 +181,7 @@ function renderActions() {
     return `<tr class="tbl-group-row"><td colspan="8">${zone} <span class="tsm" style="text-transform:none;font-weight:400">(${zoneTotal})</span></td></tr>
       ${sortedCats.map(cat => `
         <tr class="tbl-subgroup-row"><td colspan="8">${cat} <span class="tsm tm">(${byCat.get(cat).length})</span></td></tr>
-        ${byCat.get(cat).map(action => _buildActionRow(action, canEdit, isAdmin)).join('')}
+        ${byCat.get(cat).map(action => _buildActionRow(action, canEdit, canDelete)).join('')}
       `).join('')}`;
   }).join('');
 }
@@ -194,11 +200,11 @@ function renderActions() {
  * (admin uniquement, voir deleteSelectedActions), qui comble
  * l'en-tête vide de la même largeur (32px) sans décalage.
  * @param {Action} action
- * @param {boolean} canEdit - Si vrai, affiche un éditeur de statut ; sinon un simple badge.
- * @param {boolean} isAdmin - Si vrai, affiche la case à cocher de sélection (suppression).
+ * @param {boolean} canEdit - Droit action_edit_status : si vrai, affiche un éditeur de statut ; sinon un simple badge.
+ * @param {boolean} canDelete - Droit action_delete : si vrai, affiche la case à cocher de sélection et le bouton de suppression.
  * @returns {string} HTML de la ligne de tableau.
  */
-function _buildActionRow(action, canEdit, isAdmin) {
+function _buildActionRow(action, canEdit, canDelete) {
   /** @type {boolean} */
   const isOverdue  = overdue(action.ech) && action.statut !== 'Traitée';
   /** @type {NC | undefined} */
@@ -210,7 +216,7 @@ function _buildActionRow(action, canEdit, isAdmin) {
 
   return `<tr style="${isOverdue ? 'background:#fff8f8' : ''}">
     <td style="vertical-align:top;padding-top:14px;width:32px">
-      ${isAdmin ? `<input type="checkbox" class="act-cb" value="${action.id}" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer" checked>` : ''}
+      ${canDelete ? `<input type="checkbox" class="act-cb" value="${action.id}" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer" checked>` : ''}
     </td>
     <td style="max-width:200px;font-size:12px;vertical-align:top;padding-top:14px">
       <div style="color:var(--text)">${description.slice(0, 80)}${description.length > 80 ? '…' : ''}</div>
@@ -226,8 +232,8 @@ function _buildActionRow(action, canEdit, isAdmin) {
       ${canEdit ? _buildStatusEditor(action) : _buildStatusDisplay(action)}
     </td>
     <td style="vertical-align:top;padding-top:10px">
-      ${action.alertId ? `<button class="btn btn-secondary btn-sm" title="Modifier l'alerte terrain liée" onclick="openAlertModal('${action.alertId}')"><i class="ti ti-pencil"></i></button>` : ''}
-      ${isAdmin ? `<button class="btn btn-secondary btn-sm" title="Supprimer" style="color:var(--danger)" onclick="deleteAction('${action.id}')"><i class="ti ti-trash"></i></button>` : ''}
+      ${(action.alertId && hasPerm('alert_edit')) ? `<button class="btn btn-secondary btn-sm" title="Modifier l'alerte terrain liée" onclick="openAlertModal('${action.alertId}')"><i class="ti ti-pencil"></i></button>` : ''}
+      ${canDelete ? `<button class="btn btn-secondary btn-sm" title="Supprimer" style="color:var(--danger)" onclick="deleteAction('${action.id}')"><i class="ti ti-trash"></i></button>` : ''}
     </td>
   </tr>`;
 }

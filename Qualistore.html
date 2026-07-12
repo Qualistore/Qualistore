@@ -17,7 +17,6 @@
 <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">      <p style="color:var(--text2);font-size:13px;margin-top:4px">Gestion de la qualité alimentaire</p>
     </div>
 
-    <!-- Formulaire de connexion normal -->
     <div id="login-form">
       <div class="login-err" id="login-err"><i class="ti ti-alert-circle"></i> Identifiant ou mot de passe incorrect.</div>
       <div class="form-group">
@@ -39,7 +38,6 @@
       </button>
     </div>
 
-    <!-- Mot de passe oublié -->
     <div id="login-forgot" style="display:none">
       <p class="tsm tm" style="margin-bottom:14px">Saisissez votre email : si un compte existe, un lien de réinitialisation vous sera envoyé.</p>
       <div class="login-err" id="login-forgot-msg"></div>
@@ -55,7 +53,6 @@
       </button>
     </div>
 
-    <!-- Réinitialisation (lien email — normalement inatteignable, ce flux vit sur reset-password.html) -->
     <div id="login-reset" style="display:none">
       <p class="tsm tm" style="margin-bottom:14px">Choisissez un nouveau mot de passe.</p>
       <div class="login-err" id="login-reset-msg"></div>
@@ -78,7 +75,6 @@
       </button>
     </div>
 
-    <!-- Changement de mot de passe forcé (première connexion, compte créé sans email) -->
     <div id="login-forcepass" style="display:none">
       <p class="tsm tm" style="margin-bottom:14px">Pour votre sécurité, vous devez choisir un nouveau mot de passe avant de continuer.</p>
       <div class="login-err" id="login-forcepass-msg"></div>
@@ -249,7 +245,7 @@
             <span class="tsm tm" id="nc-cnt"></span>
             <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(true)"><i class="ti ti-check-all"></i> Tout</button>
             <button class="btn btn-secondary btn-sm" onclick="toggleAllNC(false)"><i class="ti ti-x"></i> Aucun</button>
-            <button class="btn btn-primary btn-sm" onclick="exportSelectedNC()"><i class="ti ti-file-download"></i> Exporter sélection</button>
+            <button class="btn btn-primary btn-sm" id="nc-export-sel-btn" onclick="exportSelectedNC()"><i class="ti ti-file-download"></i> Exporter sélection</button>
             <button class="btn btn-danger btn-sm" id="nc-del-sel-btn" style="display:none" onclick="deleteSelectedNC()"><i class="ti ti-trash"></i> Supprimer sélection</button>
           </div>
         </div>
@@ -264,7 +260,7 @@
                 <option value="month">Mois en cours</option>
                 <option value="month30">30 derniers jours</option>
               </select>
-              <button class="btn btn-secondary btn-sm" onclick="exportNCActivePDF()">
+              <button class="btn btn-secondary btn-sm" id="nc-export-active-btn" onclick="exportNCActivePDF()">
                 <i class="ti ti-file-download"></i> Exporter PDF
               </button>
             </div>
@@ -287,7 +283,7 @@
                 <option value="month">Mois en cours</option>
                 <option value="month30">30 derniers jours</option>
               </select>
-              <button class="btn btn-secondary btn-sm" onclick="exportNCArchivePDF()"><i class="ti ti-file-download"></i> Exporter PDF</button>
+              <button class="btn btn-secondary btn-sm" id="nc-export-archive-btn" onclick="exportNCArchivePDF()"><i class="ti ti-file-download"></i> Exporter PDF</button>
             </div>
             <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Rayon</th><th>Description</th><th>Commentaire de suivi</th><th>Criticité</th><th>Clôturée le</th><th></th></tr></thead><tbody id="nc-archive-tb"></tbody></table></div>
           </div>
@@ -443,7 +439,7 @@
             </select>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-secondary btn-sm" onclick="openCreateRayonPrompt()"><i class="ti ti-plus"></i> Nouveau rayon</button>
+            <button class="btn btn-secondary btn-sm" id="btn-create-rayon" onclick="openCreateRayonPrompt()"><i class="ti ti-plus"></i> Nouveau rayon</button>
             <button class="btn btn-secondary btn-sm" onclick="openImportModal()"><i class="ti ti-upload"></i> Importer</button>
           </div>
         </div>
