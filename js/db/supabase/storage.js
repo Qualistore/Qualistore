@@ -447,10 +447,27 @@ async function loadDB() {
     _cleanStaleData();
 
     // Rafraîchir l'utilisateur connecté depuis la DB à jour
+    // (permissions, magasins assignés, statut... modifiables par un
+    // admin pendant que cet utilisateur est connecté ailleurs).
+    //
+    // ⚠️ CORRIGÉ (bug de déconnexion à chaque rafraîchissement) :
+    // cherchait auparavant dans DB.users, qui est intentionnellement
+    // TOUJOURS vide depuis que la table Supabase `users` (legacy)
+    // n'est plus interrogée (voir plus haut, "n'interroge plus jamais
+    // la table Supabase `users`"). freshUser était donc TOUJOURS
+    // undefined, et CU était réinitialisé à null à CHAQUE chargement
+    // réussi de la DB — donc à chaque rechargement de page, sans la
+    // moindre erreur visible (loadDB() réussit bien, seule cette
+    // ligne était incohérente avec la suppression de DB.users).
+    // Remplacé par un appel à _fetchProfile (auth.js), la vraie
+    // source de vérité (table `profiles`). En cas d'échec de cet
+    // appel (réseau...), CU est conservé tel quel plutôt que
+    // réinitialisé — mieux vaut garder une session légèrement
+    // obsolète que déconnecter l'utilisateur sans raison.
     if (CU) {
-      /** @type {User | undefined} */
-      const freshUser = DB.users.find(u => u.id === CU.id);
-      CU = freshUser || null;
+      /** @type {User | null} */
+      const freshProfile = await _fetchProfile(CU.id);
+      if (freshProfile) CU = freshProfile;
     }
   } catch (error) {
     console.warn('⚠️ Supabase inaccessible — mode hors ligne :', error.message);
