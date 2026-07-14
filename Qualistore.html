@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QualiStore</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/app.css?v=6">
+<link rel="stylesheet" href="css/app.css?v=7">
 </head>
 <body>
 
@@ -235,14 +235,19 @@
               <option value="month3">3 derniers mois</option>
               <option value="month6">6 derniers mois</option>
             </select>
+            <select class="form-control" style="width:auto" id="flt-ana-statut" onchange="renderAnalyses()">
+              <option value="">Tous les statuts</option>
+              <option value="afaire">En cours de traitement</option>
+              <option value="fait">Traitées (archivées)</option>
+            </select>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="tsm tm" id="ana-cnt"></span>
-            <button class="btn btn-primary" id="btn-add-analyse" onclick="openAnalyseUploadModal()"><i class="ti ti-upload"></i> Ajouter un rapport</button>
+            <button class="btn btn-primary" id="btn-add-analyse" onclick="openAnalyseModal()"><i class="ti ti-upload"></i> Ajouter un rapport</button>
           </div>
         </div>
         <div class="card">
-          <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Libellé</th><th>Date de l'analyse</th><th>Fichier</th><th>Ajouté par</th><th></th></tr></thead><tbody id="ana-tb"></tbody></table></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Libellé</th><th>Date de création</th><th>Conformité</th><th>Statut</th><th>PJ</th><th>Créé par</th><th></th></tr></thead><tbody id="ana-tb"></tbody></table></div>
         </div>
       </div>
 
@@ -1397,30 +1402,50 @@
   </div>
 </div>
 
-<!-- MODAL: AJOUT RAPPORT D'ANALYSES -->
+<!-- MODAL: RAPPORT D'ANALYSES (création / modification / traitement) -->
 <div class="modal-ov" id="m-analyse">
-  <div class="modal">
+  <div class="modal modal-lg">
     <div class="modal-hdr">
-      <div class="modal-title"><i class="ti ti-flask" style="color:var(--primary)"></i> Nouveau rapport d'analyses</div>
+      <div class="modal-title" id="m-analyse-ttl"><i class="ti ti-flask" style="color:var(--primary)"></i> Nouveau rapport d'analyses</div>
       <button class="btn-x" onclick="closeModal('m-analyse')">&times;</button>
     </div>
     <div class="modal-body">
       <div class="form-err" id="ana-err"></div>
-      <div class="form-group">
-        <label class="form-label">Magasin *</label>
-        <select class="form-control" id="ana-mag"><option value="">Sélectionner...</option></select>
-      </div>
+      <input type="hidden" id="ana-id">
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Libellé *</label><input class="form-control" id="ana-libelle" placeholder="ex : Analyse eau — laboratoire X"></div>
+        <div class="form-group"><label class="form-label">Magasin *</label><select class="form-control" id="ana-mag"><option value="">Sélectionner...</option></select></div>
         <div class="form-group"><label class="form-label">Date de l'analyse *</label><input type="date" class="form-control" id="ana-date"></div>
       </div>
+      <div class="form-group"><label class="form-label">Libellé *</label><input class="form-control" id="ana-libelle" placeholder="ex : Analyse eau — laboratoire X"></div>
       <div class="form-group">
-        <label class="form-label">Fichier *</label>
-        <div id="ana-file-prev" style="margin-bottom:8px"></div>
-        <input type="file" id="ana-file-input" style="display:none" onchange="handleAnalyseFile(this)">
-        <button class="btn btn-secondary btn-sm" onclick="el('ana-file-input').click()"><i class="ti ti-paperclip"></i> Choisir un fichier</button>
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Le fichier est stocké tel quel, sans aucune modification — pour consultation et téléchargement uniquement.</div>
+        <label class="form-label">Pièces jointes <span class="tsm tm">(plusieurs possibles — à classer Rapport d'Analyses ou Pièce Justificative)</span></label>
+        <div id="ana-docs-prev" style="margin-bottom:8px"></div>
+        <input type="file" id="ana-file-input" multiple style="display:none" onchange="handleAnalyseFiles(this)">
+        <button class="btn btn-secondary btn-sm" onclick="el('ana-file-input').click()"><i class="ti ti-paperclip"></i> Ajouter des fichiers</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Fichiers stockés tels quels, sans aucune modification. Un rapport peut être créé sans pièce jointe.</div>
       </div>
+      <hr class="divider">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Conformité</label>
+          <div style="display:flex;gap:18px;padding-top:6px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" id="ana-conf-ok" onchange="onAnaConformeChange('conforme')"> <span style="color:var(--success);font-weight:700">Conforme</span></label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" id="ana-conf-ko" onchange="onAnaConformeChange('nonconforme')"> <span style="color:var(--danger);font-weight:700">Non conforme</span></label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Traitement</label>
+          <div style="display:flex;gap:18px;padding-top:6px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" id="ana-st-fait" onchange="onAnaStatutChange('fait')"> <strong>Fait</strong> <span class="tsm tm">(archive le rapport)</span></label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" id="ana-st-afaire" onchange="onAnaStatutChange('afaire')"> <strong>À faire</strong> <span class="tsm tm">(reste modifiable)</span></label>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Actions à mettre en place <span class="tsm" id="ana-actions-req" style="display:none;color:var(--danger)">(obligatoire pour clôturer une analyse non conforme)</span></label>
+        <textarea class="form-control" id="ana-actions" rows="3" placeholder="Décrivez les actions à mettre en place..."></textarea>
+      </div>
+      <div class="tsm tm" id="ana-statut-hint"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-secondary" onclick="closeModal('m-analyse')">Annuler</button>
@@ -1563,45 +1588,49 @@
      (rempli puis vidé par exportDashboardPDF, dashboard.js) -->
 <div id="dash-pdf-export" style="display:none"></div>
 
+<!-- Conteneur invisible utilisé par l'export PDF d'un rapport
+     d'analyses (rempli puis vidé par exportAnalysePDF, analyses.js) -->
+<div id="ana-pdf-export" style="display:none"></div>
+
 <!-- Librairies externes -->
-<script src="js/jspdf.umd.min.js?v=6"></script>
-<script src="js/html2canvas.min.js?v=6"></script>
-<script src="js/chart.umd.min.js?v=6"></script>
+<script src="js/jspdf.umd.min.js?v=7"></script>
+<script src="js/html2canvas.min.js?v=7"></script>
+<script src="js/chart.umd.min.js?v=7"></script>
 
 <!-- Infrastructure -->
-<script src="js/config.js?v=6"></script>
+<script src="js/config.js?v=7"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase.js?v=6"></script>
-<script src="js/db/supabase/storage.js?v=6"></script>
-<script src="js/auth.js?v=6"></script>
-<script src="js/ui.js?v=6"></script>
+<script src="js/supabase.js?v=7"></script>
+<script src="js/db/supabase/storage.js?v=7"></script>
+<script src="js/auth.js?v=7"></script>
+<script src="js/ui.js?v=7"></script>
 
 <!-- Import de référentiels (chargé avant grille-qualimetre.js, qui réutilise detectConceptMapping/normalizeRows/_resolveOrCreateZoneFromDocument) -->
-<script src="js/import/import-detect.js?v=6"></script>
-<script src="js/import/import-normalize.js?v=6"></script>
-<script src="js/import/import-grille.js?v=6"></script>
+<script src="js/import/import-detect.js?v=7"></script>
+<script src="js/import/import-normalize.js?v=7"></script>
+<script src="js/import/import-grille.js?v=7"></script>
 
 <!-- Modules métier -->
-<script src="js/dashboard.js?v=6"></script>
-<script src="js/audits.js?v=6"></script>
-<script src="js/nc.js?v=6"></script>
-<script src="js/actions.js?v=6"></script>
-<script src="js/magasins.js?v=6"></script>
-<script src="js/rayons.js?v=6"></script>
-<script src="js/grille.js?v=6"></script>
-<script src="js/alertes.js?v=6"></script>
-<script src="js/analyses.js?v=6"></script>
-<script src="js/audits-externes.js?v=6"></script>
-<script src="js/metrologie.js?v=6"></script>
-<script src="js/users.js?v=6"></script>
-<script src="js/rapports-fsqs.js?v=6"></script>
-<script src="js/import/grille-qualimetre.js?v=6"></script> 
-<script src="js/qualimetre.js?v=6"></script>
-<script src="js/audit-qualimetre.js?v=6"></script>
-<script src="js/rapport-qualimetre.js?v=6"></script>
+<script src="js/dashboard.js?v=7"></script>
+<script src="js/audits.js?v=7"></script>
+<script src="js/nc.js?v=7"></script>
+<script src="js/actions.js?v=7"></script>
+<script src="js/magasins.js?v=7"></script>
+<script src="js/rayons.js?v=7"></script>
+<script src="js/grille.js?v=7"></script>
+<script src="js/alertes.js?v=7"></script>
+<script src="js/analyses.js?v=7"></script>
+<script src="js/audits-externes.js?v=7"></script>
+<script src="js/metrologie.js?v=7"></script>
+<script src="js/users.js?v=7"></script>
+<script src="js/rapports-fsqs.js?v=7"></script>
+<script src="js/import/grille-qualimetre.js?v=7"></script> 
+<script src="js/qualimetre.js?v=7"></script>
+<script src="js/audit-qualimetre.js?v=7"></script>
+<script src="js/rapport-qualimetre.js?v=7"></script>
 
 <!-- Point d'entrée -->
-<script src="js/init.js?v=6"></script>
+<script src="js/init.js?v=7"></script>
 
 </body>
 </html>
