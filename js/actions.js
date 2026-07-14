@@ -66,7 +66,7 @@
  * @typedef {Object} Action
  * @property {string} id
  * @property {string} ncId - Référence vers NC.id.
- * @property {string} mag - Nom du magasin concerné (PAS un id — comparé à Magasin.nom), ou la valeur spéciale 'Alerte terrain'.
+ * @property {string} mag - Nom du magasin concerné (affichage uniquement — le filtrage de visibilité passe par NC.mid via ncId, voir renderActions), ou la valeur spéciale 'Alerte terrain'.
  * @property {string} resp - Nom du responsable de l'action.
  * @property {string} ech - Date d'échéance (format consommé par overdue() et fd()).
  * @property {string} [prio] - Niveau de priorité/criticité (consommé par critBdg() — probablement aligné sur GrilleCriticite 'Majeure'|'Critique').
@@ -95,9 +95,7 @@
  */
 function renderActions() {
   /** @type {string[]} */
-  const storeIds         = visibleMids();
-  /** @type {string[]} */
-  const visibleStoreNames = DB.magasins.filter(m => storeIds.includes(m.id)).map(m => m.nom);
+  const storeIds          = visibleMids();
   /** @type {string} */
   const filterMagId       = v('flt-act-mag');
   /** @type {string} */
@@ -116,17 +114,39 @@ function renderActions() {
 
   populateMagSelect(el('flt-act-mag'));
 
-  // Exclure les actions "Traitées" — elles rejoignent l'archive des NC
+  // ⚠️ CORRIGÉ (bug onglet vide) : le filtrage par magasin visible
+  // comparait auparavant action.mag (un NOM de magasin, figé au
+  // moment de la création de l'action) à une liste de noms
+  // recalculée à partir de DB.magasins. Un magasin renommé depuis,
+  // ou une DB.magasins momentanément vide/désynchronisée, rendait
+  // alors TOUTES les actions invisibles sans le moindre message
+  // d'erreur — et sans toucher l'onglet Non-Conformités, qui filtre
+  // par NC.mid (un identifiant stable) et non par nom. Le filtrage
+  // se fait désormais par NC.mid, en résolvant la NC liée à chaque
+  // action — exactement la même logique, la même source de vérité
+  // que l'onglet Non-Conformités (voir renderNC, nc.js). Les actions
+  // issues directement d'une alerte terrain générique
+  // (action.mag === 'Alerte terrain', non rattachée à un magasin
+  // précis) restent visibles pour tous, comme auparavant. Exclut
+  // toujours les actions "Traitées", qui rejoignent l'archive des NC.
   /** @type {Action[]} */
-  let actions = [...DB.actions].reverse().filter(action =>
-    (visibleStoreNames.includes(action.mag) || action.mag === 'Alerte terrain') &&
-    action.statut !== 'Traitée'
-  );
+  let actions = [...DB.actions].reverse().filter(action => {
+    if (action.statut === 'Traitée') return false;
+    if (action.mag === 'Alerte terrain') return true;
+    /** @type {NC | undefined} */
+    const linkedNc = DB.ncs.find(nc => nc.id === action.ncId);
+    return !!linkedNc && storeIds.includes(linkedNc.mid);
+  });
 
   if (filterMagId) {
-    /** @type {Magasin | undefined} */
-    const store = DB.magasins.find(m => m.id === filterMagId);
-    if (store) actions = actions.filter(a => a.mag === store.nom);
+    // ⚠️ CORRIGÉ : même principe que ci-dessus — comparaison par
+    // NC.mid plutôt que par nom de magasin figé sur l'action.
+    actions = actions.filter(a => {
+      if (a.mag === 'Alerte terrain') return false;
+      /** @type {NC | undefined} */
+      const linkedNc = DB.ncs.find(nc => nc.id === a.ncId);
+      return !!linkedNc && linkedNc.mid === filterMagId;
+    });
   }
   if (filterStatus) actions = actions.filter(a => a.statut === filterStatus);
   if (periodValue === 'date' && exactDateValue) {
