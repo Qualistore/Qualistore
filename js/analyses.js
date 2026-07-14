@@ -6,8 +6,8 @@
 // handleAlertDocuments, alertes.js) dans le bucket Supabase Storage
 // 'photos' sous le préfixe 'analyses/'. Les métadonnées (magasin,
 // libellé, date, nom d'origine...) vivent dans la table Supabase
-// `analyses` (voir migration-analyses.sql), synchronisée par
-// storage.js (DB.analyses) comme les autres tables.
+// `analyses` (voir migration-analyses-extaudits-metrologie.sql),
+// synchronisée par storage.js (DB.analyses) comme les autres tables.
 //
 // ⚠️ HORS-LIGNE — AUCUN base64 : si l'upload échoue (connexion
 // terrain instable), le fichier ORIGINAL est mis en file d'attente

@@ -19,7 +19,7 @@
 
 /**
  * Identifiant de page, clé commune à PAGE_METADATA et PAGE_RENDERERS.
- * @typedef {'dashboard'|'audits'|'nc'|'actions'|'magasins'|'rayons'|'rapports'|'utilisateurs'|'grille'|'qualimetre'|'audit-qualimetre'|'rapport-qualimetre'|'grille-qualimetre'|'brouillons'|'backup'|'analyses'} PageId
+ * @typedef {'dashboard'|'audits'|'nc'|'actions'|'magasins'|'rayons'|'rapports'|'utilisateurs'|'grille'|'qualimetre'|'audit-qualimetre'|'rapport-qualimetre'|'grille-qualimetre'|'brouillons'|'backup'|'analyses'|'audits-externes'|'metrologie'} PageId
  */
 
 /**
@@ -89,6 +89,8 @@ const PAGE_METADATA = {
   audits:              ['Audits FSQS',            'Historique'],
   nc:                  ['Non-conformités',        'Suivi des écarts'],
   analyses:            ['Analyses',               'Rapports d\'analyses (laboratoire, eau, surfaces...)'],
+  'audits-externes':   ['Audits Externes FSQS',   'Rapports d\'audits externes'],
+  metrologie:          ['Métrologie',             'Suivi des balances par magasin'],
   actions:             ['Actions correctives',    'Plan d\'actions'],
   magasins:            ['Magasins',               'Gestion du parc'],
   'stats-audits':      ['Statistiques d\'audit',  'Par magasin et par rayon'],
@@ -682,6 +684,8 @@ function buildSidebar() {
     hasPerm('report_qualimetre_view') && { id: 'rapport-qualimetre',  icon: 'ti-gauge',           label: 'Rapport Qualimètre', style: 'color:var(--qual-pale)' },
     hasPerm('nc_view')       && { id: 'nc',                  icon: 'ti-alert-triangle',  label: 'Non-conformités', badge: 'nc-bdg' },
     hasPerm('analysis_view') && { id: 'analyses',            icon: 'ti-flask',           label: 'Analyses' },
+    hasPerm('extaudit_view') && { id: 'audits-externes',     icon: 'ti-certificate',     label: 'Audits Externes FSQS' },
+    hasPerm('metro_view')    && { id: 'metrologie',          icon: 'ti-scale',           label: 'Métrologie' },
     { section: 'Paramètres' },
     hasPerm('users_manage')  && { id: 'utilisateurs',       icon: 'ti-users',           label: 'Utilisateurs' },
     hasPerm('brand_manage')  && { id: 'enseignes',          icon: 'ti-building',        label: 'Enseignes' },
@@ -842,6 +846,8 @@ function _getPageRenderer(pageId) {
     'audit-qualimetre':  renderQualAudits,
     'grille-qualimetre': showGrilleQualimetre,
     analyses:            renderAnalyses,
+    'audits-externes':   renderAuditsExternes,
+    metrologie:          renderMetrologie,
     brouillons:          renderDrafts,
     backup:              () => {},
   };

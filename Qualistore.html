@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QualiStore</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/app.css?v=5">
+<link rel="stylesheet" href="css/app.css?v=6">
 </head>
 <body>
 
@@ -244,6 +244,49 @@
         <div class="card">
           <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Libellé</th><th>Date de l'analyse</th><th>Fichier</th><th>Ajouté par</th><th></th></tr></thead><tbody id="ana-tb"></tbody></table></div>
         </div>
+      </div>
+
+      <!-- AUDITS EXTERNES FSQS — Rapports d'audits externes stockés
+           TELS QUELS (aucune modification du fichier), voir
+           audits-externes.js. Même principe que l'onglet Analyses. -->
+      <div class="page" id="page-audits-externes">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="form-control" style="width:auto" id="flt-exa-mag" onchange="renderAuditsExternes()"><option value="">Tous les magasins</option></select>
+            <select class="form-control" style="width:auto" id="flt-exa-period" onchange="renderAuditsExternes()">
+              <option value="all">Toutes les périodes</option>
+              <option value="month">Mois en cours</option>
+              <option value="month3">3 derniers mois</option>
+              <option value="month6">6 derniers mois</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="tsm tm" id="exa-cnt"></span>
+            <button class="btn btn-primary" id="btn-add-extaudit" onclick="openExtAuditUploadModal()"><i class="ti ti-upload"></i> Ajouter un rapport</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Libellé</th><th>Date du dernier audit externe</th><th>Fichier</th><th>Ajouté par</th><th></th></tr></thead><tbody id="exa-tb"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- MÉTROLOGIE — Une carte par balance (assignée à un magasin),
+           centralisant les passages du prestataire (rapport stocké tel
+           quel + date de passage + échéance). Voir metrologie.js ;
+           rappel automatique 30 jours avant l'échéance
+           (checkMetrologieEcheances). -->
+      <div class="page" id="page-metrologie">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="form-control" style="width:auto" id="flt-metro-mag" onchange="renderMetrologie()"><option value="">Tous les magasins</option></select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="tsm tm" id="metro-cnt"></span>
+            <button class="btn btn-primary" id="btn-add-balance" onclick="openBalanceModal()"><i class="ti ti-plus"></i> Ajouter une balance</button>
+          </div>
+        </div>
+        <div class="grid-3" id="metro-grid"></div>
+        <div class="empty-state" id="metro-empty" style="display:none"><i class="ti ti-scale"></i><p>Aucune balance.<br>Cliquez sur « Ajouter une balance ».</p></div>
       </div>
 
       <!-- BROUILLONS -->
@@ -1400,47 +1443,165 @@
   </div>
 </div>
 
+<!-- MODAL: AJOUT RAPPORT D'AUDIT EXTERNE FSQS -->
+<div class="modal-ov" id="m-extaudit">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-certificate" style="color:var(--primary)"></i> Nouveau rapport d'audit externe</div>
+      <button class="btn-x" onclick="closeModal('m-extaudit')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="exa-err"></div>
+      <div class="form-group">
+        <label class="form-label">Magasin *</label>
+        <select class="form-control" id="exa-mag"><option value="">Sélectionner...</option></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Libellé *</label><input class="form-control" id="exa-libelle" placeholder="ex : Audit FSQS — organisme X"></div>
+        <div class="form-group"><label class="form-label">Date du dernier audit externe *</label><input type="date" class="form-control" id="exa-date"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fichier *</label>
+        <div id="exa-file-prev" style="margin-bottom:8px"></div>
+        <input type="file" id="exa-file-input" style="display:none" onchange="handleExtAuditFile(this)">
+        <button class="btn btn-secondary btn-sm" onclick="el('exa-file-input').click()"><i class="ti ti-paperclip"></i> Choisir un fichier</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Le fichier est stocké tel quel, sans aucune modification — pour consultation et téléchargement uniquement.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-extaudit')">Annuler</button>
+      <button class="btn btn-primary" id="exa-save-btn" onclick="saveExtAudit()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DÉTAIL / RÉCUPÉRATION D'UN RAPPORT D'AUDIT EXTERNE -->
+<div class="modal-ov" id="m-extaudit-view">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-certificate" style="color:var(--primary)"></i> Rapport d'audit externe</div>
+      <button class="btn-x" onclick="closeModal('m-extaudit-view')">&times;</button>
+    </div>
+    <div class="modal-body" id="exa-view-body"></div>
+    <div class="modal-foot" id="exa-view-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-extaudit-view')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: BALANCE (création / modification) -->
+<div class="modal-ov" id="m-balance">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="m-balance-ttl"><i class="ti ti-scale" style="color:var(--primary)"></i> Nouvelle balance</div>
+      <button class="btn-x" onclick="closeModal('m-balance')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="bal-err"></div>
+      <input type="hidden" id="bal-id">
+      <div class="form-group"><label class="form-label">Magasin *</label><select class="form-control" id="bal-mag"><option value="">Sélectionner...</option></select></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Nom de la balance *</label><input class="form-control" id="bal-nom" placeholder="ex : Balance Boucherie 1"></div>
+        <div class="form-group"><label class="form-label">N° de série <span class="tsm tm">(optionnel)</span></label><input class="form-control" id="bal-sn" placeholder="ex : SN-12345"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-balance')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveBalance()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DÉTAIL BALANCE (données centralisées + historique des passages) -->
+<div class="modal-ov" id="m-balance-view">
+  <div class="modal modal-lg">
+    <div class="modal-hdr">
+      <div class="modal-title" id="m-balance-view-ttl"><i class="ti ti-scale" style="color:var(--primary)"></i> Balance</div>
+      <button class="btn-x" onclick="closeModal('m-balance-view')">&times;</button>
+    </div>
+    <div class="modal-body" id="bal-view-body"></div>
+    <div class="modal-foot" id="bal-view-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-balance-view')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NOUVEAU PASSAGE PRESTATAIRE (métrologie) -->
+<div class="modal-ov" id="m-passage">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-calendar-check" style="color:var(--primary)"></i> Nouveau passage prestataire</div>
+      <button class="btn-x" onclick="closeModal('m-passage')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="pas-err"></div>
+      <input type="hidden" id="pas-bal-id">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Date du passage *</label><input type="date" class="form-control" id="pas-date"></div>
+        <div class="form-group"><label class="form-label">Échéance (prochain passage) *</label><input type="date" class="form-control" id="pas-echeance"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Commentaire</label>
+        <textarea class="form-control" id="pas-cmt" rows="2" placeholder="Observations du prestataire, réglages effectués..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rapport(s) de passage</label>
+        <div id="pas-docs-prev" style="margin-bottom:8px"></div>
+        <input type="file" id="pas-doc-input" multiple style="display:none" onchange="handlePassageDocs(this)">
+        <button class="btn btn-secondary btn-sm" onclick="el('pas-doc-input').click()"><i class="ti ti-paperclip"></i> Ajouter un document</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Les fichiers sont stockés tels quels, sans aucune modification. Une alerte magasin sera créée automatiquement 30 jours avant l'échéance, avec ces documents joints.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-passage')">Annuler</button>
+      <button class="btn btn-primary" id="pas-save-btn" onclick="savePassage()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <!-- Conteneur invisible utilisé par l'export PDF du tableau de bord
      (rempli puis vidé par exportDashboardPDF, dashboard.js) -->
 <div id="dash-pdf-export" style="display:none"></div>
 
 <!-- Librairies externes -->
-<script src="js/jspdf.umd.min.js?v=5"></script>
-<script src="js/html2canvas.min.js?v=5"></script>
-<script src="js/chart.umd.min.js?v=5"></script>
+<script src="js/jspdf.umd.min.js?v=6"></script>
+<script src="js/html2canvas.min.js?v=6"></script>
+<script src="js/chart.umd.min.js?v=6"></script>
 
 <!-- Infrastructure -->
-<script src="js/config.js?v=5"></script>
+<script src="js/config.js?v=6"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase.js?v=5"></script>
-<script src="js/db/supabase/storage.js?v=5"></script>
-<script src="js/auth.js?v=5"></script>
-<script src="js/ui.js?v=5"></script>
+<script src="js/supabase.js?v=6"></script>
+<script src="js/db/supabase/storage.js?v=6"></script>
+<script src="js/auth.js?v=6"></script>
+<script src="js/ui.js?v=6"></script>
 
 <!-- Import de référentiels (chargé avant grille-qualimetre.js, qui réutilise detectConceptMapping/normalizeRows/_resolveOrCreateZoneFromDocument) -->
-<script src="js/import/import-detect.js?v=5"></script>
-<script src="js/import/import-normalize.js?v=5"></script>
-<script src="js/import/import-grille.js?v=5"></script>
+<script src="js/import/import-detect.js?v=6"></script>
+<script src="js/import/import-normalize.js?v=6"></script>
+<script src="js/import/import-grille.js?v=6"></script>
 
 <!-- Modules métier -->
-<script src="js/dashboard.js?v=5"></script>
-<script src="js/audits.js?v=5"></script>
-<script src="js/nc.js?v=5"></script>
-<script src="js/actions.js?v=5"></script>
-<script src="js/magasins.js?v=5"></script>
-<script src="js/rayons.js?v=5"></script>
-<script src="js/grille.js?v=5"></script>
-<script src="js/alertes.js?v=5"></script>
-<script src="js/analyses.js?v=5"></script>
-<script src="js/users.js?v=5"></script>
-<script src="js/rapports-fsqs.js?v=5"></script>
-<script src="js/import/grille-qualimetre.js?v=5"></script> 
-<script src="js/qualimetre.js?v=5"></script>
-<script src="js/audit-qualimetre.js?v=5"></script>
-<script src="js/rapport-qualimetre.js?v=5"></script>
+<script src="js/dashboard.js?v=6"></script>
+<script src="js/audits.js?v=6"></script>
+<script src="js/nc.js?v=6"></script>
+<script src="js/actions.js?v=6"></script>
+<script src="js/magasins.js?v=6"></script>
+<script src="js/rayons.js?v=6"></script>
+<script src="js/grille.js?v=6"></script>
+<script src="js/alertes.js?v=6"></script>
+<script src="js/analyses.js?v=6"></script>
+<script src="js/audits-externes.js?v=6"></script>
+<script src="js/metrologie.js?v=6"></script>
+<script src="js/users.js?v=6"></script>
+<script src="js/rapports-fsqs.js?v=6"></script>
+<script src="js/import/grille-qualimetre.js?v=6"></script> 
+<script src="js/qualimetre.js?v=6"></script>
+<script src="js/audit-qualimetre.js?v=6"></script>
+<script src="js/rapport-qualimetre.js?v=6"></script>
 
 <!-- Point d'entrée -->
-<script src="js/init.js?v=5"></script>
+<script src="js/init.js?v=6"></script>
 
 </body>
 </html>

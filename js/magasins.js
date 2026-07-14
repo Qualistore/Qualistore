@@ -429,6 +429,14 @@ function _deleteAlertDocuments(alertId) {
     if (!doc.url.includes('/storage/v1/object/public/photos/')) return;
     /** @type {string} */
     const storagePath = doc.url.split('/storage/v1/object/public/photos/')[1];
+    // ⚠️ CORRIGÉ : ne supprime que les fichiers APPARTENANT à l'alerte
+    // (préfixe 'alertes-documents/', voir handleAlertDocuments,
+    // alertes.js). Les alertes automatiques — rappels métrologie, voir
+    // checkMetrologieEcheances (metrologie.js) — RÉFÉRENCENT des
+    // documents d'autres modules (préfixe 'metrologie/') sans en être
+    // propriétaires : supprimer l'alerte ne doit jamais détruire ces
+    // fichiers d'origine.
+    if (!storagePath.startsWith('alertes-documents/')) return;
     sbDeletePhoto(storagePath);
   });
 }

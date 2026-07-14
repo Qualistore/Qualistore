@@ -129,6 +129,22 @@ const PERMISSION_GROUPS = [
     ],
   },
   {
+    id: 'audits_externes', label: 'Audits externes FSQS', icon: 'ti-certificate',
+    permissions: [
+      { id: 'extaudit_view',   label: 'Voir les rapports d\'audits externes' },
+      { id: 'extaudit_upload', label: 'Ajouter un rapport d\'audit externe' },
+      { id: 'extaudit_delete', label: 'Supprimer un rapport d\'audit externe' },
+    ],
+  },
+  {
+    id: 'metrologie', label: 'Métrologie', icon: 'ti-scale',
+    permissions: [
+      { id: 'metro_view',   label: 'Voir les balances et leurs passages' },
+      { id: 'metro_manage', label: 'Gérer les balances (créer/modifier) et enregistrer un passage' },
+      { id: 'metro_delete', label: 'Supprimer une balance ou un passage' },
+    ],
+  },
+  {
     id: 'magasins', label: 'Magasins & enseignes', icon: 'ti-building-store',
     permissions: [
       { id: 'store_manage', label: 'Gérer les magasins (créer/modifier/supprimer/rayons)' },
@@ -199,6 +215,7 @@ const DEFAULT_PERMISSIONS = {
     action_view: 1, action_edit_status: 1, action_delete: 0, action_restore: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
     analysis_view: 1, analysis_upload: 1, analysis_delete: 0,
+    extaudit_view: 1, extaudit_upload: 1, extaudit_delete: 0, metro_view: 1, metro_manage: 1, metro_delete: 0,
     store_manage: 0, brand_manage: 0,
     grid_view: 1, grid_create_rayon: 1, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 1, grid_delete: 0,
     qgrid_view: 1, qgrid_manage: 0,
@@ -213,6 +230,7 @@ const DEFAULT_PERMISSIONS = {
     action_view: 1, action_edit_status: 0, action_delete: 0, action_restore: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
     analysis_view: 1, analysis_upload: 1, analysis_delete: 0,
+    extaudit_view: 1, extaudit_upload: 1, extaudit_delete: 0, metro_view: 1, metro_manage: 1, metro_delete: 0,
     store_manage: 0, brand_manage: 0,
     grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
     qgrid_view: 0, qgrid_manage: 0,
@@ -227,6 +245,7 @@ const DEFAULT_PERMISSIONS = {
     action_view: 0, action_edit_status: 0, action_delete: 0, action_restore: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
     analysis_view: 1, analysis_upload: 0, analysis_delete: 0,
+    extaudit_view: 1, extaudit_upload: 0, extaudit_delete: 0, metro_view: 1, metro_manage: 0, metro_delete: 0,
     store_manage: 0, brand_manage: 0,
     grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
     qgrid_view: 0, qgrid_manage: 0,
@@ -241,6 +260,7 @@ const DEFAULT_PERMISSIONS = {
     action_view: 0, action_edit_status: 0, action_delete: 0, action_restore: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
     analysis_view: 0, analysis_upload: 0, analysis_delete: 0,
+    extaudit_view: 0, extaudit_upload: 0, extaudit_delete: 0, metro_view: 0, metro_manage: 0, metro_delete: 0,
     store_manage: 0, brand_manage: 0,
     grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
     qgrid_view: 0, qgrid_manage: 0,

@@ -202,6 +202,8 @@
  * @property {QualimetreZoneLabelsMap} qualimetreZoneLabels - Renommages manuels de zones (équivalent de la ligne '__zone_labels__' isolée côté Supabase).
  * @property {QualAudit[]} qualAudits
  * @property {Object[]} analyses - Rapports d'analyses uploadés (métadonnées + URL du fichier brut — voir analyses.js).
+ * @property {Object[]} auditsExternes - Rapports d'audits externes FSQS (même principe que analyses — voir audits-externes.js).
+ * @property {Object[]} balances - Balances de métrologie, avec leurs passages prestataire embarqués (voir metrologie.js).
  */
 
 // ─────────────────────────────────────────────
@@ -317,6 +319,8 @@ function _buildDefaultDB() {
     actions:           [],
     alertes:           [],
     analyses:          [],
+    auditsExternes:    [],
+    balances:          [],
     drafts:            [],
     grilleCustom:      {},
     grilleCustomByStore: {},
@@ -404,11 +408,13 @@ async function loadDB() {
     const [
       magasins, audits, ncs, actions, alertes,
       grilleRows, qualAudits, qualRows, drafts, analyses,
+      auditsExternes, balances,
     ] = await Promise.all([
       sbSelect('magasins'),   sbSelect('audits'),
       sbSelect('ncs'),      sbSelect('actions'),    sbSelect('alertes'),
       sbSelect('grille_custom'), sbSelect('qual_audits'),
       sbSelect('qualimetre_custom'), sbSelect('drafts'), sbSelect('analyses'),
+      sbSelect('audits_externes'), sbSelect('balances'),
     ]);
 
     DB = {
@@ -425,6 +431,8 @@ async function loadDB() {
       actions:  actions  || [],
       alertes:  alertes  || [],
       analyses: analyses || [],
+      auditsExternes: auditsExternes || [],
+      balances: balances || [],
       drafts:   drafts   || [],
       grilleCustom:     _parseGrilleCustom(grilleRows),
       grilleCustomByStore: _parseGrilleCustomByStore(grilleRows),
@@ -752,6 +760,8 @@ async function _pushToSupabase(tables) {
     if (pushAll || tables.includes('actions'))    operations.push(sbUpsert('actions',    DB.actions));
     if (pushAll || tables.includes('alertes'))    operations.push(sbUpsert('alertes',    DB.alertes));
     if (pushAll || tables.includes('analyses'))   operations.push(sbUpsert('analyses',   DB.analyses || []));
+    if (pushAll || tables.includes('auditsExternes')) operations.push(sbUpsert('audits_externes', DB.auditsExternes || []));
+    if (pushAll || tables.includes('balances'))   operations.push(sbUpsert('balances',   DB.balances || []));
     if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
     if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
 
@@ -1029,10 +1039,10 @@ setInterval(async () => {
 
   try {
     /** @type {[Audit[], NC[], Action[], Alerte[], QualAudit[], Draft[]]} */
-    const [audits, ncs, actions, alertes, qualAudits, drafts, analyses] = await Promise.all([
+    const [audits, ncs, actions, alertes, qualAudits, drafts, analyses, auditsExternes, balances] = await Promise.all([
       sbSelect('audits'), sbSelect('ncs'), sbSelect('actions'),
       sbSelect('alertes'), sbSelect('qual_audits'), sbSelect('drafts'),
-      sbSelect('analyses'),
+      sbSelect('analyses'), sbSelect('audits_externes'), sbSelect('balances'),
     ]);
 
     /** @type {boolean} */
@@ -1043,7 +1053,9 @@ setInterval(async () => {
       JSON.stringify(alertes)    !== JSON.stringify(DB.alertes)    ||
       JSON.stringify(qualAudits) !== JSON.stringify(DB.qualAudits) ||
       JSON.stringify(drafts)     !== JSON.stringify(DB.drafts)     ||
-      JSON.stringify(analyses)   !== JSON.stringify(DB.analyses);
+      JSON.stringify(analyses)   !== JSON.stringify(DB.analyses)   ||
+      JSON.stringify(auditsExternes) !== JSON.stringify(DB.auditsExternes) ||
+      JSON.stringify(balances)   !== JSON.stringify(DB.balances);
 
     if (!hasChanges) return;
 
@@ -1054,6 +1066,8 @@ setInterval(async () => {
     DB.qualAudits = qualAudits || [];
     DB.drafts     = drafts     || [];
     DB.analyses   = analyses   || [];
+    DB.auditsExternes = auditsExternes || [];
+    DB.balances   = balances   || [];
     _saveToLocalStorage();
 
     _refreshActivePage();
@@ -1094,6 +1108,8 @@ function _refreshActivePage() {
     'audit-qualimetre': renderQualAudits,
     brouillons:        renderDrafts,
     analyses:          renderAnalyses,
+    'audits-externes': renderAuditsExternes,
+    metrologie:        renderMetrologie,
   };
 
   pageRefreshMap[pageId]?.();

@@ -3,7 +3,9 @@
 // Dépend de : storage.js (DB, CU), ui.js, auth.js (hasPerm),
 //   rayons.js (getKnownRayons, RAYONS_BASE_SEED),
 //   import-grille.js (_escapeHtml, _escapeHtmlAttr — chargé avant),
-//   rapport-qualimetre.js (exportPDF — appelé à l'usage uniquement).
+//   rapport-qualimetre.js (exportPDF — appelé à l'usage uniquement),
+//   metrologie.js (checkMetrologieEcheances — appelé à l'usage, avec
+//   garde typeof car chargé après ce fichier).
 //
 // ⚠️ CHANGÉ (statistiques par période) : toutes les statistiques du
 // tableau de bord (FSQS ET Qualimètre) peuvent désormais être
@@ -511,6 +513,13 @@ function renderDash() {
     ncBadge.textContent = DB.ncs.filter(n =>
       visibleStoreIds.includes(n.mid) && n.statut === 'Ouverte').length;
   }
+
+  // Rappels métrologie automatiques (échéance ≤ 30 jours) — AVANT
+  // renderAlertsDash pour qu'une alerte tout juste créée apparaisse
+  // immédiatement. Garde typeof : dashboard.js est chargé avant
+  // metrologie.js (ordre des <script>), la fonction n'existe qu'à
+  // l'exécution. Voir checkMetrologieEcheances, metrologie.js.
+  if (typeof checkMetrologieEcheances === 'function') checkMetrologieEcheances();
 
   renderRayonDash();
   _renderFsqsChart(visibleStoreIds, myAudits);
