@@ -56,12 +56,12 @@
  */
 
 /**
- * Destination de l'import : grille d'audit FSQS ou grille Qualimètre.
+ * Destination de l'import : grille d'audit FSQS ou grille Qualité de service.
  * @typedef {'grille'|'qualimetre'} ImportTarget
  */
 
 /**
- * Zone de contrôle du parcours Qualimètre (voir config.js pour la
+ * Zone de contrôle du parcours Qualité de service (voir config.js pour la
  * définition canonique). Rappelée ici car consultée par
  * _resolveOrCreateZoneFromDocument UNIQUEMENT pour détecter une
  * correspondance de libellé exact (déduplication), jamais pour
@@ -73,7 +73,7 @@
  */
 
 /**
- * Dictionnaire des points Qualimètre personnalisés par magasin,
+ * Dictionnaire des points Qualité de service personnalisés par magasin,
  * indexé par Magasin.id puis par QMZone.id (voir storage.js pour la
  * définition canonique, confirmée par grille-qualimetre.js).
  * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreCustomMap
@@ -88,7 +88,7 @@
  * (la zone est résolue depuis le document, jamais rejetée pour
  * absence de correspondance avec une liste connue).
  * @typedef {Object} ImportParsedRow
- * @property {string} zoneRaw - Valeur de zone telle qu'écrite dans le document, jamais altérée (RENOMMÉ depuis rayonRaw). Utilisée par _importIntoQualimetre comme source de vérité pour la résolution de zone Qualimètre, indépendamment de `zone` (qui peut avoir été ajustée à la casse canonique pour la cible 'grille', voir _showImportPreview).
+ * @property {string} zoneRaw - Valeur de zone telle qu'écrite dans le document, jamais altérée (RENOMMÉ depuis rayonRaw). Utilisée par _importIntoQualimetre comme source de vérité pour la résolution de zone Qualité de service, indépendamment de `zone` (qui peut avoir été ajustée à la casse canonique pour la cible 'grille', voir _showImportPreview).
  * @property {string[]} targetRayons - Rayon(s) FSQS où cette ligne sera réellement importée (cible 'grille' uniquement) — initialisé à _importDefaultRayons (rayon(s) choisis par l'utilisateur AVANT l'import, voir le sélecteur au-dessus de la zone de dépose). Modifiable individuellement (voir _onPreviewFieldChanged) ou en masse pour les lignes sélectionnées (voir applyBulkRayonZoneAssignment). Une ligne avec targetRayons vide n'est PAS importée même si `valid` est true — voir confirmImport.
  * @property {string[]} targetStores - Magasin(s) individuels où cette ligne sera importée en plus (grille personnalisée DB.grilleCustomByStore[storeId][rayon]) — modifiable ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). ⚠️ CHANGÉ : initialisé à [_importDefaultStore] si un magasin cible a été choisi avant import (sélecteur au-dessus de la zone de dépose, voir _onImportDefaultStoreChanged) ; vide sinon.
  * @property {string} targetEnseigne - Enseigne FSQS dont la grille COMMUNE recevra cette ligne (DB.grilleCustom[enseigne][rayon], héritée par tous les magasins de cette enseigne) — initialisé à _importDefaultEnseigne (sélecteur au-dessus de la zone de dépose), SAUF si un magasin cible par défaut est choisi (_importDefaultStore), auquel cas la ligne cible ce magasin uniquement, pas la grille commune. Chaîne vide = aucune grille commune ciblée pour cette ligne (elle n'est alors importée que dans les magasins listés dans targetStores, s'il y en a).
@@ -115,7 +115,7 @@
  */
 
 /**
- * Résultat de la résolution d'une zone Qualimètre à partir d'une
+ * Résultat de la résolution d'une zone Qualité de service à partir d'une
  * valeur brute lue dans le document importé.
  * @typedef {Object} ResolvedZone
  * @property {string} id - Identifiant de zone à utiliser comme clé dans qualimetreCustom/qualimetreGlobal.
@@ -124,7 +124,7 @@
  */
 
 /**
- * Point de contrôle de grille (FSQS ou Qualimètre selon la cible).
+ * Point de contrôle de grille (FSQS ou Qualité de service selon la cible).
  * @typedef {Object} GrillePoint
  * @property {string} id
  * @property {string} cat
@@ -176,7 +176,7 @@ const IMPORT_VALID_CRITS = ['Critique', 'Majeure', 'Mineure'];
 const IMPORT_DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
 
 /**
- * Libellé de la zone Qualimètre regroupant les lignes importées
+ * Libellé de la zone Qualité de service regroupant les lignes importées
  * sans valeur de zone identifiable dans le document. Le document
  * reste la source de vérité : cette zone ne devine jamais une zone
  * absente, elle conserve simplement les lignes plutôt que de les
@@ -435,7 +435,7 @@ function openImportModal(target) {
   _populateImportDefaultStoreSelect();
 
   /** @type {string} */
-  const targetLabel = _importTarget === 'qualimetre' ? 'Qualimètre' : 'Grille d\'audit';
+  const targetLabel = _importTarget === 'qualimetre' ? 'Qualité de service' : 'Grille d\'audit';
   document.querySelector('#m-import .modal-title').innerHTML =
     `<i class="ti ti-upload" style="color:var(--primary)"></i> Importer — ${targetLabel}`;
 
@@ -1770,7 +1770,7 @@ function _buildPreviewRow(row, index, isDuplicate) {
   // NOTE : en pratique, cette modale (#m-import) n'est aujourd'hui
   // ouverte qu'avec la cible 'grille' (FSQS) — openImportModal() est
   // toujours appelée sans argument dans index.html. L'import
-  // Qualimètre utilise sa propre modale et son propre aperçu,
+  // Qualité de service utilise sa propre modale et son propre aperçu,
   // entièrement séparés (#m-gq-import, _gqRenderImportPreview, voir
   // grille-qualimetre.js). Les colonnes Rayon(s)/Zone ci-dessous sont
   // donc vides pour cette cible — conservées pour ne pas casser ce
@@ -2053,7 +2053,7 @@ function _refreshImportPreviewCounters() {
 // ─────────────────────────────────────────────
 
 /**
- * Confirme l'import : délègue vers la grille Qualimètre ou la
+ * Confirme l'import : délègue vers la grille Qualité de service ou la
  * grille FSQS selon `_importTarget`, en ne conservant que les
  * lignes valides.
  * @returns {void}
@@ -2173,7 +2173,7 @@ function _isZoneIdTaken(zoneId, storeId, sessionZoneIds) {
 }
 
 /**
- * Résout la zone Qualimètre cible pour une valeur de zone brute
+ * Résout la zone Qualité de service cible pour une valeur de zone brute
  * lue dans le document importé, sans dépendre d'aucune liste fixe
  * ni d'aucun mapping codé en dur :
  * 1. Si la valeur brute est vide, la ligne est rattachée à la zone
@@ -2261,7 +2261,7 @@ function _resolveOrCreateZoneFromDocument(rawZoneLabel, storeId, sessionZoneIds)
 
 /**
  * Importe les lignes validées dans DB.qualimetreCustom, pour le
- * magasin actuellement sélectionné dans la page Qualimètre. La zone
+ * magasin actuellement sélectionné dans la page Qualité de service. La zone
  * cible de chaque ligne est résolue depuis la valeur brute de zone
  * du document (voir _resolveOrCreateZoneFromDocument) — jamais
  * depuis une liste de rayons FSQS ni un mapping métier figé.
@@ -2282,7 +2282,7 @@ function _importIntoQualimetre(rows) {
 
   /** @type {string} */
   const storeId = v('qual-mag-sel');
-  if (!storeId) { alert('Sélectionnez d\'abord un magasin dans le Qualimètre.'); return; }
+  if (!storeId) { alert('Sélectionnez d\'abord un magasin dans la Qualité de service.'); return; }
 
   if (!DB.qualimetreCustom[storeId]) DB.qualimetreCustom[storeId] = {};
 

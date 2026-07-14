@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────
 
 /**
- * Point de contrôle Qualimètre (voir config.js/grille-qualimetre.js
+ * Point de contrôle Qualité de service (voir config.js/grille-qualimetre.js
  * pour la définition canonique).
  * @typedef {Object} GrillePoint
  * @property {string} id
@@ -27,7 +27,7 @@
  */
 
 /**
- * Zone Qualimètre enrichie de ses points résolus pour un magasin
+ * Zone Qualité de service enrichie de ses points résolus pour un magasin
  * donné (voir grille-qualimetre.js : getQualimetreGrille).
  * @typedef {Object} QMZoneWithPoints
  * @property {string} id
@@ -42,7 +42,7 @@
  */
 
 /**
- * Réponse en cours de saisie pour un point de contrôle Qualimètre.
+ * Réponse en cours de saisie pour un point de contrôle Qualité de service.
  * @typedef {Object} QaAnswer
  * @property {QaAnswerCode | null} rep
  * @property {string} cmt - Chaîne vide par défaut ; obligatoire en pratique si rep === 'NC' (validation UI, pas applicative).
@@ -51,13 +51,13 @@
  */
 
 /**
- * Statut d'un audit Qualimètre. DIFFÉRENT du statut Audit FSQS —
+ * Statut d'un audit Qualité de service. DIFFÉRENT du statut Audit FSQS —
  * voir avertissement en tête de fichier.
  * @typedef {'Ouvert'|'Conforme'} QualAuditStatut
  */
 
 /**
- * Audit "Qualimètre", tel que construit par submitQualAudit().
+ * Audit "Qualité de service", tel que construit par submitQualAudit().
  * @typedef {Object} QualAudit
  * @property {string} id - Préfixé 'QA-' + uid().
  * @property {string} mid - Référence vers Magasin.id.
@@ -72,15 +72,15 @@
  */
 
 /**
- * Brouillon d'audit Qualimètre (variante de Draft — voir audits.js
+ * Brouillon d'audit Qualité de service (variante de Draft — voir audits.js
  * pour la définition canonique générale). CONFIRME .type ===
- * 'qualimetre' et révèle .rayon === 'Qualimètre' (valeur fixe, pas
+ * 'qualimetre' et révèle .rayon === 'Qualité de service' (valeur fixe, pas
  * un vrai nom de rayon FSQS).
  * @typedef {Object} Draft
  * @property {string} id - Préfixé 'DRF-' + uid().
  * @property {string} mid
  * @property {string} mag
- * @property {'Qualimètre'} rayon - Toujours cette valeur fixe pour les brouillons Qualimètre.
+ * @property {'Qualité de service'} rayon - Toujours cette valeur fixe pour les brouillons Qualité de service.
  * @property {string} date
  * @property {string} aud
  * @property {string} cmt
@@ -124,7 +124,7 @@ function autoFillNA() {
 }
 
 /**
- * Affiche l'historique des audits Qualimètre, filtré par magasins
+ * Affiche l'historique des audits Qualité de service, filtré par magasins
  * visibles et par le sélecteur de magasin.
  * @returns {void}
  */
@@ -149,7 +149,7 @@ function renderQualAudits() {
   el('qaud-hist-cnt').textContent = list.length + ' audit(s)';
   const tb = el('qaud-tb');
   if (!list.length) {
-    tb.innerHTML = `<tr><td colspan="8"><div class="empty-state"><i class="ti ti-rosette" style="color:#ddd6fe"></i><p>Aucun audit Qualimètre réalisé.</p></div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="8"><div class="empty-state"><i class="ti ti-rosette" style="color:#ddd6fe"></i><p>Aucun audit Qualité de service réalisé.</p></div></td></tr>`;
     return;
   }
   tb.innerHTML = list.map(a => `<tr>
@@ -167,7 +167,7 @@ function renderQualAudits() {
 }
 
 /**
- * Ouvre le wizard de création d'un nouvel audit Qualimètre (étape 0
+ * Ouvre le wizard de création d'un nouvel audit Qualité de service (étape 0
  * : écran d'introduction), en réinitialisant l'état du module.
  * @returns {void}
  */
@@ -199,7 +199,7 @@ function openQualAuditModal() {
 }
 
 /**
- * Avance le wizard d'audit Qualimètre à l'étape suivante.
+ * Avance le wizard d'audit Qualité de service à l'étape suivante.
  * Étape 0→1 : passe de l'intro à la sélection magasin/date/auditeur.
  * Étape 1→2 : valide les champs, résout la grille du magasin
  * sélectionné (getQualimetreGrille), initialise les réponses, puis
@@ -233,7 +233,7 @@ function qaNext() {
 }
 
 /**
- * Revient à l'étape précédente du wizard d'audit Qualimètre.
+ * Revient à l'étape précédente du wizard d'audit Qualité de service.
  * @returns {void}
  */
 function qaPrev() {
@@ -253,7 +253,7 @@ function qaPrev() {
 
 /**
  * Construit les onglets de zone et affiche la première zone de
- * l'audit Qualimètre en cours.
+ * l'audit Qualité de service en cours.
  * @returns {void}
  */
 function buildQaQuestions() {
@@ -339,7 +339,7 @@ function renderQaZone(idx) {
 }
 
 /**
- * Enregistre la réponse à un point de contrôle Qualimètre, met à
+ * Enregistre la réponse à un point de contrôle Qualité de service, met à
  * jour l'UI et recalcule score/progression.
  * @param {string} pid - Référence vers GrillePoint.id.
  * @param {QaAnswerCode} r
@@ -370,18 +370,18 @@ function _applyQaRep(pid, r, btn) {
   if (r === 'NC') d?.classList.add('on'); else d?.classList.remove('on');
 }
 
-// ── Photos NC Qualimètre (2 max, Supabase Storage audits/qualimetre/) ──
+// ── Photos NC Qualité de service (2 max, Supabase Storage audits/qualimetre/) ──
 
 /**
  * Photos en attente d'envoi (Object URL locales) par point de
- * contrôle Qualimètre — même principe que _pendingAuditPhotoPreviews
+ * contrôle Qualité de service — même principe que _pendingAuditPhotoPreviews
  * (audits.js, FSQS).
  * @type {Object<string, {queueId: string, localUrl: string}[]>}
  */
 let _pendingQaPhotoPreviews = {};
 
 /**
- * Upload une photo pour un point de contrôle Qualimètre vers
+ * Upload une photo pour un point de contrôle Qualité de service vers
  * Supabase Storage (limite stricte de 2 photos par point, en
  * comptant les photos déjà envoyées ET celles encore en attente).
  *
@@ -437,7 +437,7 @@ async function handleQaPhoto(pid, input) {
       _showPendingQaPhotoPreview(pid, queueId, compressed);
     }
   } catch (err) {
-    console.error('Erreur inattendue lors de l\'upload d\'une photo Qualimètre :', err);
+    console.error('Erreur inattendue lors de l\'upload d\'une photo Qualité de service :', err);
     alert('Une erreur inattendue est survenue pour cette photo — réessayez de l\'ajouter.');
   }
 
@@ -446,7 +446,7 @@ async function handleQaPhoto(pid, input) {
 }
 
 /**
- * Met une photo Qualimètre en file d'attente durable (IndexedDB) —
+ * Met une photo Qualité de service en file d'attente durable (IndexedDB) —
  * appelée AVANT même la tentative d'envoi (voir handleQaPhoto),
  * silencieuse : ne touche à aucun affichage. Garantit d'abord qu'un
  * brouillon existe (voir _snapshotCurrentQaAuditAsDraft) pour que le
@@ -469,7 +469,7 @@ async function _stagePendingQaPhoto(pid, blob, storagePath) {
 }
 
 /**
- * Affiche l'aperçu local d'une photo Qualimètre restée en file
+ * Affiche l'aperçu local d'une photo Qualité de service restée en file
  * d'attente après un échec d'envoi réellement constaté — la photo
  * elle-même est déjà en sécurité depuis _stagePendingQaPhoto.
  * @param {string} pid - Référence vers GrillePoint.id.
@@ -486,7 +486,7 @@ function _showPendingQaPhotoPreview(pid, queueId, blob) {
 }
 
 /**
- * Annule l'envoi d'une photo Qualimètre encore en attente (avant
+ * Annule l'envoi d'une photo Qualité de service encore en attente (avant
  * qu'elle n'ait réussi à s'envoyer) — la retire de la file d'attente
  * hors-ligne (IndexedDB) et de l'aperçu local, après confirmation
  * puisque la photo est alors définitivement perdue. Même principe que
@@ -544,7 +544,7 @@ function _renderQaPhotos(pid) {
 }
 
 /**
- * Supprime une photo d'un point de contrôle Qualimètre (Supabase
+ * Supprime une photo d'un point de contrôle Qualité de service (Supabase
  * Storage + état local), après confirmation.
  * @param {string} pid - Référence vers GrillePoint.id.
  * @param {number} idx - Index de la photo dans le tableau .photos.
@@ -563,7 +563,7 @@ function removeQaPhoto(pid, idx) {
 
 /**
  * Recalcule et affiche le score pondéré provisoire de l'audit
- * Qualimètre en cours (les points N/A sont exclus du calcul).
+ * Qualité de service en cours (les points N/A sont exclus du calcul).
  * Contrairement au score FSQS (audits.js), ce calcul n'utilise pas
  * de pondération par poids (GrillePoint.p) — c'est une simple
  * proportion de points conformes parmi les points valides.
@@ -600,7 +600,7 @@ function updateQaProgress(idx) {
 }
 
 /**
- * Finalise et enregistre l'audit Qualimètre en cours : complète les
+ * Finalise et enregistre l'audit Qualité de service en cours : complète les
  * réponses manquantes en N/A, calcule le score (non pondéré par
  * poids, contrairement au score FSQS), crée le QualAudit, et
  * supprime le brouillon lié si applicable.
@@ -649,7 +649,7 @@ function submitQualAudit() {
 }
 
 /**
- * Affiche la modale de détail d'un audit Qualimètre (en-tête, score,
+ * Affiche la modale de détail d'un audit Qualité de service (en-tête, score,
  * commentaire, points non conformes avec photos).
  * @param {string} id - Référence vers QualAudit.id.
  * @returns {void}
@@ -692,7 +692,7 @@ function showQualAudit(id) {
 }
 
 /**
- * Supprime un audit Qualimètre, après confirmation.
+ * Supprime un audit Qualité de service, après confirmation.
  * @param {string} id - Référence vers QualAudit.id.
  * @returns {void}
  */
@@ -700,20 +700,20 @@ function deleteQualAudit(id) {
   // ⚠️ AJOUTÉ : droit granulaire qaudit_delete (remplace le contrôle
   // CU.role === 'admin' qui ne protégeait que l'affichage du bouton).
   if (!hasPerm('qaudit_delete')) return;
-  if (!confirm(`Supprimer l'audit Qualimètre ${id} ?`)) return;
+  if (!confirm(`Supprimer l'audit Qualité de service ${id} ?`)) return;
   DB.qualAudits = (DB.qualAudits || []).filter(x => x.id !== id);
   save(); renderQualAudits();
 }
 
 /**
- * Met l'audit Qualimètre en cours en pause : sauvegarde l'état
+ * Met l'audit Qualité de service en cours en pause : sauvegarde l'état
  * courant comme Draft (type 'qualimetre'), persiste localement +
  * pousse vers Supabase, puis ferme la modale.
  * @returns {void}
  */
 /**
  * Construit et persiste (local + Supabase) un instantané du brouillon
- * d'audit Qualimètre en cours, sans toucher à l'affichage — factorisé
+ * d'audit Qualité de service en cours, sans toucher à l'affichage — factorisé
  * hors de pauseQualAudit() pour être appelable aussi par les filets de
  * sécurité (beforeunload, changement de visibilité, autosave
  * périodique — voir init.js) sans fermer la modale ni interrompre
@@ -732,7 +732,7 @@ function _snapshotCurrentQaAuditAsDraft() {
   const existing = DB.drafts.findIndex(d => d.id === draftId);
   /** @type {Draft} */
   const draft = {
-    id: draftId, mid, mag: mag.nom || '', rayon: 'Qualimètre', date, aud, cmt,
+    id: draftId, mid, mag: mag.nom || '', rayon: 'Qualité de service', date, aud, cmt,
     answers: { ...qaAnswers }, createdAt: today(), uid: CU ? CU.id : '', type: 'qualimetre'
   };
   if (existing >= 0) DB.drafts[existing] = draft; else DB.drafts.push(draft);
@@ -745,12 +745,12 @@ function pauseQualAudit() {
   const qapause = el('qa-pause'); if (qapause) qapause.style.display = 'none';
   closeModal('m-qual-audit');
   qaStep = 0; _currentQaDraftId = null;
-  showToast('Audit Qualimètre mis en pause — retrouvez-le dans Brouillons', 'success');
+  showToast('Audit Qualité de service mis en pause — retrouvez-le dans Brouillons', 'success');
   renderQualAudits();
 }
 
 /**
- * Reprend un brouillon d'audit Qualimètre : restaure le formulaire,
+ * Reprend un brouillon d'audit Qualité de service : restaure le formulaire,
  * résout la grille du magasin concerné, restaure les réponses déjà
  * saisies, et rouvre le wizard à l'étape questions.
  * @param {string} id - Référence vers Draft.id.
@@ -794,10 +794,10 @@ function resumeQualDraft(id) {
 
 /**
  * Réconciliateur appelé par flushPendingPhotoQueue (storage.js) après
- * l'envoi réussi d'une photo Qualimètre auparavant mise en attente
+ * l'envoi réussi d'une photo Qualité de service auparavant mise en attente
  * (voir _stagePendingQaPhoto). Deux cas possibles, mêmes principes
  * que le réconciliateur FSQS ('audit-fsqs', audits.js) :
- * 1) L'audit Qualimètre est toujours ouvert dans cette session
+ * 1) L'audit Qualité de service est toujours ouvert dans cette session
  *    (qaAnswers contient encore ce point) : la vraie URL est ajoutée
  *    directement à la réponse en mémoire, aperçu local retiré/libéré.
  * 2) L'audit n'est plus ouvert (page rechargée, audit mis en pause
@@ -834,5 +834,5 @@ registerPhotoQueueReconciler('audit-qualimetre', (entry, url) => {
     }
   }
 
-  showToast('Photo Qualimètre en attente envoyée avec succès ✓', 'success');
+  showToast('Photo Qualité de service en attente envoyée avec succès ✓', 'success');
 });

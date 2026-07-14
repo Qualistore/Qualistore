@@ -100,7 +100,7 @@
  */
 
 /**
- * Audit "Qualimètre" (variante d'audit distincte des Audit FSQS).
+ * Audit "Qualité de service" (variante d'audit distincte des Audit FSQS).
  * Seule la propriété .id et .date sont accédées dans ce fichier.
  * @typedef {Object} QualAudit
  * @property {string} id
@@ -118,7 +118,7 @@
  */
 
 /**
- * Point de contrôle de grille (FSQS ou Qualimètre). Voir
+ * Point de contrôle de grille (FSQS ou Qualité de service). Voir
  * config.js/grille.js pour la définition canonique complète.
  * @typedef {Object} GrillePoint
  * @property {string} id
@@ -142,7 +142,7 @@
  */
 
 /**
- * Dictionnaire de configuration "qualimètre" personnalisée par
+ * Dictionnaire de configuration "qualité de service" personnalisée par
  * magasin. CONFIRMÉ par grille-qualimetre.js (_upsertQualimetrePoint,
  * getQualimetrePoints) : structure à 2 niveaux — indexé par
  * Magasin.id, puis par QMZone.id, chaque valeur finale étant un
@@ -151,7 +151,7 @@
  */
 
 /**
- * Dictionnaire de configuration "qualimètre" commune, indexé par nom
+ * Dictionnaire de configuration "qualité de service" commune, indexé par nom
  * d'enseigne PUIS par QMZone.id. ⚠️ CHANGÉ : était indexé directement
  * par QMZone.id (Record<zoneId, GrillePoint[]>), une seule grille
  * partagée par toute la base — devenu Record<enseigne, Record<zoneId,
@@ -167,14 +167,14 @@
  * ⚠️ Toute grille commune DOIT être rattachée à une enseigne réelle,
  * sans exception : l'ancien format plat (sans enseigne) est
  * intégralement supprimé à la migration (voir
- * _migrateQualimetreGlobalToEnseigneScoped) et l'import Qualimètre
+ * _migrateQualimetreGlobalToEnseigneScoped) et l'import Qualité de service
  * refuse de s'exécuter tant qu'aucune enseigne n'est sélectionnée
  * (voir openGqImportModal, grille-qualimetre.js).
  * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreGlobalMap
  */
 
 /**
- * Dictionnaire de renommages manuels de zones Qualimètre, persistant,
+ * Dictionnaire de renommages manuels de zones Qualité de service, persistant,
  * indexé par QMZone.id — override du libellé par défaut (le zoneId
  * lui-même, aucune zone n'étant plus prédéfinie) appliqué via
  * _resolveZoneLabel (grille-qualimetre.js). Unique mécanisme de
@@ -198,7 +198,7 @@
  * @property {Draft[]} drafts
  * @property {GrilleCustomMap} grilleCustom
  * @property {QualimetreCustomMap} qualimetreCustom
- * @property {QualimetreGlobalMap} qualimetreGlobal - Données globales qualimètre (équivalent de la ligne '__global__' isolée côté Supabase).
+ * @property {QualimetreGlobalMap} qualimetreGlobal - Données globales qualité de service (équivalent de la ligne '__global__' isolée côté Supabase).
  * @property {QualimetreZoneLabelsMap} qualimetreZoneLabels - Renommages manuels de zones (équivalent de la ligne '__zone_labels__' isolée côté Supabase).
  * @property {QualAudit[]} qualAudits
  * @property {Object[]} analyses - Rapports d'analyses uploadés (métadonnées + URL du fichier brut — voir analyses.js).
@@ -664,7 +664,7 @@ function _parseQualimetreCustom(rows) {
 }
 
 /**
- * Extrait la donnée globale qualimètre (ligne '__global__') des
+ * Extrait la donnée globale qualité de service (ligne '__global__') des
  * lignes brutes de la table `qualimetre_custom`.
  * @param {SupabaseRow[] | null | undefined} rows
  * @returns {Record<string, unknown>}
@@ -683,10 +683,10 @@ function _parseQualimetreGlobal(rows) {
  *
  * ⚠️ SUPPRESSION DÉLIBÉRÉE ET ASSUMÉE (demande explicite) : contrairement
  * à une migration classique, les points de l'ancien format ne sont PAS
- * conservés — toute grille commune Qualimètre doit désormais être
+ * conservés — toute grille commune Qualité de service doit désormais être
  * rattachée à une enseigne réelle, sans exception ni case "orpheline".
  * Un magasin sans enseigne n'a accès à aucune grille commune, et
- * l'import Qualimètre est bloqué tant qu'aucune enseigne n'est
+ * l'import Qualité de service est bloqué tant qu'aucune enseigne n'est
  * sélectionnée (voir openGqImportModal, grille-qualimetre.js).
  *
  * Idempotente et sûre à appeler à chaque chargement : sans effet si
@@ -705,12 +705,12 @@ function _migrateQualimetreGlobalToEnseigneScoped(raw) {
   const isOldFlatFormat = Array.isArray(firstValue);
   if (!isOldFlatFormat) return raw;
 
-  console.warn('⚠️ Ancien format qualimetreGlobal (sans enseigne) détecté et supprimé — toute grille commune Qualimètre doit désormais être rattachée à une enseigne.');
+  console.warn('⚠️ Ancien format qualimetreGlobal (sans enseigne) détecté et supprimé — toute grille commune Qualité de service doit désormais être rattachée à une enseigne.');
   return {};
 }
 
 /**
- * Extrait les renommages manuels de zones Qualimètre (ligne réservée
+ * Extrait les renommages manuels de zones Qualité de service (ligne réservée
  * '__zone_labels__', voir renameQmZone/_resolveZoneLabel,
  * grille-qualimetre.js) des lignes brutes de la table
  * `qualimetre_custom`. Réutilise cette table existante plutôt que
@@ -935,7 +935,7 @@ function daysUntilAuditCleanup(audit) {
 
 /**
  * Identifie et supprime (DB + Supabase) les audits FSQS (règle à 3
- * paliers, voir _auditDeletionDate) et les audits Qualimètre (échéance
+ * paliers, voir _auditDeletionDate) et les audits Qualité de service (échéance
  * simple à DATA_RETENTION_DAYS, sans notion de NC).
  * @returns {Promise<void>}
  */
@@ -957,7 +957,7 @@ async function _cleanStaleData() {
   await _deleteStaleQualAudits(staleQualAudits);
 
   _saveToLocalStorage();
-  console.log(`🗑️ Nettoyage : ${staleAudits.length} audit(s) FSQS + ${staleQualAudits.length} Qualimètre supprimé(s)`);
+  console.log(`🗑️ Nettoyage : ${staleAudits.length} audit(s) FSQS + ${staleQualAudits.length} Qualité de service supprimé(s)`);
 }
 
 /**
@@ -979,9 +979,9 @@ function _findStaleAudits() {
 }
 
 /**
- * Sélectionne les audits Qualimètre antérieurs à la date de coupure
+ * Sélectionne les audits Qualité de service antérieurs à la date de coupure
  * (échéance simple, sans notion de NC ni de délai de grâce — ce
- * concept d'audits Qualimètre n'a pas de NC liée dans ce projet).
+ * concept d'audits Qualité de service n'a pas de NC liée dans ce projet).
  * @param {string} cutoffString - Date de coupure au format 'YYYY-MM-DD'.
  * @returns {QualAudit[]}
  */
@@ -1014,9 +1014,9 @@ async function _deleteStaleAudits(audits) {
 }
 
 /**
- * Supprime les audits Qualimètre donnés, à la fois dans Supabase et
+ * Supprime les audits Qualité de service donnés, à la fois dans Supabase et
  * dans la DB en mémoire.
- * @param {QualAudit[]} audits - Audits Qualimètre à supprimer.
+ * @param {QualAudit[]} audits - Audits Qualité de service à supprimer.
  * @returns {Promise<void>}
  */
 async function _deleteStaleQualAudits(audits) {

@@ -19,10 +19,10 @@
 //    ⚠️ AJOUTÉ : une alerte terrain non encore envoyée peut désormais
 //    être sauvegardée comme "brouillon" (voir _snapshotCurrentAlertAsDraft),
 //    dans la MÊME table Supabase `drafts` que les brouillons d'audit
-//    FSQS/Qualimètre (audits.js/audit-qualimetre.js) — aucune nouvelle
+//    FSQS/Qualité de service (audits.js/audit-qualimetre.js) — aucune nouvelle
 //    colonne Supabase créée, pour éviter tout risque de rupture de
 //    schéma. Distinction par la colonne existante `type` ('alerte'),
-//    même principe que 'qualimetre' pour les audits Qualimètre (voir
+//    même principe que 'qualimetre' pour les audits Qualité de service (voir
 //    le typedef Draft, audits.js). Les champs propres à l'alerte
 //    (type d'alerte, gravité, photos, documents) sont empaquetés dans
 //    la colonne générique existante `answers` (déjà une colonne JSON
@@ -465,7 +465,7 @@ function _createActionFromAlert({ storeId, storeName, title, reporter, deadline,
 // les photos déjà envoyées vers Supabase Storage (handleAlertPhotos
 // les uploade dès leur sélection, pas seulement à l'enregistrement —
 // elles devenaient orphelines). Reproduit ici le même mécanisme de
-// "pause -> brouillon" que les audits FSQS/Qualimètre (voir
+// "pause -> brouillon" que les audits FSQS/Qualité de service (voir
 // _snapshotCurrentAuditAsDraft, audits.js), dans la MÊME table
 // `drafts` (voir la note de sécurité en tête de fichier sur pourquoi
 // aucune nouvelle colonne Supabase n'a été nécessaire).

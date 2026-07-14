@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-// GRILLE-QUALIMETRE — Gestion de la grille Qualimètre par enseigne et par zone
+// GRILLE-QUALIMETRE — Gestion de la grille Qualité de service par enseigne et par zone
 // Dépend de : storage.js (DB, CU, save, uid), config.js (QM_ZONES, CDN_SHEETJS, CDN_PDFJS), ui.js,
 //             magasins.js (getKnownEnseignes — classement par enseigne, même liste que pour la grille FSQS),
 //             import/import-detect.js (detectConceptMapping, buildSyntheticHeaders, RawImportRow, DetectionResult, ImportConcept),
@@ -14,7 +14,7 @@
 //    par QMZone.id (Record<zoneId, GrillePoint[]>, une seule grille
 //    partagée par toute la base) mais par nom d'enseigne PUIS par
 //    QMZone.id (Record<enseigne, Record<zoneId, GrillePoint[]>>) —
-//    chaque enseigne a désormais sa propre grille commune Qualimètre,
+//    chaque enseigne a désormais sa propre grille commune Qualité de service,
 //    exactement sur le même principe que DB.grilleCustom pour le
 //    FSQS (voir getGrille, grille.js). Les points personnalisés d'un
 //    magasin (DB.qualimetreCustom[storeId][zoneId]) s'AJOUTENT
@@ -29,7 +29,7 @@
  */
 
 /**
- * Point de contrôle Qualimètre. Pour les points créés via ce
+ * Point de contrôle Qualité de service. Pour les points créés via ce
  * fichier (saisie manuelle ou import), .cat vaut toujours 'Général'
  * — contrairement à la grille FSQS où cat varie selon
  * section/sous-catégorie (voir grille.js).
@@ -43,7 +43,7 @@
  */
 
 /**
- * Zone de contrôle du parcours Qualimètre (voir config.js). Peut
+ * Zone de contrôle du parcours Qualité de service (voir config.js). Peut
  * aussi être une zone "ad hoc" non définie dans QM_ZONES mais
  * présente dans DB.qualimetreGlobal (label de fallback = son id,
  * emoji vide) — voir _getAllZones.
@@ -64,13 +64,13 @@
  */
 
 /**
- * Dictionnaire des points Qualimètre personnalisés par magasin,
+ * Dictionnaire des points Qualité de service personnalisés par magasin,
  * indexé par Magasin.id puis par QMZone.id.
  * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreCustomMap
  */
 
 /**
- * Dictionnaire des points Qualimètre communs, indexé par nom
+ * Dictionnaire des points Qualité de service communs, indexé par nom
  * d'enseigne PUIS par QMZone.id — chaque enseigne a sa propre grille
  * commune, héritée par tous ses magasins (voir getQualimetrePoints).
  * Toute grille commune est nécessairement rattachée à une enseigne
@@ -81,7 +81,7 @@
  */
 
 /**
- * Statistiques agrégées de la grille commune Qualimètre d'une
+ * Statistiques agrégées de la grille commune Qualité de service d'une
  * enseigne, affichées sur sa carte dans la vue d'ensemble (voir
  * _buildQualimetreEnseigneCard).
  * @typedef {Object} QMEnseigneStats
@@ -90,7 +90,7 @@
  */
 
 /**
- * Portée d'édition d'un point Qualimètre : un magasin spécifique ou
+ * Portée d'édition d'un point Qualité de service : un magasin spécifique ou
  * la grille globale.
  * @typedef {'mag'|'global'} GqScope
  */
@@ -142,7 +142,7 @@ const GQ_DEFAULT_POIDS = { Critique: 10, Majeure: 5, Mineure: 2 };
  */
 let _gqImportData = [];
 
-/** @type {string} Enseigne actuellement affichée dans la vue détail de la page Grille Qualimètre (voir showQualimetreEnseigneDetail) — chaîne vide si la vue cartes (aperçu par enseigne) est affichée. Toujours une enseigne réelle (getKnownEnseignes, magasins.js) quand non vide. Toute écriture dans la grille commune (storeId vide) cible cette enseigne. */
+/** @type {string} Enseigne actuellement affichée dans la vue détail de la page Grille Qualité de service (voir showQualimetreEnseigneDetail) — chaîne vide si la vue cartes (aperçu par enseigne) est affichée. Toujours une enseigne réelle (getKnownEnseignes, magasins.js) quand non vide. Toute écriture dans la grille commune (storeId vide) cible cette enseigne. */
 let _gqCurrentEnseigne = '';
 
 /** @type {RawImportRow[]} Lignes brutes du fichier actuellement chargé (clés = en-têtes d'origine), conservées pour rejouer normalizeRows si le mapping est corrigé manuellement sans re-lire le fichier. */
@@ -190,7 +190,7 @@ let _gqDefaultCrit = 'Majeure';
  * uniquement à ses points personnalisés, s'il en a.
  * @param {string | null} storeId - Référence vers Magasin.id, ou null/chaîne vide pour ignorer la personnalisation magasin.
  * @param {string} zoneId - Référence vers QMZone.id.
- * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent, ex : page Grille Qualimètre avec enseigne choisie directement) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
+ * @param {string} [enseigne] - Enseigne explicite (cas où storeId est absent, ex : page Grille Qualité de service avec enseigne choisie directement) ; déduite de Magasin.enseigne si storeId est fourni et enseigne omis.
  * @returns {(GrillePoint & {_scope: 'common'|'store'})[]}
  */
 function getQualimetrePoints(storeId, zoneId, enseigne) {
@@ -241,9 +241,9 @@ function getQualimetreGrille(storeId, enseigne) {
 // ─────────────────────────────────────────────
 
 /**
- * Liste les enseignes affichables en page Grille Qualimètre : toutes
+ * Liste les enseignes affichables en page Grille Qualité de service : toutes
  * les enseignes connues (getKnownEnseignes, magasins.js). Toute
- * grille commune Qualimètre est nécessairement rattachée à une
+ * grille commune Qualité de service est nécessairement rattachée à une
  * enseigne réelle — il n'existe aucune case "sans enseigne" (voir
  * _migrateQualimetreGlobalToEnseigneScoped, storage.js, qui supprime
  * l'ancien format plat au lieu de le conserver).
@@ -254,7 +254,7 @@ function getKnownQualimetreEnseignes() {
 }
 
 /**
- * Libellé affiché pour une enseigne dans la page Grille Qualimètre.
+ * Libellé affiché pour une enseigne dans la page Grille Qualité de service.
  * @param {string} enseigne
  * @returns {string}
  */
@@ -263,7 +263,7 @@ function _qmEnseigneLabel(enseigne) {
 }
 
 /**
- * Calcule les statistiques de la grille commune Qualimètre d'une
+ * Calcule les statistiques de la grille commune Qualité de service d'une
  * enseigne : nombre de zones ayant au moins un point, et nombre total
  * de points, toutes zones confondues — affichées sur sa carte dans la
  * vue d'ensemble (voir _buildQualimetreEnseigneCard).
@@ -281,7 +281,7 @@ function _getQualimetreEnseigneStats(enseigne) {
 
 /**
  * Construit la carte HTML d'une enseigne pour la vue d'ensemble de la
- * page Grille Qualimètre. Cliquer sur la carte ouvre la vue détail de
+ * page Grille Qualité de service. Cliquer sur la carte ouvre la vue détail de
  * cette enseigne (voir showQualimetreEnseigneDetail).
  * @param {string} enseigne
  * @returns {string}
@@ -301,7 +301,7 @@ function _buildQualimetreEnseigneCard(enseigne) {
 }
 
 /**
- * Point d'entrée de la page Grille Qualimètre (voir _getPageRenderer,
+ * Point d'entrée de la page Grille Qualité de service (voir _getPageRenderer,
  * ui.js) — affiche toujours la vue d'ensemble par enseigne à
  * l'arrivée sur la page (une carte par enseigne, avec son nombre de
  * zones et de points de contrôle communs).
@@ -330,7 +330,7 @@ function showGrilleQualimetre() {
 }
 
 /**
- * Affiche la vue détail de la grille Qualimètre d'une enseigne :
+ * Affiche la vue détail de la grille Qualité de service d'une enseigne :
  * sélecteurs de magasin (filtrés à cette enseigne) et de zone, puis
  * le contenu de la zone sélectionnée (voir _gqRender).
  * @param {string} enseigne
@@ -436,7 +436,7 @@ function _resolveZoneLabel(zoneId, fallbackLabel) {
 }
 
 /**
- * Renomme une zone Qualimètre PARTOUT où son libellé est affiché, en
+ * Renomme une zone Qualité de service PARTOUT où son libellé est affiché, en
  * persistant le nouveau nom dans DB.qualimetreZoneLabels (override
  * par zoneId — voir _resolveZoneLabel). Contrairement au renommage
  * d'un rayon FSQS (voir renameRayon, rayons.js), AUCUNE clé de
@@ -482,7 +482,7 @@ function _getAllZones() {
 }
 
 /**
- * Affiche le contenu de la zone Qualimètre sélectionnée (barre de
+ * Affiche le contenu de la zone Qualité de service sélectionnée (barre de
  * comptage + liste des points, fusion commun + magasin comprise),
  * dans le contexte de l'enseigne actuellement affichée
  * (_gqCurrentEnseigne), ou un état vide si aucun point.
@@ -585,7 +585,7 @@ function _buildGqSourceBar(pointCount, isAdmin, storeId, zoneId) {
 }
 
 /**
- * Construit la ligne HTML d'un point de contrôle Qualimètre, avec un
+ * Construit la ligne HTML d'un point de contrôle Qualité de service, avec un
  * badge indiquant sa portée réelle (commun à l'enseigne, ou propre au
  * magasin affiché) et des boutons modifier/supprimer pour les admins
  * qui agissent TOUJOURS sur la portée réelle du point — jamais sur le
@@ -638,7 +638,7 @@ function _buildGqPointRow(point, isAdmin, storeId, zoneId) {
 // ─────────────────────────────────────────────
 
 /**
- * Ouvre la modale de création/édition d'un point Qualimètre.
+ * Ouvre la modale de création/édition d'un point Qualité de service.
  * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille globale.
  * @param {string} zoneId - Référence vers QMZone.id.
  * @param {string} [pointId] - Référence vers GrillePoint.id à éditer ; absent/falsy pour une création.
@@ -653,8 +653,8 @@ function openGqCtrlModal(storeId, zoneId, pointId) {
   const isEdit          = !!pointId;
 
   el('m-gq-ctrl-ttl').innerHTML = isEdit
-    ? '<i class="ti ti-pencil" style="color:#7c3aed"></i> Modifier le point Qualimètre'
-    : '<i class="ti ti-gauge" style="color:#7c3aed"></i> Nouveau point Qualimètre';
+    ? '<i class="ti ti-pencil" style="color:#7c3aed"></i> Modifier le point Qualité de service'
+    : '<i class="ti ti-gauge" style="color:#7c3aed"></i> Nouveau point Qualité de service';
 
   el('gq-ctrl-err').classList.remove('show');
   sv('gqc-id',   pointId      || '');
@@ -747,7 +747,7 @@ function _populateGqCtrlForm(storeId, zoneId, pointId) {
 }
 
 /**
- * Réinitialise le formulaire de point Qualimètre pour une création.
+ * Réinitialise le formulaire de point Qualité de service pour une création.
  * @returns {void}
  */
 function _resetGqCtrlForm() {
@@ -772,7 +772,7 @@ function _gqToggleScopeUI(scope) {
 // ─────────────────────────────────────────────
 
 /**
- * Valide et sauvegarde le formulaire de point Qualimètre, dans la
+ * Valide et sauvegarde le formulaire de point Qualité de service, dans la
  * portée choisie (magasin spécifique ou grille globale).
  * @returns {void}
  */
@@ -874,7 +874,7 @@ function _upsertInArray(array, existingId, newItem) {
 // ─────────────────────────────────────────────
 
 /**
- * Supprime un point de contrôle Qualimètre (magasin, ou grille
+ * Supprime un point de contrôle Qualité de service (magasin, ou grille
  * commune de l'enseigne actuellement affichée si storeId est vide),
  * après confirmation.
  * @param {string} storeId - Référence vers Magasin.id ; chaîne vide pour la grille commune de l'enseigne courante.
@@ -883,7 +883,7 @@ function _upsertInArray(array, existingId, newItem) {
  * @returns {void}
  */
 function delGqCtrl(storeId, zoneId, pointId) {
-  if (!confirm('Supprimer ce point de contrôle Qualimètre ?')) return;
+  if (!confirm('Supprimer ce point de contrôle Qualité de service ?')) return;
 
   if (storeId) {
     if (!DB.qualimetreCustom?.[storeId]) return;
@@ -969,7 +969,7 @@ function initQualimetreGlobal() {
 // ─────────────────────────────────────────────
 
 /**
- * Exporte la grille Qualimètre complète d'un magasin (ou globale si
+ * Exporte la grille Qualité de service complète d'un magasin (ou globale si
  * aucun magasin sélectionné) en CSV téléchargeable.
  * @returns {void}
  */
@@ -1008,7 +1008,7 @@ function exportGrilleCSV() {
 // ─────────────────────────────────────────────
 
 /**
- * Ouvre la modale d'import de grille Qualimètre, réinitialise l'état
+ * Ouvre la modale d'import de grille Qualité de service, réinitialise l'état
  * d'import et peuple le select de magasins cibles — restreint aux
  * magasins de l'enseigne actuellement affichée (_gqCurrentEnseigne),
  * puisque l'import se fait toujours depuis le contexte d'une enseigne
@@ -1074,6 +1074,12 @@ function handleGqImportFile(input) {
         /** @type {Object} Classeur XLSX (librairie SheetJS, non typée en détail). */
         const workbook  = XLSX.read(event.target.result, { type: 'array' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        // ⚠️ AJOUTÉ (clarté) : cet import ne lit que le PREMIER onglet
+        // du classeur — l'utilisateur doit le savoir au lieu de
+        // découvrir des lignes « manquantes » après coup.
+        if (workbook.SheetNames.length > 1) {
+          showToast(`Ce classeur contient ${workbook.SheetNames.length} onglets — seul le premier (« ${workbook.SheetNames[0]} ») est lu par cet import.`, 'warning');
+        }
         // ⚠️ CORRIGÉ : sheet_to_json({header:1}) donne les cellules
         // brutes directement, sans jamais repasser par du texte CSV
         // intermédiaire (contrairement à l'ancien sheet_to_csv +
@@ -1244,7 +1250,7 @@ function _gqParseCSV(text) {
 }
 
 /**
- * Cœur du parsing Qualimètre, partagé entre le chemin CSV/TSV/TXT
+ * Cœur du parsing Qualité de service, partagé entre le chemin CSV/TSV/TXT
  * (_gqParseCSV, après découpage texte -> cellRows) et le chemin XLSX
  * (handleGqImportFile, cellRows obtenus directement depuis SheetJS
  * via sheet_to_json — jamais via sheet_to_csv + re-découpage texte,
@@ -1422,7 +1428,7 @@ function _onGqZoneReplaceToggle(zoneId, willReplace) {
 
 /**
  * Libellés humains des concepts métier, affichés dans le bloc de
- * mapping de la modale d'aperçu Qualimètre. Identique en contenu à
+ * mapping de la modale d'aperçu Qualité de service. Identique en contenu à
  * IMPORT_CONCEPT_LABELS (import-grille.js), dupliqué ici
  * volontairement pour garder ce fichier sans dépendance fonctionnelle
  * vers les détails d'affichage d'import-grille.js (seule la logique
@@ -1443,7 +1449,7 @@ const GQ_CONCEPT_LABELS = {
  * Construit le bloc HTML affichant, pour chaque concept métier, la
  * colonne détectée (ou aucune), avec un menu déroulant permettant de
  * corriger manuellement l'association — voir
- * _onGqMappingConceptChanged. Équivalent Qualimètre de
+ * _onGqMappingConceptChanged. Équivalent Qualité de service de
  * _buildMappingBlock (import-grille.js).
  * @param {DetectionResult} detection
  * @returns {string}
@@ -1482,10 +1488,10 @@ function _buildGqMappingBlock(detection) {
 }
 
 /**
- * Appelée depuis le menu déroulant du bloc de mapping Qualimètre
+ * Appelée depuis le menu déroulant du bloc de mapping Qualité de service
  * lorsque l'utilisateur corrige manuellement l'association d'un
  * concept à une colonne. Rejoue normalizeRows et la résolution de
- * zone SANS re-lire ni re-scanner le fichier. Équivalent Qualimètre
+ * zone SANS re-lire ni re-scanner le fichier. Équivalent Qualité de service
  * de _onMappingConceptChanged (import-grille.js).
  * @param {ImportConcept} concept
  * @param {string} newHeader - En-tête sélectionné, ou chaîne vide pour 'aucune'.
@@ -1511,13 +1517,13 @@ function _onGqMappingConceptChanged(concept, newHeader) {
 
 /**
  * Appelée depuis le sélecteur de criticité par défaut de la modale
- * d'import Qualimètre lorsque l'utilisateur change la valeur de
+ * d'import Qualité de service lorsque l'utilisateur change la valeur de
  * repli appliquée aux lignes sans criticité déterminable depuis le
  * document. Met à jour l'état puis, si un fichier est déjà chargé,
  * rejoue _buildGqParsedRows SANS re-scanner le fichier (même logique
  * que _onGqMappingConceptChanged) : seule la criticité de repli
  * change, jamais le mapping ni les données brutes. Équivalent
- * Qualimètre de _onDefaultCritChanged (import-grille.js).
+ * Qualité de service de _onDefaultCritChanged (import-grille.js).
  * @param {GrilleCriticite} newDefaultCrit
  * @returns {void}
  */
@@ -1541,6 +1547,9 @@ function _onGqDefaultCritChanged(newDefaultCrit) {
  * @returns {void}
  */
 function confirmGqImport() {
+  // ⚠️ AJOUTÉ : garde applicative (le bouton d'ouverture est masqué
+  // sans qgrid_manage, mais la fonction restait appelable).
+  if (!hasPerm('qgrid_manage')) return;
   if (!_gqImportData.length) { _gqImportErr('Aucune donnée à importer.'); return; }
 
   /** @type {string} */
@@ -1559,7 +1568,7 @@ function confirmGqImport() {
 
   save(['qualimetreCustom', 'qualimetreGlobal']);
   closeModal('m-gq-import');
-  showToast(`Grille Qualimètre importée (${_gqImportData.length} point(s))`, 'success');
+  showToast(`Grille Qualité de service importée (${_gqImportData.length} point(s))`, 'success');
   _gqImportData = [];
   _gqZoneReplaceFlags = {};
   _gqRefreshCurrentView();

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HygiPerf</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/app.css?v=10">
+<link rel="stylesheet" href="css/app.css?v=11">
 </head>
 <body>
 
@@ -103,9 +103,9 @@
 <div class="app" id="app">
   <div class="sb-overlay" id="sb-overlay" onclick="document.getElementById('sidebar').classList.remove('open');this.style.display='none'"></div>
   <aside class="sidebar" id="sidebar">
-    <div class="sb-logo" style="padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.1)">
-<img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="HygiPerf">   
- </div>
+    <div class="sb-logo">
+      <div class="sb-logo-card"><img src="assets/logo.png" alt="HygiPerf"></div>
+    </div>
     <nav class="sb-nav" id="sb-nav"></nav>
     <div class="sb-user">
       <div class="avatar" id="sb-av">–</div>
@@ -132,7 +132,7 @@
 
       <!-- DASHBOARD -->
       <div class="page" id="page-dashboard">
-        <!-- ALERTES TERRAIN URGENTES — au-dessus des onglets FSQS/Qualimètre
+        <!-- ALERTES TERRAIN URGENTES — au-dessus des onglets FSQS/Qualité de service
              pour rester visible quel que soit l'onglet actif. Masqué par
              renderAlertsDash() (alertes.js) tant qu'aucune alerte n'est
              active. Bouton compact (cloche + compteur) qui déplie/replie
@@ -159,7 +159,7 @@
               <i class="ti ti-clipboard-check" style="font-size:14px"></i> FSQS
             </button>
             <button id="dash-tab-qual" class="dash-tab dash-tab-qual" onclick="switchDashTab('qual')">
-              <i class="ti ti-rosette" style="font-size:14px"></i> Qualimètre
+              <i class="ti ti-rosette" style="font-size:14px"></i> Qualité de service
             </button>
           </div>
           <!-- Sélecteur de période (mois / trimestre / semestre) — les
@@ -200,9 +200,9 @@
         <!-- STATS QUALIMÈTRE -->
         <div id="dash-qual" style="display:none">
           <div class="stats-grid">
-            <div class="stat-card" style="border-left:4px solid var(--qual)" onclick="navigateFromStat('audit-qualimetre')" title="Voir les audits Qualimètre"><div class="stat-lbl"><i class="ti ti-rosette" style="color:var(--qual)"></i> Audits Qualimètre</div><div class="stat-val" style="color:var(--qual)" id="dq-audits">0</div><div class="stat-sub">Total</div></div>
-            <div class="stat-card" style="border-left:4px solid var(--warning)" onclick="navigateFromStat('audit-qualimetre')" title="Voir les audits Qualimètre"><div class="stat-lbl"><i class="ti ti-alert-circle" style="color:var(--warning)"></i> Points NC</div><div class="stat-val" style="color:var(--warning)" id="dq-nc">0</div><div class="stat-sub">Non conformes</div></div>
-            <div class="stat-card" style="border-left:4px solid var(--success)" onclick="navigateFromStat('rapport-qualimetre')" title="Voir le rapport Qualimètre"><div class="stat-lbl"><i class="ti ti-circle-check" style="color:var(--success)"></i> Score moyen</div><div class="stat-val" style="color:var(--success)" id="dq-score">–</div><div class="stat-sub">Tous magasins</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--qual)" onclick="navigateFromStat('audit-qualimetre')" title="Voir les audits Qualité de service"><div class="stat-lbl"><i class="ti ti-rosette" style="color:var(--qual)"></i> Audits Qualité de service</div><div class="stat-val" style="color:var(--qual)" id="dq-audits">0</div><div class="stat-sub">Total</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--warning)" onclick="navigateFromStat('audit-qualimetre')" title="Voir les audits Qualité de service"><div class="stat-lbl"><i class="ti ti-alert-circle" style="color:var(--warning)"></i> Points NC</div><div class="stat-val" style="color:var(--warning)" id="dq-nc">0</div><div class="stat-sub">Non conformes</div></div>
+            <div class="stat-card" style="border-left:4px solid var(--success)" onclick="navigateFromStat('rapport-qualimetre')" title="Voir le rapport Qualité de service"><div class="stat-lbl"><i class="ti ti-circle-check" style="color:var(--success)"></i> Score moyen</div><div class="stat-val" style="color:var(--success)" id="dq-score">–</div><div class="stat-sub">Tous magasins</div></div>
             <div class="stat-card" style="border-left:4px solid var(--primary)" onclick="navigateFromStat('magasins')" title="Voir les magasins"><div class="stat-lbl"><i class="ti ti-building-store" style="color:var(--primary)"></i> Magasins audités</div><div class="stat-val" style="color:var(--primary)" id="dq-mags">0</div><div class="stat-sub">Actifs</div></div>
           </div>
           <div class="grid-2 mb-6">
@@ -216,7 +216,7 @@
             </div>
           </div>
           <div class="card">
-            <div class="card-hdr"><div class="card-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Derniers audits Qualimètre</div><button class="btn btn-secondary btn-sm" onclick="navigate('audit-qualimetre')">Voir tout</button></div>
+            <div class="card-hdr"><div class="card-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Derniers audits Qualité de service</div><button class="btn btn-secondary btn-sm" onclick="navigate('audit-qualimetre')">Voir tout</button></div>
             <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th></th></tr></thead><tbody id="dq-last"></tbody></table></div>
           </div>
         </div>
@@ -472,7 +472,7 @@
       <!-- RAPPORT QUALIMÈTRE -->
       <div class="page" id="page-rapport-qualimetre">
         <div class="card mb-4">
-          <div class="card-hdr"><div class="card-title"><i class="ti ti-gauge" style="color:var(--qual)"></i> Rapport Qualimètre – Sélection des audits</div></div>
+          <div class="card-hdr"><div class="card-title"><i class="ti ti-gauge" style="color:var(--qual)"></i> Rapport Qualité de service – Sélection des audits</div></div>
           <div class="card-body">
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
               <select class="form-control" style="width:auto" id="rq-mag" onchange="renderRapportQualimetre()"><option value="">Tous les magasins</option></select>
@@ -574,7 +574,7 @@
           <div class="tsm tm" id="gq-cards-empty" style="display:none;text-align:center;padding:40px 20px">Aucune enseigne pour l'instant. Créez-en une depuis la page Enseignes pour commencer.</div>
         </div>
 
-        <!-- Vue détail : grille Qualimètre d'une enseigne -->
+        <!-- Vue détail : grille Qualité de service d'une enseigne -->
         <div id="gq-detail-view" style="display:none">
           <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
             <button class="btn btn-primary" style="font-weight:600" onclick="showGrilleQualimetre()"><i class="ti ti-arrow-left" style="font-size:16px"></i> Retour aux enseignes</button>
@@ -615,12 +615,12 @@
             <span class="tsm tm" id="qaud-hist-cnt" style="align-self:center"></span>
           </div>
           <button class="btn btn-primary" style="background:var(--qual);border-color:var(--qual)" onclick="openQualAuditModal()">
-            <i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre
+            <i class="ti ti-clipboard-plus"></i> Nouvel audit Qualité de service
           </button>
         </div>
         <div class="card">
           <div class="card-hdr">
-            <div class="card-title"><i class="ti ti-gauge" style="color:var(--qual)"></i> Historique des audits Qualimètre</div>
+            <div class="card-title"><i class="ti ti-gauge" style="color:var(--qual)"></i> Historique des audits Qualité de service</div>
           </div>
           <div class="tbl-wrap"><table>
             <thead><tr><th>Magasin</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th>Statut</th><th></th></tr></thead>
@@ -1214,7 +1214,7 @@
 <div class="modal-ov" id="m-qual-audit">
   <div class="modal modal-lg">
     <div class="modal-hdr">
-      <div class="modal-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Nouvel audit Qualimètre</div>
+      <div class="modal-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Nouvel audit Qualité de service</div>
       <div style="display:flex;align-items:center;gap:8px">
         <a id="btn-ref-affichage" href="assets/referentiel-affichage.pdf" target="_blank" class="btn btn-sm" style="display:none;background:#fbbf24;border-color:var(--warning);color:var(--warning-dark);font-size:12px;padding:4px 10px"><i class="ti ti-file-text"></i> Référentiel affichage</a>
         <button class="btn-x" onclick="qaStep===2?pauseQualAudit():closeModal('m-qual-audit')">&times;</button>
@@ -1224,7 +1224,7 @@
       <!-- Étape 0 : Accueil -->
       <div id="qa-s0" style="text-align:center;padding:20px 0">
         <i class="ti ti-rosette" style="font-size:56px;color:var(--qual);display:block;margin-bottom:14px"></i>
-        <div style="font-size:18px;font-weight:700;margin-bottom:12px">Audit Qualimètre</div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:12px">Audit Qualité de service</div>
         <div class="tm tsm" style="margin-bottom:20px">Parcours client – Œil du client</div>
         <div style="background:var(--qual-light);border-radius:10px;padding:16px 20px;text-align:left;font-size:13px;color:#4b5563;max-width:480px;margin:0 auto">
           <div style="font-weight:700;margin-bottom:10px;color:var(--qual)">Comment faire ?</div>
@@ -1275,11 +1275,11 @@
   </div>
 </div>
 
-<!-- Modal ajout/édition point Qualimètre -->
+<!-- Modal ajout/édition point Qualité de service -->
 <div class="modal-ov" id="m-gq-ctrl">
   <div class="modal">
     <div class="modal-hdr">
-      <div class="modal-title" id="m-gq-ctrl-ttl"><i class="ti ti-gauge" style="color:var(--qual)"></i> Point Qualimètre</div>
+      <div class="modal-title" id="m-gq-ctrl-ttl"><i class="ti ti-gauge" style="color:var(--qual)"></i> Point Qualité de service</div>
       <button class="btn-x" onclick="closeModal('m-gq-ctrl')">&times;</button>
     </div>
     <div class="modal-body">
@@ -1343,11 +1343,11 @@
   </div>
 </div>
 
-<!-- Modal import grille Qualimètre -->
+<!-- Modal import grille Qualité de service -->
 <div class="modal-ov" id="m-gq-import">
   <div class="modal modal-lg">
     <div class="modal-hdr">
-      <div class="modal-title"><i class="ti ti-upload" style="color:var(--qual)"></i> Importer une grille Qualimètre</div>
+      <div class="modal-title"><i class="ti ti-upload" style="color:var(--qual)"></i> Importer une grille Qualité de service</div>
       <button class="btn-x" onclick="closeModal('m-gq-import')">&times;</button>
     </div>
     <div class="modal-body">
@@ -1392,7 +1392,7 @@
 <div class="modal-ov" id="m-qual-audit-detail">
   <div class="modal modal-lg">
     <div class="modal-hdr">
-      <div class="modal-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Détail audit Qualimètre</div>
+      <div class="modal-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Détail audit Qualité de service</div>
       <button class="btn-x" onclick="closeModal('m-qual-audit-detail')">&times;</button>
     </div>
     <div class="modal-body" id="qa-detail-body"></div>
@@ -1593,44 +1593,44 @@
 <div id="ana-pdf-export" style="display:none"></div>
 
 <!-- Librairies externes -->
-<script src="js/jspdf.umd.min.js?v=10"></script>
-<script src="js/html2canvas.min.js?v=10"></script>
-<script src="js/chart.umd.min.js?v=10"></script>
+<script src="js/jspdf.umd.min.js?v=11"></script>
+<script src="js/html2canvas.min.js?v=11"></script>
+<script src="js/chart.umd.min.js?v=11"></script>
 
 <!-- Infrastructure -->
-<script src="js/config.js?v=10"></script>
+<script src="js/config.js?v=11"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase.js?v=10"></script>
-<script src="js/db/supabase/storage.js?v=10"></script>
-<script src="js/auth.js?v=10"></script>
-<script src="js/ui.js?v=10"></script>
+<script src="js/supabase.js?v=11"></script>
+<script src="js/db/supabase/storage.js?v=11"></script>
+<script src="js/auth.js?v=11"></script>
+<script src="js/ui.js?v=11"></script>
 
 <!-- Import de référentiels (chargé avant grille-qualimetre.js, qui réutilise detectConceptMapping/normalizeRows/_resolveOrCreateZoneFromDocument) -->
-<script src="js/import/import-detect.js?v=10"></script>
-<script src="js/import/import-normalize.js?v=10"></script>
-<script src="js/import/import-grille.js?v=10"></script>
+<script src="js/import/import-detect.js?v=11"></script>
+<script src="js/import/import-normalize.js?v=11"></script>
+<script src="js/import/import-grille.js?v=11"></script>
 
 <!-- Modules métier -->
-<script src="js/dashboard.js?v=10"></script>
-<script src="js/audits.js?v=10"></script>
-<script src="js/nc.js?v=10"></script>
-<script src="js/actions.js?v=10"></script>
-<script src="js/magasins.js?v=10"></script>
-<script src="js/rayons.js?v=10"></script>
-<script src="js/grille.js?v=10"></script>
-<script src="js/alertes.js?v=10"></script>
-<script src="js/analyses.js?v=10"></script>
-<script src="js/audits-externes.js?v=10"></script>
-<script src="js/metrologie.js?v=10"></script>
-<script src="js/users.js?v=10"></script>
-<script src="js/rapports-fsqs.js?v=10"></script>
-<script src="js/import/grille-qualimetre.js?v=10"></script> 
-<script src="js/qualimetre.js?v=10"></script>
-<script src="js/audit-qualimetre.js?v=10"></script>
-<script src="js/rapport-qualimetre.js?v=10"></script>
+<script src="js/dashboard.js?v=11"></script>
+<script src="js/audits.js?v=11"></script>
+<script src="js/nc.js?v=11"></script>
+<script src="js/actions.js?v=11"></script>
+<script src="js/magasins.js?v=11"></script>
+<script src="js/rayons.js?v=11"></script>
+<script src="js/grille.js?v=11"></script>
+<script src="js/alertes.js?v=11"></script>
+<script src="js/analyses.js?v=11"></script>
+<script src="js/audits-externes.js?v=11"></script>
+<script src="js/metrologie.js?v=11"></script>
+<script src="js/users.js?v=11"></script>
+<script src="js/rapports-fsqs.js?v=11"></script>
+<script src="js/import/grille-qualimetre.js?v=11"></script> 
+<script src="js/qualimetre.js?v=11"></script>
+<script src="js/audit-qualimetre.js?v=11"></script>
+<script src="js/rapport-qualimetre.js?v=11"></script>
 
 <!-- Point d'entrée -->
-<script src="js/init.js?v=10"></script>
+<script src="js/init.js?v=11"></script>
 
 </body>
 </html>

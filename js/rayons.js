@@ -370,7 +370,7 @@ function createRayon(rayonName) {
  * DB.grilleCustom (clé du dictionnaire), DB.audits[].rayon,
  * DB.drafts[].rayon. Un rayon n'étant qu'une chaîne utilisée à la
  * fois comme clé de stockage et comme libellé affiché (contrairement
- * à QMZone côté Qualimètre, qui a un id distinct de son label), le
+ * à QMZone côté Qualité de service, qui a un id distinct de son label), le
  * renommage doit migrer toutes les références existantes pour ne
  * jamais laisser de données orphelines sous l'ancien nom.
  *
@@ -505,7 +505,7 @@ function deleteRayonEverywhere(rayonName) {
 // classement plus facile (ex : rayon 'Boulangerie' → zone 'Lieu de
 // stockage'). Elle devient l'onglet affiché dans la modale d'audit
 // (voir buildAuditQuestions, audits.js). Contrairement à un rayon ou
-// une zone Qualimètre, une zone de grille n'a PAS d'id distinct de
+// une zone Qualité de service, une zone de grille n'a PAS d'id distinct de
 // son libellé — c'est une simple chaîne sur GrillePoint.zone, propre
 // au rayon qui la contient : deux rayons peuvent avoir chacun une
 // zone nommée "Stockage" sans aucun lien entre elles (renommer l'une

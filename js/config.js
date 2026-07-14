@@ -85,12 +85,12 @@ const PERMISSION_GROUPS = [
     ],
   },
   {
-    id: 'qual_audits', label: 'Audit Qualimètre', icon: 'ti-rosette',
+    id: 'qual_audits', label: 'Audit Qualité de service', icon: 'ti-rosette',
     permissions: [
-      { id: 'qaudit_create',       label: 'Créer un audit Qualimètre' },
-      { id: 'qaudit_edit_date',    label: 'Modifier la date d\'un audit Qualimètre' },
+      { id: 'qaudit_create',       label: 'Créer un audit Qualité de service' },
+      { id: 'qaudit_edit_date',    label: 'Modifier la date d\'un audit Qualité de service' },
       { id: 'qaudit_edit_auditor', label: 'Modifier le champ auditeur' },
-      { id: 'qaudit_delete',       label: 'Supprimer un audit Qualimètre' },
+      { id: 'qaudit_delete',       label: 'Supprimer un audit Qualité de service' },
     ],
   },
   {
@@ -163,9 +163,9 @@ const PERMISSION_GROUPS = [
     ],
   },
   {
-    id: 'qual_grille', label: 'Grille Qualimètre', icon: 'ti-adjustments',
+    id: 'qual_grille', label: 'Grille Qualité de service', icon: 'ti-adjustments',
     permissions: [
-      { id: 'qgrid_view',   label: 'Voir la grille Qualimètre' },
+      { id: 'qgrid_view',   label: 'Voir la grille Qualité de service' },
       { id: 'qgrid_manage', label: 'Gérer la grille (ajouter/importer/réinitialiser)' },
     ],
   },
@@ -173,11 +173,11 @@ const PERMISSION_GROUPS = [
     id: 'rapports', label: 'Rapports', icon: 'ti-file-analytics',
     permissions: [
       { id: 'report_fsqs_view',        label: 'Voir le rapport FSQS' },
-      { id: 'report_qualimetre_view',  label: 'Voir le rapport Qualimètre' },
+      { id: 'report_qualimetre_view',  label: 'Voir le rapport Qualité de service' },
       { id: 'report_delete_audits',    label: 'Supprimer des audits depuis un rapport' },
       { id: 'nc_export',               label: 'Exporter les non-conformités' },
       { id: 'report_fsqs_export',      label: 'Exporter le rapport FSQS' },
-      { id: 'report_qualimetre_export',label: 'Exporter le rapport Qualimètre' },
+      { id: 'report_qualimetre_export',label: 'Exporter le rapport Qualité de service' },
     ],
   },
   {
@@ -281,7 +281,7 @@ const PIDS   = PERMISSION_IDS;
 
 // ⚠️ SUPPRIMÉ (décision produit explicite : plus aucune zone
 // prédéfinie) : QM_ZONES contenait auparavant 10 zones fixes
-// (Abords & Accueil, Boulangerie...). Les zones Qualimètre sont
+// (Abords & Accueil, Boulangerie...). Les zones Qualité de service sont
 // désormais entièrement déduites des données réelles (import ou
 // création manuelle) — voir _getAllZones (grille-qualimetre.js),
 // seule source de vérité pour la liste des zones existantes.

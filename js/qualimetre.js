@@ -1,10 +1,10 @@
 // ══════════════════════════════════════════════════════════════
-// QUALIMETRE — Page référentiel Qualimètre (lecture seule)
+// QUALIMETRE — Page référentiel Qualité de service (lecture seule)
 // Dépend de : storage.js (DB, CU), ui.js, grille-qualimetre.js (_getAllZones — plus aucune zone prédéfinie)
 // ⚠️ Page apparemment non reliée à la navigation actuelle (aucun
 //    #page-qualimetre dans index.html) — code conservé tel quel,
 //    signalé à l'utilisateur plutôt que supprimé de sa propre initiative.
-// Note : l'édition se fait depuis la page "Grille Qualimètre" (grille-qualimetre.js)
+// Note : l'édition se fait depuis la page "Grille Qualité de service" (grille-qualimetre.js)
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────
 
 /**
- * Zone de contrôle du parcours Qualimètre (voir config.js pour la
+ * Zone de contrôle du parcours Qualité de service (voir config.js pour la
  * définition canonique).
  * @typedef {Object} QMZone
  * @property {string} id
@@ -31,7 +31,7 @@
  */
 
 /**
- * Point de contrôle Qualimètre. Même forme que GrillePoint (grille
+ * Point de contrôle Qualité de service. Même forme que GrillePoint (grille
  * FSQS, voir grille.js/config.js) — q, prec, c, p — mais stocké dans
  * un espace de données distinct (DB.qualimetreCustom /
  * DB.qualimetreGlobal plutôt que DB.grilleCustom).
@@ -52,13 +52,13 @@
  */
 
 /**
- * Dictionnaire des points Qualimètre personnalisés par magasin,
+ * Dictionnaire des points Qualité de service personnalisés par magasin,
  * indexé par Magasin.id puis par QMZone.id.
  * @typedef {Record<string, Record<string, GrillePoint[]>>} QualimetreCustomMap
  */
 
 /**
- * Dictionnaire des points Qualimètre communs, indexé par nom
+ * Dictionnaire des points Qualité de service communs, indexé par nom
  * d'enseigne PUIS par QMZone.id — chaque enseigne a sa propre grille
  * commune, héritée par tous ses magasins et fusionnée avec leurs
  * éventuels points propres (jamais un remplacement — voir
@@ -72,7 +72,7 @@
 
 /**
  * Callback déclenché au changement de magasin sélectionné ; relance
- * simplement le rendu complet de la page Qualimètre.
+ * simplement le rendu complet de la page Qualité de service.
  * @returns {void}
  */
 function onQualMagChange() {
@@ -121,7 +121,7 @@ function _renderQualimetreNav() {
 // ─────────────────────────────────────────────
 
 /**
- * Affiche la page Qualimètre pour le magasin et la zone
+ * Affiche la page Qualité de service pour le magasin et la zone
  * sélectionnés : titre, badge de source de grille, et liste des
  * points de contrôle (ou état vide approprié).
  * @returns {void}
@@ -138,7 +138,7 @@ function showQualimetre() {
   /** @type {QMZone | undefined} */
   const zone     = _getAllZones().find(z => z.id === zoneId);
   // ⚠️ CORRIGÉ : 'admin en dur' -> droit granulaire qgrid_manage
-  // (même droit que la page Grille Qualimètre, grille-qualimetre.js).
+  // (même droit que la page Grille Qualité de service, grille-qualimetre.js).
   // Le nom isAdmin est conservé pour ne pas toucher au reste du fichier.
   /** @type {boolean} */
   const isAdmin  = !!hasPerm('qgrid_manage');
@@ -151,7 +151,7 @@ function showQualimetre() {
     el('qual-ttl').textContent = '–';
     el('qual-body').innerHTML  = _buildEmptyState(
       'ti-building-store',
-      'Sélectionnez un magasin pour afficher son Qualimètre.'
+      'Sélectionnez un magasin pour afficher sa Qualité de service.'
     );
     return;
   }
@@ -214,7 +214,7 @@ function _buildPointCountBar(pointCount) {
 }
 
 /**
- * Construit la ligne HTML d'un point de contrôle Qualimètre, avec un
+ * Construit la ligne HTML d'un point de contrôle Qualité de service, avec un
  * badge indiquant sa portée réelle (commun à l'enseigne du magasin,
  * ou personnalisé pour ce magasin précis).
  * @param {GrillePoint & {_scope: 'common'|'store'}} point
@@ -246,14 +246,14 @@ function _buildQualimetrePointRow(point) {
 // ─────────────────────────────────────────────
 
 /**
- * Redirige vers la modale d'édition de la grille Qualimètre.
+ * Redirige vers la modale d'édition de la grille Qualité de service.
  * Conservé pour compatibilité avec d'éventuels appels existants.
  */
 /**
- * Redirige vers la modale d'édition de la grille Qualimètre.
+ * Redirige vers la modale d'édition de la grille Qualité de service.
  * Conservé pour compatibilité avec d'éventuels appels existants.
  * @param {string} storeId - Référence vers Magasin.id.
- * @param {string} rayon - Malgré son nom, référence en réalité une QMZone.id (zone Qualimètre), pas un rayon FSQS — nom de paramètre conservé tel quel pour compatibilité historique.
+ * @param {string} rayon - Malgré son nom, référence en réalité une QMZone.id (zone Qualité de service), pas un rayon FSQS — nom de paramètre conservé tel quel pour compatibilité historique.
  * @param {string} [pointId] - Référence vers GrillePoint.id à éditer.
  * @returns {void}
  */

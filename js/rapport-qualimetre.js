@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-// RAPPORT-QUALIMETRE — Génération et export du rapport Qualimètre
+// RAPPORT-QUALIMETRE — Génération et export du rapport Qualité de service
 // Dépend de : storage.js (DB, CU), ui.js
 // ══════════════════════════════════════════════════════════════
 
@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────
 
 /**
- * Réponse enregistrée pour un point de contrôle Qualimètre. Même
+ * Réponse enregistrée pour un point de contrôle Qualité de service. Même
  * forme que AuditAnswer (système FSQS, voir audits.js), mais
  * typedef distinct pour ne pas créer de couplage entre les deux
  * systèmes de grille.
@@ -21,7 +21,7 @@
  */
 
 /**
- * Audit "Qualimètre". Voir dashboard.js pour d'autres propriétés
+ * Audit "Qualité de service". Voir dashboard.js pour d'autres propriétés
  * observées (num, nc, zones) ; ce fichier confirme spécifiquement
  * .answers, de même forme que Audit.answers (FSQS).
  * @typedef {Object} QualAudit
@@ -36,7 +36,7 @@
  */
 
 /**
- * Entrée intermédiaire représentant une non-conformité Qualimètre
+ * Entrée intermédiaire représentant une non-conformité Qualité de service
  * avec photos, construite pour l'export PDF des annexes.
  * @typedef {Object} QualNcWithPhotos
  * @property {string} mag
@@ -61,7 +61,7 @@
 // ─────────────────────────────────────────────
 
 /**
- * Couleur de score Qualimètre selon la valeur (seuils différents du
+ * Couleur de score Qualité de service selon la valeur (seuils différents du
  * FSQS : 90/75/60 au lieu de 95/80/70 — voir rapports-fsqs.js).
  * @type {(score: number) => string}
  */
@@ -72,7 +72,7 @@ const RQ_SCORE_COLOR = score =>
                '#e53935';
 
 /**
- * Libellé de score Qualimètre.
+ * Libellé de score Qualité de service.
  * @type {(score: number) => string}
  */
 const RQ_SCORE_LABEL = score =>
@@ -86,7 +86,7 @@ const RQ_SCORE_LABEL = score =>
 // ─────────────────────────────────────────────
 
 /**
- * Affiche la liste des audits Qualimètre sélectionnables (cases à
+ * Affiche la liste des audits Qualité de service sélectionnables (cases à
  * cocher) pour la génération du rapport, filtrée par magasins
  * visibles et par le sélecteur de magasin.
  * @returns {void}
@@ -111,7 +111,7 @@ function renderRapportQualimetre() {
   if (delBtn) delBtn.style.display = hasPerm('report_delete_audits') ? '' : 'none';
 
   if (!audits.length) {
-    listEl.innerHTML = '<div class="empty-state" style="padding:16px"><p>Aucun audit Qualimètre.</p></div>';
+    listEl.innerHTML = '<div class="empty-state" style="padding:16px"><p>Aucun audit Qualité de service.</p></div>';
     return;
   }
 
@@ -123,7 +123,7 @@ function renderRapportQualimetre() {
 }
 
 /**
- * Construit la ligne HTML à case à cocher d'un audit Qualimètre
+ * Construit la ligne HTML à case à cocher d'un audit Qualité de service
  * sélectionnable.
  * @param {QualAudit} audit
  * @returns {string}
@@ -142,7 +142,7 @@ function _buildQualAuditCheckboxRow(audit) {
 }
 
 /**
- * Coche ou décoche toutes les cases d'audit Qualimètre du rapport.
+ * Coche ou décoche toutes les cases d'audit Qualité de service du rapport.
  * @param {boolean} selectAll
  * @returns {void}
  */
@@ -155,7 +155,7 @@ function toggleAllQRap(selectAll) {
 // ─────────────────────────────────────────────
 
 /**
- * Génère l'aperçu HTML du rapport Qualimètre à partir des audits
+ * Génère l'aperçu HTML du rapport Qualité de service à partir des audits
  * cochés, et affiche les boutons d'export (annexes seulement si au
  * moins une NC a des photos).
  * @returns {void}
@@ -192,7 +192,7 @@ function genRapportQualimetre() {
 // ─────────────────────────────────────────────
 
 /**
- * Construit le HTML complet du rapport Qualimètre (en-tête + une
+ * Construit le HTML complet du rapport Qualité de service (en-tête + une
  * carte par audit).
  * @param {QualAudit[]} audits
  * @param {number} avgScore
@@ -206,7 +206,7 @@ function _buildQualRapportHtml(audits, avgScore) {
 }
 
 /**
- * Construit l'en-tête du rapport Qualimètre (logo, titre, date,
+ * Construit l'en-tête du rapport Qualité de service (logo, titre, date,
  * nombre d'audits, score moyen).
  * @param {number} auditCount
  * @param {number} avgScore
@@ -219,7 +219,7 @@ function _buildQualRapportHeader(auditCount, avgScore) {
         <div style="width:38px;height:38px;background:linear-gradient(135deg,#fbbf24,#f59e0b);border-radius:50%;display:flex;align-items:center;justify-content:center">
           <div style="font-size:8px;font-weight:900;color:#fff;text-align:center;line-height:1.1">QUALI<br>metre</div>
         </div>
-        <h2 style="color:#7c3aed;margin:0;font-size:20px">Rapport Qualimètre</h2>
+        <h2 style="color:#7c3aed;margin:0;font-size:20px">Rapport Qualité de service</h2>
       </div>
       <div style="font-size:12px;color:#5a6070">Généré le ${new Date().toLocaleDateString('fr-FR')} · ${auditCount} audit(s)</div>
     </div>
@@ -231,7 +231,7 @@ function _buildQualRapportHeader(auditCount, avgScore) {
 }
 
 /**
- * Construit la carte HTML d'un audit Qualimètre dans le rapport
+ * Construit la carte HTML d'un audit Qualité de service dans le rapport
  * (en-tête + résumé de score, puis sections NC/conformes).
  *
  * ⚠️ CHANGÉ : éclaté en plusieurs éléments marqués `.pdf-block` (en-tête
@@ -293,7 +293,7 @@ function _buildQualAuditCard(audit) {
 }
 
 /**
- * Construit le résumé visuel du score d'un audit Qualimètre (cercle
+ * Construit le résumé visuel du score d'un audit Qualité de service (cercle
  * de score + compteurs NC/conforme/N-A).
  * @param {number} score
  * @param {number} ncCount
@@ -362,10 +362,10 @@ function _buildQualConformSection(conformItems) {
 // ─────────────────────────────────────────────
 
 /**
- * Exporte un rapport (FSQS ou Qualimètre) en PDF portrait, avec une
+ * Exporte un rapport (FSQS ou Qualité de service) en PDF portrait, avec une
  * pagination "intelligente" : chaque bloc de haut niveau du rapport
  * (en-tête, résumé chiffré, une carte par magasin/audit — voir
- * _buildRapportHtml, rapports-fsqs.js, et son équivalent Qualimètre)
+ * _buildRapportHtml, rapports-fsqs.js, et son équivalent Qualité de service)
  * est capturé et placé sur la page indépendamment des autres. Un
  * changement de page n'intervient JAMAIS au milieu d'un bloc, sauf
  * si ce bloc à lui seul dépasse la hauteur d'une page entière (repli
@@ -414,7 +414,7 @@ async function exportPDF(containerId, filename) {
     // ⚠️ CHANGÉ : les unités de pagination sont désormais les
     // éléments marqués `.pdf-block` (voir _buildAuditCard /
     // _buildNcTable, rapports-fsqs.js — même principe à prévoir côté
-    // Qualimètre), quel que soit leur niveau d'imbrication réel dans
+    // Qualité de service), quel que soit leur niveau d'imbrication réel dans
     // le HTML. Un rapport qui n'utilise pas encore ce marqueur
     // retombe sur l'ancien comportement (enfants directs du wrapper)
     // pour ne rien casser.
@@ -595,7 +595,7 @@ function _sliceOversizedBlockAcrossPages(pdf, canvas, ratio, margin, usableW, us
 // ─────────────────────────────────────────────
 
 /**
- * Exporte en PDF (paysage) les annexes photos des NC Qualimètre des
+ * Exporte en PDF (paysage) les annexes photos des NC Qualité de service des
  * audits sélectionnés (2 NC par page).
  * @returns {Promise<void>}
  */
@@ -664,7 +664,7 @@ async function exportAnnexesQualimetre() {
 }
 
 /**
- * Collecte toutes les NC Qualimètre (réponses 'NC' avec photos) des
+ * Collecte toutes les NC Qualité de service (réponses 'NC' avec photos) des
  * audits fournis, sous forme d'entrées prêtes pour l'export PDF.
  * @param {QualAudit[]} audits
  * @returns {QualNcWithPhotos[]}
@@ -694,7 +694,7 @@ function _collectQualNcWithPhotos(audits) {
 function _drawAnnexePageHeader(pdf, pageW, margin) {
   pdf.setFontSize(9);
   pdf.setTextColor(150);
-  pdf.text('Annexes Qualimètre — Non-conformités avec photos', margin, margin - 6);
+  pdf.text('Annexes Qualité de service — Non-conformités avec photos', margin, margin - 6);
   pdf.setDrawColor(180);
   pdf.line(margin, margin, pageW - margin, margin);
 }
@@ -804,7 +804,7 @@ function _loadQualImage(url) {
 // ─────────────────────────────────────────────
 
 /**
- * Supprime les audits Qualimètre cochés, à la fois dans Supabase et
+ * Supprime les audits Qualité de service cochés, à la fois dans Supabase et
  * dans la DB en mémoire, après confirmation.
  * @returns {void}
  */
@@ -812,7 +812,7 @@ function deleteSelectedQualAudits() {
   /** @type {string[]} */
   const selectedIds = [...document.querySelectorAll('.rq-cb:checked')].map(cb => cb.value);
   if (!selectedIds.length) { alert('Sélectionnez au moins un audit.'); return; }
-  if (!confirm(`Supprimer ${selectedIds.length} audit(s) Qualimètre ?`)) return;
+  if (!confirm(`Supprimer ${selectedIds.length} audit(s) Qualité de service ?`)) return;
 
   selectedIds.forEach(id => {
     sbDeleteWhere('qual_audits', 'id', id);
@@ -833,7 +833,7 @@ function printRapportQualimetre() { exportPDF('rq-body',  'rapport-qualimetre');
 function printReportFSQS()        { exportPDF('rap-body', 'rapport-fsqs'); }
 
 /**
- * Affiche le détail d'un audit Qualimètre puis l'exporte
+ * Affiche le détail d'un audit Qualité de service puis l'exporte
  * directement en PDF (délai pour laisser le DOM se rendre).
  * @param {string} auditId - Référence vers QualAudit.id.
  * @returns {void}

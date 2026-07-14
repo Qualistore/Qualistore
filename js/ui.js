@@ -43,7 +43,7 @@
  * @property {PageId} id
  * @property {string} icon - Classe d'icône Tabler (sans préfixe 'ti').
  * @property {string} label
- * @property {string} [style] - Style CSS inline additionnel (ex : couleur dédiée Qualimètre).
+ * @property {string} [style] - Style CSS inline additionnel (ex : couleur dédiée Qualité de service).
  * @property {string} [badge] - Id de l'élément `<span>` de badge associé (ex : compteur de NC ouvertes).
  */
 
@@ -98,10 +98,10 @@ const PAGE_METADATA = {
   utilisateurs:        ['Utilisateurs',           'Gestion des accès'],
   enseignes:           ['Enseignes',              'Regroupement des magasins'],
   grille:              ['Grilles FSQS',           'Référentiels par rayon'],
-  qualimetre:          ['Qualimètre',             'Référentiel par magasin'],
-  'audit-qualimetre':  ['Audit Qualimètre',       'Parcours client – Œil du client'],
-  'rapport-qualimetre':['Rapport Qualimètre',     'Historique et exports des audits Qualimètre'],
-  'grille-qualimetre': ['Grille Qualimètre',      'Une grille commune par enseigne'],
+  qualimetre:          ['Qualité de service',             'Référentiel par magasin'],
+  'audit-qualimetre':  ['Audit Qualité de service',       'Parcours client – Œil du client'],
+  'rapport-qualimetre':['Rapport Qualité de service',     'Historique et exports des audits Qualité de service'],
+  'grille-qualimetre': ['Grille Qualité de service',      'Une grille commune par enseigne'],
   brouillons:          ['Brouillons',             'Audits en cours de saisie'],
   backup:              ['Sauvegarde',             'Export & import des données'],
 };
@@ -386,24 +386,42 @@ function critBdg(criticite) {
  * @param {string} rayon
  * @returns {string}
  */
+/**
+ * Icône et classe de couleur par rayon, indexées par clé normalisée
+ * (_rayonIconKey) — tolérant aux accents, majuscules et variantes
+ * d'écriture. ⚠️ Tout rayon absent d'ici retombe sur l'icône
+ * générique sans classe de couleur : un rayon créé/importé/renommé
+ * dynamiquement reste parfaitement valide (jamais de rejet).
+ * @type {Record<string, [string, string]>}
+ */
+const RAYON_ICON_MAP = {
+  boucherie:     ['ti-meat',            'rayon-boucherie'],
+  maree:         ['ti-fish',            'rayon-maree'],
+  charcuterie:   ['ti-pig',             'rayon-charcuterie'],
+  fromage:       ['ti-cheese',          'rayon-fromage'],
+  fruitslegumes: ['ti-leaf',            'rayon-fl'],
+  boulangerie:   ['ti-baguette',        'rayon-boulangerie'],
+  drive:         ['ti-shopping-cart',   'rayon-drive'],
+  traiteur:      ['ti-tools-kitchen-2', 'rayon-traiteur'],
+  snacking:      ['ti-burger',          'rayon-snacking'],
+  patisserie:    ['ti-cake',            'rayon-patisserie'],
+};
+
+/**
+ * Normalise un nom de rayon en clé de RAYON_ICON_MAP : minuscules,
+ * sans accents ni caractères spéciaux — « Pâtisserie », « patisserie »
+ * ou « PÂTISSERIE » gardent la même icône.
+ * @param {string} rayon
+ * @returns {string}
+ */
+function _rayonIconKey(rayon) {
+  return (rayon || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+}
+
 function rIcon(rayon) {
-  /** @type {Record<string, string>} */
-  const iconMap = {
-    'Boucherie':      'ti-meat',
-    'Marée':          'ti-fish',
-    'Charcuterie':    'ti-pig',
-    'Fromage':        'ti-cheese',
-    'Fruits & Légumes': 'ti-leaf',
-  };
-  /** @type {Record<string, string>} */
-  const classMap = {
-    'Boucherie':      'rayon-boucherie',
-    'Marée':          'rayon-maree',
-    'Charcuterie':    'rayon-charcuterie',
-    'Fromage':        'rayon-fromage',
-    'Fruits & Légumes': 'rayon-fl',
-  };
-  return `<span class="rayon-icon ${classMap[rayon] || ''}"><i class="ti ${iconMap[rayon] || 'ti-category'}"></i></span>`;
+  /** @type {[string, string]} */
+  const [icon, colorClass] = RAYON_ICON_MAP[_rayonIconKey(rayon)] || ['ti-category', ''];
+  return `<span class="rayon-icon ${colorClass}"><i class="ti ${icon}"></i></span>`;
 }
 
 /**
@@ -677,11 +695,11 @@ function buildSidebar() {
     hasPerm('report_fsqs_view') && { id: 'audits',              icon: 'ti-clipboard-check', label: 'Audits FSQS' },
     (hasPerm('draft_view_own') || hasPerm('draft_view_others')) && { id: 'brouillons',          icon: 'ti-player-pause',    label: 'Brouillons' },
     hasPerm('action_view')    && { id: 'actions',             icon: 'ti-tool',            label: 'Actions correctives' },
-    hasPerm('qaudit_create')  && { id: 'audit-qualimetre',    icon: 'ti-rosette',         label: 'Audit Qualimètre', style: 'color:var(--qual-pale)' },
+    hasPerm('qaudit_create')  && { id: 'audit-qualimetre',    icon: 'ti-rosette',         label: 'Audit Qualité de service', style: 'color:var(--qual-pale)' },
     { section: 'Analyse' },
     hasPerm('report_fsqs_view') && { id: 'stats-audits',        icon: 'ti-chart-bar',       label: 'Statistiques d\'audit' },
     hasPerm('report_fsqs_view') && { id: 'rapports',            icon: 'ti-file-analytics',  label: 'Rapport FSQS' },
-    hasPerm('report_qualimetre_view') && { id: 'rapport-qualimetre',  icon: 'ti-gauge',           label: 'Rapport Qualimètre', style: 'color:var(--qual-pale)' },
+    hasPerm('report_qualimetre_view') && { id: 'rapport-qualimetre',  icon: 'ti-gauge',           label: 'Rapport Qualité de service', style: 'color:var(--qual-pale)' },
     hasPerm('nc_view')       && { id: 'nc',                  icon: 'ti-alert-triangle',  label: 'Non-conformités', badge: 'nc-bdg' },
     hasPerm('analysis_view') && { id: 'analyses',            icon: 'ti-flask',           label: 'Analyses' },
     hasPerm('extaudit_view') && { id: 'audits-externes',     icon: 'ti-certificate',     label: 'Audits Externes FSQS' },
@@ -690,7 +708,7 @@ function buildSidebar() {
     hasPerm('users_manage')  && { id: 'utilisateurs',       icon: 'ti-users',           label: 'Utilisateurs' },
     hasPerm('brand_manage')  && { id: 'enseignes',          icon: 'ti-building',        label: 'Enseignes' },
     hasPerm('grid_view')     && { id: 'grille',             icon: 'ti-list-check',      label: 'Grilles FSQS' },
-    hasPerm('qgrid_view')    && { id: 'grille-qualimetre',  icon: 'ti-adjustments',     label: 'Grille Qualimètre', style: 'color:var(--qual-pale)' },
+    hasPerm('qgrid_view')    && { id: 'grille-qualimetre',  icon: 'ti-adjustments',     label: 'Grille Qualité de service', style: 'color:var(--qual-pale)' },
     hasPerm('store_manage')  && { id: 'magasins',           icon: 'ti-building-store',  label: 'Magasins' },
     hasPerm('backup_manage') && { id: 'backup',     icon: 'ti-database-export', label: 'Sauvegarde' },
   ].filter(Boolean);
@@ -736,7 +754,7 @@ function _removeEmptySections(items) {
 /**
  * Construit les boutons d'action du header selon le rôle (alerte
  * terrain toujours visible ; nouvel audit FSQS si permission
- * d'écriture ; nouvel audit Qualimètre sauf pour un collaborateur).
+ * d'écriture ; nouvel audit Qualité de service sauf pour un collaborateur).
  * @param {boolean} isCollaborateur
  * @returns {void}
  */
@@ -746,7 +764,7 @@ function _buildHeaderActions(isCollaborateur) {
   /** @type {string} */
   const qualButton  = hasPerm('qaudit_create')
     ? `<button class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed" onclick="openQualAuditModal()">
-        <i class="ti ti-clipboard-plus"></i> Nouvel audit Qualimètre
+        <i class="ti ti-clipboard-plus"></i> Nouvel audit Qualité de service
        </button>`
     : '';
   /** @type {string} */

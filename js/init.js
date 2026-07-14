@@ -11,7 +11,7 @@
 //    métier propre. Il référence cependant une variable globale
 //    externe non déclarée dans les fichiers fournis jusqu'ici :
 //    `qaStep` (probablement l'équivalent de `auditStep` — voir
-//    audits.js — pour le wizard Qualimètre, déclarée dans un fichier
+//    audits.js — pour le wizard Qualité de service, déclarée dans un fichier
 //    audit-qualimetre.js non fourni). Typée par déduction d'usage
 //    ci-dessous sans certitude sur son origine exacte.
 // ─────────────────────────────────────────────

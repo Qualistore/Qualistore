@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-// DASHBOARD — Tableau de bord FSQS & Qualimètre
+// DASHBOARD — Tableau de bord FSQS & Qualité de service
 // Dépend de : storage.js (DB, CU), ui.js, auth.js (hasPerm),
 //   rayons.js (getKnownRayons, RAYONS_BASE_SEED),
 //   import-grille.js (_escapeHtml, _escapeHtmlAttr — chargé avant),
@@ -8,7 +8,7 @@
 //   garde typeof car chargé après ce fichier).
 //
 // ⚠️ CHANGÉ (statistiques par période) : toutes les statistiques du
-// tableau de bord (FSQS ET Qualimètre) peuvent être filtrées par
+// tableau de bord (FSQS ET Qualité de service) peuvent être filtrées par
 // période calendaire — mois, trimestre ou semestre — via les menus
 // #dash-period-type / #dash-period-value. Les périodes proposées
 // sont DÉDUITES DES DATES RÉELLEMENT PRÉSENTES dans les audits
@@ -27,14 +27,14 @@
 // ─────────────────────────────────────────────
 
 /**
- * Résultat de zone au sein d'un audit Qualimètre.
+ * Résultat de zone au sein d'un audit Qualité de service.
  * @typedef {Object} QualAuditZoneResult
  * @property {string} nom
  * @property {number} [nc] - Nombre de non-conformités relevées dans cette zone.
  */
 
 /**
- * Audit "Qualimètre" (variante d'audit distincte des Audit FSQS).
+ * Audit "Qualité de service" (variante d'audit distincte des Audit FSQS).
  * @typedef {Object} QualAudit
  * @property {string} id
  * @property {string} mid - Référence vers Magasin.id.
@@ -129,7 +129,7 @@ const RAYONS_FSQS = ['Boucherie', 'Boulangerie', 'Drive', 'Marée', 'Charcuterie
 
 /** @type {Chart | null} Instance Chart.js du graphique FSQS par magasin (détruite/recréée à chaque rendu). */
 let _chartFsqs = null;
-/** @type {Chart | null} Instance Chart.js du graphique Qualimètre par magasin. */
+/** @type {Chart | null} Instance Chart.js du graphique Qualité de service par magasin. */
 let _chartQual = null;
 
 /** @type {DashPeriodType} Type de période actuellement sélectionné. */
@@ -254,7 +254,7 @@ function onDashPeriodValueChange() {
 }
 
 /**
- * Collecte toutes les dates des audits FSQS et Qualimètre visibles —
+ * Collecte toutes les dates des audits FSQS et Qualité de service visibles —
  * sert à déduire dynamiquement les périodes proposées.
  * @returns {string[]} Dates triées croissantes (peut être vide).
  */
@@ -443,7 +443,7 @@ function _dashPeriodLabel() {
 /**
  * Affiche le tableau de bord FSQS complet, restreint aux magasins
  * accessibles ET à la période sélectionnée, puis délègue au
- * dashboard Qualimètre.
+ * dashboard Qualité de service.
  * @returns {void}
  */
 function renderDash() {
@@ -596,6 +596,9 @@ function _computeRayonAverages(audits) {
       score: rayonAudits.length
         ? Math.round(rayonAudits.reduce((sum, a) => sum + a.score, 0) / rayonAudits.length)
         : null,
+      // Date du dernier audit de ce rayon DANS la période/le magasin
+      // filtrés (cohérent avec le score affiché juste au-dessus).
+      lastDate: rayonAudits.reduce((max, a) => (a.date && a.date > max ? a.date : max), '') || null,
     };
   });
 }
@@ -622,7 +625,7 @@ function renderRayonDash() {
   const container = el('d-ray');
   if (!container) return;
 
-  container.innerHTML = _computeRayonAverages(filteredAudits).map(({ rayon, score }) =>
+  container.innerHTML = _computeRayonAverages(filteredAudits).map(({ rayon, count, score, lastDate }) =>
     `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       ${rIcon(rayon)}
       <div style="flex:1">
@@ -633,6 +636,9 @@ function renderRayonDash() {
           </span>
         </div>
         ${score !== null ? pbar(score) : ''}
+        <div class="tsm tm" style="margin-top:4px;font-size:11px">
+          ${count ? `${count} audit(s) · ` : ''}Dernier audit : ${lastDate ? fd(lastDate) : '–'}
+        </div>
       </div>
     </div>`).join('');
 }
@@ -642,7 +648,7 @@ function renderRayonDash() {
 // ─────────────────────────────────────────────
 
 /**
- * Tableau de bord Qualimètre — mêmes filtres que le FSQS.
+ * Tableau de bord Qualité de service — mêmes filtres que le FSQS.
  * @returns {void}
  */
 function renderDashQual() {
@@ -669,7 +675,7 @@ function renderDashQual() {
 }
 
 /**
- * Graphique en barres Qualimètre par magasin.
+ * Graphique en barres Qualité de service par magasin.
  * @param {string[]} storeIds
  * @param {QualAudit[]} qualAudits - Déjà filtrés (magasins + période).
  * @returns {void}
@@ -700,7 +706,7 @@ function _renderQualChart(storeIds, qualAudits) {
 }
 
 /**
- * Agrège le nombre de NC par zone Qualimètre — partagé avec
+ * Agrège le nombre de NC par zone Qualité de service — partagé avec
  * l'export PDF.
  * @param {QualAudit[]} qualAudits
  * @returns {[string, number][]} Paires [zone, total NC] triées desc.
@@ -717,7 +723,7 @@ function _computeTopZonesNc(qualAudits) {
 }
 
 /**
- * Top 5 des zones Qualimètre en NC.
+ * Top 5 des zones Qualité de service en NC.
  * @param {QualAudit[]} qualAudits
  * @returns {void}
  */
@@ -737,7 +743,7 @@ function _renderTopZonesNc(qualAudits) {
 }
 
 /**
- * 5 derniers audits Qualimètre (période), triés par date desc.
+ * 5 derniers audits Qualité de service (période), triés par date desc.
  * @param {QualAudit[]} qualAudits
  * @returns {void}
  */
@@ -746,7 +752,7 @@ function _renderLastQualAudits(qualAudits) {
   if (!tbody) return;
   if (!qualAudits.length) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state" style="padding:24px">
-      <i class="ti ti-rosette" style="font-size:28px"></i><p>Aucun audit Qualimètre</p>
+      <i class="ti ti-rosette" style="font-size:28px"></i><p>Aucun audit Qualité de service</p>
     </div></td></tr>`;
     return;
   }
@@ -770,11 +776,11 @@ function _renderLastQualAudits(qualAudits) {
 }
 
 // ─────────────────────────────────────────────
-// 6. ONGLETS DASHBOARD (FSQS / Qualimètre)
+// 6. ONGLETS DASHBOARD (FSQS / Qualité de service)
 // ─────────────────────────────────────────────
 
 /**
- * Bascule l'onglet actif du dashboard entre FSQS et Qualimètre.
+ * Bascule l'onglet actif du dashboard entre FSQS et Qualité de service.
  * @param {'fsqs'|'qualimetre'|string} tab
  * @returns {void}
  */
@@ -898,8 +904,8 @@ function _buildDashboardPdfHtml() {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
       ${_dashPdfSectionTitle('FSQS — Par rayon', '#2563eb')}
       ${_dashPdfTable(
-        ['Rayon', 'Audits', 'Score moyen'],
-        perRayon.map(r => [_escapeHtml(r.rayon), String(r.count), r.score !== null ? r.score + '%' : '–'])
+        ['Rayon', 'Audits', 'Score moyen', 'Dernier audit'],
+        perRayon.map(r => [_escapeHtml(r.rayon), String(r.count), r.score !== null ? r.score + '%' : '–', r.lastDate ? fd(r.lastDate) : '–'])
       )}
     </div>`);
   }
@@ -912,7 +918,7 @@ function _buildDashboardPdfHtml() {
   }
 
   blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
-    ${_dashPdfSectionTitle('Audits Qualimètre — Synthèse', '#7c3aed')}
+    ${_dashPdfSectionTitle('Audits Qualité de service — Synthèse', '#7c3aed')}
     ${_dashPdfTable(
       ['Audits réalisés', 'Score moyen', 'Points NC', 'Magasins audités'],
       [[String(qualAudits.length),
@@ -924,7 +930,7 @@ function _buildDashboardPdfHtml() {
 
   if (qualPerStore.length) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
-      ${_dashPdfSectionTitle('Qualimètre — Par magasin', '#7c3aed')}
+      ${_dashPdfSectionTitle('Qualité de service — Par magasin', '#7c3aed')}
       ${_dashPdfTable(
         ['Magasin', 'Audits', 'Score moyen', 'Points NC'],
         qualPerStore.map(s => [_escapeHtml(s.name), String(s.count), s.avg + '%', String(s.nc)])
@@ -934,7 +940,7 @@ function _buildDashboardPdfHtml() {
 
   if (topZones.length) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
-      ${_dashPdfSectionTitle('Qualimètre — Zones les plus en non-conformité', '#7c3aed')}
+      ${_dashPdfSectionTitle('Qualité de service — Zones les plus en non-conformité', '#7c3aed')}
       ${_dashPdfTable(
         ['Zone', 'NC cumulées'],
         topZones.map(([name, count]) => [_escapeHtml(name), String(count)])
@@ -944,8 +950,8 @@ function _buildDashboardPdfHtml() {
 
   if (qualChartImg) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
-      ${_dashPdfSectionTitle('Qualimètre — Score moyen par magasin (graphique)', '#7c3aed')}
-      <img src="${qualChartImg}" style="width:100%;margin-top:6px" alt="Graphique Qualimètre">
+      ${_dashPdfSectionTitle('Qualité de service — Score moyen par magasin (graphique)', '#7c3aed')}
+      <img src="${qualChartImg}" style="width:100%;margin-top:6px" alt="Graphique Qualité de service">
     </div>`);
   }
 

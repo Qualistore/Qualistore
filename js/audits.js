@@ -1563,7 +1563,7 @@ function _buildDraftRow(draft) {
   // ⚠️ AJOUTÉ : troisième origine possible de brouillon — alerte
   // terrain mise en pause (voir _snapshotCurrentAlertAsDraft/
   // resumeAlertDraft, alertes.js). Même principe de dispatch que la
-  // distinction FSQS/Qualimètre déjà en place.
+  // distinction FSQS/Qualité de service déjà en place.
   /** @type {string} */
   const resumeFn  = draft.type === 'qualimetre'
     ? `resumeQualDraft('${draft.id}')`
@@ -1576,7 +1576,7 @@ function _buildDraftRow(draft) {
   // dans l'en-tête, index.html).
   /** @type {string} */
   const typeBadge = draft.type === 'qualimetre'
-    ? '<span class="badge" style="background:#eef2ff;color:#3730a3">Qualimètre</span>'
+    ? '<span class="badge" style="background:#eef2ff;color:#3730a3">Qualité de service</span>'
     : draft.type === 'alerte'
       ? '<span class="badge" style="background:#fef2f2;color:#b91c1c">Alerte</span>'
       : '<span class="badge" style="background:#f0fdf4;color:#166534">Audit FSQS</span>';

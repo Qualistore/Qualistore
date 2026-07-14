@@ -25,9 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .login-logo h1{font-size:20px;font-weight:700}
 .login-logo p{font-size:12px;color:var(--text2);margin-top:3px}
 .login-err{background:var(--danger-light);color:#b91c1c;border-radius:7px;padding:9px 14px;font-size:13px;margin-bottom:16px;display:none}
-.login-err.show{display:block}
-.login-ok{background:#e8f7ee;color:#15803d;border-radius:7px;padding:9px 14px;font-size:13px;margin-bottom:16px;display:none}
-.login-ok.show{display:block}
+.login-err.show{display:block}\n.login-ok{background:#e8f7ee;color:#15803d;border-radius:7px;padding:9px 14px;font-size:13px;margin-bottom:16px;display:none}\n.login-ok.show{display:block}
 .pw-wrap{position:relative}
 .pw-wrap .form-control{padding-right:40px}
 .pw-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text3);font-size:17px;padding:2px}
@@ -36,7 +34,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .app{display:none;min-height:100vh}
 .app.on{display:flex}
 .sidebar{width:var(--sidebar-w);background:var(--primary);color:#fff;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;transition:transform .3s;overflow-y:auto}
-.sb-logo{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.12);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.sb-logo{padding:16px 16px 14px;border-bottom:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+/* Cadre du logo : carte blanche arrondie et centrée — assortie au
+   fond blanc du logo pour un rendu propre sur la barre latérale
+   sombre (fine bordure claire + ombre douce). */
+.sb-logo-card{background:#ffffff;border-radius:12px;padding:10px 14px;width:100%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.35)}
+.sb-logo-card img{display:block;width:100%;max-width:150px;height:auto}
 .sb-logo .licon{width:34px;height:34px;background:rgba(255,255,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
 .sb-nav{flex:1;padding:12px 0}
 .nav-sec{padding:8px 16px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.8px;opacity:.5}
@@ -223,6 +226,8 @@ tbody tr:hover td{background:#f8faff}
 .nc-det{margin-top:10px;display:none}
 .nc-det.on{display:block}
 .rayon-boucherie{background:#fce4ec;color:#c62828}.rayon-maree{background:#e3f2fd;color:#1565c0}
+.rayon-boulangerie{background:#fff3e0;color:#b45309}.rayon-drive{background:#e0f2fe;color:#0369a1}
+.rayon-traiteur{background:#f3e8ff;color:#7e22ce}.rayon-snacking{background:#fef9c3;color:#a16207}.rayon-patisserie{background:#ffe4e6;color:#be185d}
 .rayon-charcuterie{background:#fff3e0;color:#e65100}.rayon-fromage{background:#fffde7;color:#f57f17}
 .rayon-fl{background:#e8f5e9;color:#2e7d32}
 .rayon-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
@@ -269,7 +274,17 @@ tbody tr:hover td{background:#f8faff}
   .content{padding:14px}
   .card-body{padding:14px}
   .modal-ov{padding:0;align-items:flex-end}
-  .modal{border-radius:var(--radius-lg) var(--radius-lg) 0 0;max-height:92vh;overflow-y:auto;margin:0}
+  /* ⚠️ CORRIGÉ (tablette/smartphone) : le pied de modale (bouton
+     Enregistrer) pouvait devenir inatteignable — la modale ENTIÈRE
+     défilait, et clavier virtuel ouvert 92vh dépassait la zone
+     réellement visible (vh ne suit pas le clavier sur iOS/Android).
+     Désormais : en-tête et pied FIXES, seul le corps défile, hauteur
+     en dvh (unité qui suit le clavier), avec repli vh pour les
+     anciens navigateurs, et marge de sécurité (encoche iPhone). */
+  .modal{border-radius:var(--radius-lg) var(--radius-lg) 0 0;margin:0;display:flex;flex-direction:column;max-height:92vh;max-height:92dvh;overflow:hidden}
+  .modal-body{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+  .modal-hdr,.modal-foot{flex-shrink:0}
+  .modal-foot{padding-bottom:calc(14px + env(safe-area-inset-bottom))}
   .modal-lg{max-width:100%}
   .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   thead th{font-size:10px;padding:8px 10px}
@@ -313,6 +328,12 @@ body { overscroll-behavior-y: contain; }
   .modal-hdr{padding:14px 16px}
   .modal-foot{padding:10px 16px;flex-wrap:wrap}
   .modal-foot .btn{flex:1;justify-content:center}
+  /* Police à 16px minimum dans les champs : en dessous, iOS zoome
+     automatiquement à la prise de focus et décale toute la modale. */
+  .form-control{font-size:16px}
+  /* Les puces de pièces jointes (nom + classement + boutons) passent
+     à la ligne au lieu de déborder sur petit écran. */
+  .doc-chip{flex-wrap:wrap;row-gap:6px}
   table{font-size:12px}
   thead th{display:none}
   tbody td{display:block;padding:4px 10px;border:none}
