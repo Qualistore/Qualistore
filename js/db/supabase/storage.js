@@ -385,6 +385,16 @@ async function loadDB() {
   // Migration non destructive — sûre à appeler même si déjà migrée.
   if (DB.qualimetreGlobal) DB.qualimetreGlobal = _migrateQualimetreGlobalToEnseigneScoped(DB.qualimetreGlobal);
 
+  // ⚠️ CORRIGÉ (données absentes à la connexion) : ne JAMAIS
+  // interroger Supabase sans utilisateur authentifié. Les policies
+  // RLS (`to authenticated`) ne renvoient pas d'erreur dans ce cas —
+  // elles renvoient des tableaux VIDES, qui écrasaient la DB locale
+  // et son cache localStorage par du vide au chargement de la page
+  // (avant connexion). Le vrai chargement a désormais lieu APRÈS
+  // l'authentification (voir doLogin/confirmForcedPasswordChange,
+  // auth.js) ; ici on s'arrête au cache local.
+  if (!CU) return;
+
   // ⚠️ AJOUTÉ : si une synchronisation précédente a échoué (colonne
   // manquante, erreur serveur ponctuelle, etc. — pas nécessairement
   // une perte réseau) et que la page a été rechargée depuis, ne JAMAIS
@@ -410,11 +420,20 @@ async function loadDB() {
       grilleRows, qualAudits, qualRows, drafts, analyses,
       auditsExternes, balances,
     ] = await Promise.all([
-      sbSelect('magasins'),   sbSelect('audits'),
-      sbSelect('ncs'),      sbSelect('actions'),    sbSelect('alertes'),
-      sbSelect('grille_custom'), sbSelect('qual_audits'),
-      sbSelect('qualimetre_custom'), sbSelect('drafts'), sbSelect('analyses'),
-      sbSelect('audits_externes'), sbSelect('balances'),
+      // ⚠️ CHANGÉ : sbSelectStrict (supabase.js) au lieu de sbSelect —
+      // un échec (réseau, RLS...) fait désormais basculer dans le
+      // catch ci-dessous (mode hors-ligne, cache conservé) au lieu
+      // d'écraser silencieusement la DB par des tableaux vides.
+      sbSelectStrict('magasins'),   sbSelectStrict('audits'),
+      sbSelectStrict('ncs'),      sbSelectStrict('actions'),    sbSelectStrict('alertes'),
+      sbSelectStrict('grille_custom'), sbSelectStrict('qual_audits'),
+      sbSelectStrict('qualimetre_custom'), sbSelectStrict('drafts'),
+      // Tables récentes : tolérées absentes (migration SQL pas encore
+      // exécutée) — repli sur la valeur locale courante, sans faire
+      // échouer tout le chargement.
+      sbSelectStrict('analyses').catch(() => DB.analyses || []),
+      sbSelectStrict('audits_externes').catch(() => DB.auditsExternes || []),
+      sbSelectStrict('balances').catch(() => DB.balances || []),
     ]);
 
     DB = {
@@ -1039,10 +1058,17 @@ setInterval(async () => {
 
   try {
     /** @type {[Audit[], NC[], Action[], Alerte[], QualAudit[], Draft[]]} */
+    // ⚠️ CHANGÉ : sbSelectStrict — un échec réseau ponctuel pendant
+    // un tick de polling tombait dans le catch... sauf que sbSelect ne
+    // levait jamais : les tableaux vides retournés passaient pour un
+    // « changement » et écrasaient la DB locale (données de saisie
+    // comprises) jusqu'au tick réussi suivant.
     const [audits, ncs, actions, alertes, qualAudits, drafts, analyses, auditsExternes, balances] = await Promise.all([
-      sbSelect('audits'), sbSelect('ncs'), sbSelect('actions'),
-      sbSelect('alertes'), sbSelect('qual_audits'), sbSelect('drafts'),
-      sbSelect('analyses'), sbSelect('audits_externes'), sbSelect('balances'),
+      sbSelectStrict('audits'), sbSelectStrict('ncs'), sbSelectStrict('actions'),
+      sbSelectStrict('alertes'), sbSelectStrict('qual_audits'), sbSelectStrict('drafts'),
+      sbSelectStrict('analyses').catch(() => DB.analyses || []),
+      sbSelectStrict('audits_externes').catch(() => DB.auditsExternes || []),
+      sbSelectStrict('balances').catch(() => DB.balances || []),
     ]);
 
     /** @type {boolean} */

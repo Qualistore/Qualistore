@@ -236,6 +236,24 @@ async function doLogin() {
   CU = profile;
   _resetSessionTimer();
 
+  // ⚠️ CORRIGÉ (données absentes à la connexion) : la DB avait été
+  // « chargée » au chargement de la page, AVANT l'authentification —
+  // les policies RLS (`to authenticated`) renvoyaient des tableaux
+  // vides, et l'application s'ouvrait sans données jusqu'au tick de
+  // polling suivant. On charge donc la DB ICI, la session étant
+  // désormais attachée au client Supabase, AVANT d'afficher
+  // l'application — avec un message d'attente sur l'écran de
+  // connexion pendant le chargement (voir aussi le garde `if (!CU)`
+  // dans loadDB, storage.js).
+  errorEl.textContent = 'Connexion réussie — chargement des données…';
+  errorEl.className   = 'login-ok show';
+  try {
+    await loadDB();
+  } finally {
+    errorEl.className   = 'login-err';
+    errorEl.textContent = '';
+  }
+
   el('login-screen').style.display = 'none';
   el('app').classList.add('on');
   buildSidebar();
@@ -461,6 +479,10 @@ async function confirmForcedPasswordChange() {
 
   CU = profile;
   _resetSessionTimer();
+
+  // Même correction que doLogin : charger la DB une fois authentifié,
+  // AVANT d'afficher l'application (policies RLS `to authenticated`).
+  await loadDB();
 
   el('login-screen').style.display = 'none';
   el('app').classList.add('on');

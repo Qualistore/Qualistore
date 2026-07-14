@@ -90,6 +90,28 @@ async function sbSelect(table) {
 }
 
 /**
+ * Variante STRICTE de sbSelect : LÈVE une erreur au lieu de renvoyer
+ * un tableau vide quand la requête échoue.
+ *
+ * ⚠️ AJOUTÉ (bug d'écrasement par du vide) : sbSelect avale les
+ * erreurs et renvoie [], ce qui rend « table réellement vide » et
+ * « requête en échec » indiscernables pour l'appelant. Conséquences
+ * observées : le repli hors-ligne de loadDB (storage.js) ne se
+ * déclenchait jamais, et un échec réseau ponctuel pendant le polling
+ * pouvait écraser la DB locale (et son cache localStorage) par des
+ * tableaux vides. loadDB et le polling utilisent désormais cette
+ * variante ; sbSelect reste inchangée pour les autres appelants.
+ * @param {string} table - Nom de la table Supabase.
+ * @returns {Promise<SupabaseRow[]>}
+ * @throws {Error} Si la requête échoue (réseau, RLS, table absente...).
+ */
+async function sbSelectStrict(table) {
+  const { data, error } = await _sb.from(table).select('*');
+  if (error) throw new Error(`Supabase [select] ${table}: ${error.message}`);
+  return data || [];
+}
+
+/**
  * Insère ou met à jour des lignes (upsert).
  * Déduplique par `id` avant l'envoi pour éviter les conflits.
  * @param {string} table - Nom de la table Supabase.
