@@ -430,12 +430,22 @@ function _updateStoreSelectionCount() {
  */
 function _buildPermissionsSection() {
   const container = el('u-perms-container');
-  container.innerHTML = PERMISSION_GROUPS.map(group => `
+  // ⚠️ AJOUTÉ : droit users_edit_permissions — défini dans config.js
+  // depuis la refonte des permissions mais jamais vérifié : tout
+  // détenteur de users_manage pouvait modifier les droits. Sans ce
+  // droit, la section reste VISIBLE mais en lecture seule (cases
+  // désactivées), et saveUser ignore les cases (voir
+  // _readStoreAndPermsFromForm).
+  /** @type {boolean} */
+  const canEditPerms = !!hasPerm('users_edit_permissions');
+  /** @type {string} */
+  const readOnlyNote = canEditPerms ? '' : `<div class="tsm tm" style="margin-bottom:8px"><i class="ti ti-lock"></i> Lecture seule — le droit « Modifier les droits des utilisateurs » est requis pour changer ces cases.</div>`;
+  container.innerHTML = readOnlyNote + PERMISSION_GROUPS.map(group => `
     <details class="perm-sec" open>
       <summary class="perm-title"><i class="ti ${group.icon}"></i> ${group.label}</summary>
       <div class="cb-group">
         ${group.permissions.map(perm => `
-          <label class="cb-item"><input type="checkbox" id="p-${perm.id}"> ${perm.label}</label>
+          <label class="cb-item"><input type="checkbox" id="p-${perm.id}"${canEditPerms ? '' : ' disabled'}> ${perm.label}</label>
         `).join('')}
       </div>
     </details>
@@ -649,6 +659,18 @@ function _readStoreAndPermsFromForm() {
   const magasins = role === 'admin' ? [] : [..._selectedMagasinIds];
   /** @type {UserPerms} */
   const perms = {};
+  // ⚠️ AJOUTÉ : sans users_edit_permissions, les cases (désactivées,
+  // voir _buildPermissionsSection) sont IGNORÉES — on conserve les
+  // droits existants de l'utilisateur modifié, ou les défauts du rôle
+  // pour une création. Jamais uniquement une protection d'UI.
+  if (!hasPerm('users_edit_permissions')) {
+    /** @type {User | undefined} */
+    const existing = _cachedProfiles.find(u => u.id === v('u-id'));
+    /** @type {UserPerms} */
+    const base = existing ? (existing.perms || {}) : (DPERMS[role] || {});
+    PIDS.forEach(permId => { perms[permId] = base[permId] ? 1 : 0; });
+    return { magasins, perms };
+  }
   PIDS.forEach(permId => {
     const checkbox = el('p-' + permId);
     if (checkbox) perms[permId] = checkbox.checked ? 1 : 0;

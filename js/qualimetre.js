@@ -137,10 +137,13 @@ function showQualimetre() {
   const store    = DB.magasins.find(m => m.id === storeId);
   /** @type {QMZone | undefined} */
   const zone     = _getAllZones().find(z => z.id === zoneId);
+  // ⚠️ CORRIGÉ : 'admin en dur' -> droit granulaire qgrid_manage
+  // (même droit que la page Grille Qualimètre, grille-qualimetre.js).
+  // Le nom isAdmin est conservé pour ne pas toucher au reste du fichier.
   /** @type {boolean} */
-  const isAdmin  = CU && CU.role === 'admin';
+  const isAdmin  = !!hasPerm('qgrid_manage');
 
-  // Bouton "Gérer la grille" — admin uniquement
+  // Bouton "Gérer la grille" — droit qgrid_manage
   const editBtn = el('btn-edit-qual-grille');
   if (editBtn) editBtn.style.display = isAdmin ? '' : 'none';
 

@@ -221,6 +221,10 @@ function showGrilleCardsView() {
   // (toujours visible, codé en dur dans Qualistore.html) — gated
   // maintenant par grid_create_rayon.
   if (el('btn-create-rayon')) el('btn-create-rayon').style.display = hasPerm('grid_create_rayon') ? '' : 'none';
+  // ⚠️ AJOUTÉ : droit grid_import — défini dans config.js depuis la
+  // refonte des permissions mais jamais branché (bouton et import
+  // accessibles à tous les rôles ayant accès à la page Grilles).
+  if (el('btn-import-grille')) el('btn-import-grille').style.display = hasPerm('grid_import') ? '' : 'none';
 
   /** @type {string[]} */
   const rayons = getKnownRayons();
@@ -920,6 +924,10 @@ function delCtrl(rayon, pointId, storeId) {
  * @returns {void}
  */
 function openCreateRayonPrompt() {
+  // ⚠️ AJOUTÉ : garde applicative grid_create_rayon (le bouton était
+  // de plus toujours visible : le HTML n'avait pas l'id
+  // btn-create-rayon que cette page tentait de masquer — corrigé).
+  if (!hasPerm('grid_create_rayon')) return;
   /** @type {string | null} */
   const name = prompt('Nom du nouveau rayon :');
   if (name === null) return;

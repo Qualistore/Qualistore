@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QualiStore</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/app.css?v=8">
+<link rel="stylesheet" href="css/app.css?v=9">
 </head>
 <body>
 
@@ -538,8 +538,8 @@
             </select>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-secondary btn-sm" onclick="openCreateRayonPrompt()"><i class="ti ti-plus"></i> Nouveau rayon</button>
-            <button class="btn btn-secondary btn-sm" onclick="openImportModal()"><i class="ti ti-upload"></i> Importer</button>
+            <button class="btn btn-secondary btn-sm" id="btn-create-rayon" onclick="openCreateRayonPrompt()"><i class="ti ti-plus"></i> Nouveau rayon</button>
+            <button class="btn btn-secondary btn-sm" id="btn-import-grille" onclick="openImportModal()"><i class="ti ti-upload"></i> Importer</button>
           </div>
         </div>
         <div class="tsm tm" id="grille-scope-label" style="margin-bottom:16px"></div>
@@ -1593,44 +1593,44 @@
 <div id="ana-pdf-export" style="display:none"></div>
 
 <!-- Librairies externes -->
-<script src="js/jspdf.umd.min.js?v=8"></script>
-<script src="js/html2canvas.min.js?v=8"></script>
-<script src="js/chart.umd.min.js?v=8"></script>
+<script src="js/jspdf.umd.min.js?v=9"></script>
+<script src="js/html2canvas.min.js?v=9"></script>
+<script src="js/chart.umd.min.js?v=9"></script>
 
 <!-- Infrastructure -->
-<script src="js/config.js?v=8"></script>
+<script src="js/config.js?v=9"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase.js?v=8"></script>
-<script src="js/db/supabase/storage.js?v=8"></script>
-<script src="js/auth.js?v=8"></script>
-<script src="js/ui.js?v=8"></script>
+<script src="js/supabase.js?v=9"></script>
+<script src="js/db/supabase/storage.js?v=9"></script>
+<script src="js/auth.js?v=9"></script>
+<script src="js/ui.js?v=9"></script>
 
 <!-- Import de référentiels (chargé avant grille-qualimetre.js, qui réutilise detectConceptMapping/normalizeRows/_resolveOrCreateZoneFromDocument) -->
-<script src="js/import/import-detect.js?v=8"></script>
-<script src="js/import/import-normalize.js?v=8"></script>
-<script src="js/import/import-grille.js?v=8"></script>
+<script src="js/import/import-detect.js?v=9"></script>
+<script src="js/import/import-normalize.js?v=9"></script>
+<script src="js/import/import-grille.js?v=9"></script>
 
 <!-- Modules métier -->
-<script src="js/dashboard.js?v=8"></script>
-<script src="js/audits.js?v=8"></script>
-<script src="js/nc.js?v=8"></script>
-<script src="js/actions.js?v=8"></script>
-<script src="js/magasins.js?v=8"></script>
-<script src="js/rayons.js?v=8"></script>
-<script src="js/grille.js?v=8"></script>
-<script src="js/alertes.js?v=8"></script>
-<script src="js/analyses.js?v=8"></script>
-<script src="js/audits-externes.js?v=8"></script>
-<script src="js/metrologie.js?v=8"></script>
-<script src="js/users.js?v=8"></script>
-<script src="js/rapports-fsqs.js?v=8"></script>
-<script src="js/import/grille-qualimetre.js?v=8"></script> 
-<script src="js/qualimetre.js?v=8"></script>
-<script src="js/audit-qualimetre.js?v=8"></script>
-<script src="js/rapport-qualimetre.js?v=8"></script>
+<script src="js/dashboard.js?v=9"></script>
+<script src="js/audits.js?v=9"></script>
+<script src="js/nc.js?v=9"></script>
+<script src="js/actions.js?v=9"></script>
+<script src="js/magasins.js?v=9"></script>
+<script src="js/rayons.js?v=9"></script>
+<script src="js/grille.js?v=9"></script>
+<script src="js/alertes.js?v=9"></script>
+<script src="js/analyses.js?v=9"></script>
+<script src="js/audits-externes.js?v=9"></script>
+<script src="js/metrologie.js?v=9"></script>
+<script src="js/users.js?v=9"></script>
+<script src="js/rapports-fsqs.js?v=9"></script>
+<script src="js/import/grille-qualimetre.js?v=9"></script> 
+<script src="js/qualimetre.js?v=9"></script>
+<script src="js/audit-qualimetre.js?v=9"></script>
+<script src="js/rapport-qualimetre.js?v=9"></script>
 
 <!-- Point d'entrée -->
-<script src="js/init.js?v=8"></script>
+<script src="js/init.js?v=9"></script>
 
 </body>
 </html>

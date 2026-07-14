@@ -161,7 +161,7 @@ function renderQualAudits() {
     <td>${statBdg(a.statut)}</td>
     <td><div class="act-btns">
       <button class="btn btn-secondary btn-sm" onclick="showQualAudit('${a.id}')"><i class="ti ti-eye"></i></button>
-      ${CU && CU.role === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="deleteQualAudit('${a.id}')"><i class="ti ti-trash"></i></button>` : ''}
+      ${hasPerm('qaudit_delete') ? `<button class="btn btn-danger btn-sm" onclick="deleteQualAudit('${a.id}')"><i class="ti ti-trash"></i></button>` : ''}
     </div></td>
   </tr>`).join('');
 }
@@ -179,9 +179,16 @@ function openQualAuditModal() {
   msel.innerHTML = '<option value="">Sélectionner...</option>' +
     DB.magasins.filter(m => mids.includes(m.id) && m.statut === 'actif').map(m => `<option value="${m.id}">${m.nom}</option>`).join('');
   el('qa-date').value = today();
-  el('qa-date').readOnly = !(CU && CU.role === 'admin');
-  el('qa-aud').value = (CU && CU.role !== 'collaborateur') ? CU.nom : '';
-  el('qa-aud').readOnly = (CU && CU.role !== 'collaborateur');
+  // ⚠️ CORRIGÉ : remplace les vérifications CU.role par les droits
+  // granulaires dédiés (qaudit_edit_date, qaudit_edit_auditor) —
+  // définis dans config.js depuis la refonte des permissions mais
+  // jamais branchés dans CE fichier (seule la copie audit_qualimetre.js,
+  // non chargée par le HTML, les utilisait).
+  el('qa-date').readOnly = !hasPerm('qaudit_edit_date');
+  /** @type {boolean} */
+  const canEditAuditor = hasPerm('qaudit_edit_auditor');
+  el('qa-aud').value = canEditAuditor ? '' : (CU ? CU.nom : '');
+  el('qa-aud').readOnly = !canEditAuditor;
   sv('qa-cmt', '');
   el('qa-s0').style.display = ''; el('qa-s1').style.display = 'none';
   el('qa-s2').style.display = 'none'; el('qa-s3').style.display = 'none';
@@ -690,6 +697,9 @@ function showQualAudit(id) {
  * @returns {void}
  */
 function deleteQualAudit(id) {
+  // ⚠️ AJOUTÉ : droit granulaire qaudit_delete (remplace le contrôle
+  // CU.role === 'admin' qui ne protégeait que l'affichage du bouton).
+  if (!hasPerm('qaudit_delete')) return;
   if (!confirm(`Supprimer l'audit Qualimètre ${id} ?`)) return;
   DB.qualAudits = (DB.qualAudits || []).filter(x => x.id !== id);
   save(); renderQualAudits();
@@ -757,7 +767,7 @@ function resumeQualDraft(id) {
     DB.magasins.filter(m => mids.includes(m.id) && m.statut === 'actif').map(m => `<option value="${m.id}">${m.nom}</option>`).join('');
   el('qa-mag').value = d.mid;
   el('qa-date').value = d.date;
-  el('qa-date').readOnly = !(CU && CU.role === 'admin');
+  el('qa-date').readOnly = !hasPerm('qaudit_edit_date'); // droit granulaire (voir openQualAuditModal)
   el('qa-aud').value = d.aud;
   sv('qa-cmt', d.cmt || '');
   qaAnswers = { ...d.answers };

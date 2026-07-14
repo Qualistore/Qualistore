@@ -90,6 +90,7 @@ const PERMISSION_GROUPS = [
       { id: 'qaudit_create',       label: 'Créer un audit Qualimètre' },
       { id: 'qaudit_edit_date',    label: 'Modifier la date d\'un audit Qualimètre' },
       { id: 'qaudit_edit_auditor', label: 'Modifier le champ auditeur' },
+      { id: 'qaudit_delete',       label: 'Supprimer un audit Qualimètre' },
     ],
   },
   {
@@ -108,7 +109,6 @@ const PERMISSION_GROUPS = [
       { id: 'action_view',        label: 'Voir les actions correctives' },
       { id: 'action_edit_status', label: 'Modifier le statut d\'une action' },
       { id: 'action_delete',      label: 'Supprimer une action' },
-      { id: 'action_restore',     label: 'Restaurer une action' },
     ],
   },
   {
@@ -210,9 +210,9 @@ const DEFAULT_PERMISSIONS = {
 
   fsqs: {
     audit_create: 1, audit_edit_date: 0, draft_view_own: 1, draft_view_others: 0, draft_resume: 1, draft_delete: 1, draft_save: 1,
-    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0,
+    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0, qaudit_delete: 0,
     nc_view: 1, nc_edit_status: 1, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
-    action_view: 1, action_edit_status: 1, action_delete: 0, action_restore: 0,
+    action_view: 1, action_edit_status: 1, action_delete: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
     analysis_view: 1, analysis_upload: 1, analysis_delete: 0,
     extaudit_view: 1, extaudit_upload: 1, extaudit_delete: 0, metro_view: 1, metro_manage: 1, metro_delete: 0,
@@ -225,9 +225,9 @@ const DEFAULT_PERMISSIONS = {
 
   directeur: {
     audit_create: 0, audit_edit_date: 0, draft_view_own: 0, draft_view_others: 0, draft_resume: 0, draft_delete: 0, draft_save: 0,
-    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0,
+    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0, qaudit_delete: 0,
     nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
-    action_view: 1, action_edit_status: 0, action_delete: 0, action_restore: 0,
+    action_view: 1, action_edit_status: 0, action_delete: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
     analysis_view: 1, analysis_upload: 1, analysis_delete: 0,
     extaudit_view: 1, extaudit_upload: 1, extaudit_delete: 0, metro_view: 1, metro_manage: 1, metro_delete: 0,
@@ -240,9 +240,9 @@ const DEFAULT_PERMISSIONS = {
 
   direction: {
     audit_create: 0, audit_edit_date: 0, draft_view_own: 0, draft_view_others: 0, draft_resume: 0, draft_delete: 0, draft_save: 0,
-    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0,
+    qaudit_create: 1, qaudit_edit_date: 0, qaudit_edit_auditor: 0, qaudit_delete: 0,
     nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
-    action_view: 0, action_edit_status: 0, action_delete: 0, action_restore: 0,
+    action_view: 0, action_edit_status: 0, action_delete: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
     analysis_view: 1, analysis_upload: 0, analysis_delete: 0,
     extaudit_view: 1, extaudit_upload: 0, extaudit_delete: 0, metro_view: 1, metro_manage: 0, metro_delete: 0,
@@ -255,9 +255,9 @@ const DEFAULT_PERMISSIONS = {
 
   collaborateur: {
     audit_create: 1, audit_edit_date: 0, draft_view_own: 1, draft_view_others: 0, draft_resume: 1, draft_delete: 1, draft_save: 1,
-    qaudit_create: 0, qaudit_edit_date: 0, qaudit_edit_auditor: 0,
+    qaudit_create: 0, qaudit_edit_date: 0, qaudit_edit_auditor: 0, qaudit_delete: 0,
     nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
-    action_view: 0, action_edit_status: 0, action_delete: 0, action_restore: 0,
+    action_view: 0, action_edit_status: 0, action_delete: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
     analysis_view: 0, analysis_upload: 0, analysis_delete: 0,
     extaudit_view: 0, extaudit_upload: 0, extaudit_delete: 0, metro_view: 0, metro_manage: 0, metro_delete: 0,

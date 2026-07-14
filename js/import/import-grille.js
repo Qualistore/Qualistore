@@ -394,6 +394,12 @@ let _importDefaultStore = '';
  * @returns {void}
  */
 function openImportModal(target) {
+  // ⚠️ AJOUTÉ : droit granulaire — grid_import pour la grille FSQS ;
+  // si la cible 'qualimetre' est un jour réactivée, elle relève de
+  // qgrid_manage (même droit que openGqImportModal,
+  // grille-qualimetre.js). Garde applicative, pas seulement le
+  // masquage du bouton.
+  if ((target || 'grille') === 'qualimetre' ? !hasPerm('qgrid_manage') : !hasPerm('grid_import')) return;
   _importTarget        = target || 'grille';
   _importRows          = [];
   _importDefaultRayons = [];
