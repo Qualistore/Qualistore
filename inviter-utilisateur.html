@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QualiStore — Inviter un utilisateur</title>
+<title>HygiPerf — Inviter un utilisateur</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
@@ -12,7 +12,7 @@
 <!--
   PAGE AUTONOME — outil admin pour envoyer une invitation par email.
   ⚠️ NOUVEAU FICHIER (à placer à la racine du repo, au même niveau
-  que index.html / Qualistore.html).
+  que index.html / index.html).
 
   ⚠️ PAS ENCORE INTÉGRÉE à l'écran "Utilisateurs" de l'application
   (users.js) — c'est un outil séparé pour l'instant. Les utilisateurs
@@ -22,7 +22,7 @@
   `profiles`) jusqu'à ce que users.js soit migré vers `profiles`
   (étape de nettoyage prévue plus tard dans le plan).
 
-  Réutilise la session déjà ouverte dans le navigateur (Qualistore.html
+  Réutilise la session déjà ouverte dans le navigateur (index.html
   et cette page partagent le même stockage de session Supabase,
   puisqu'elles sont sur le même site) — pas de formulaire de connexion
   ici. Si personne n'est connecté, ou que la personne connectée n'est
@@ -36,7 +36,7 @@
 <div class="login-wrap" id="login-screen">
   <div class="login-box">
     <div class="login-logo">
-      <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="QualiStore">
+      <img src="assets/logo.png" style="width:140px;height:auto;margin-bottom:8px" alt="HygiPerf">
       <p style="color:var(--text2);font-size:13px;margin-top:4px">Inviter un utilisateur</p>
     </div>
 
@@ -46,7 +46,7 @@
 
     <div id="gate-denied" style="display:none;text-align:center">
       <p class="tsm tm" style="margin-bottom:14px">Réservé aux administrateurs connectés.</p>
-      <a class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" href="./Qualistore.html">
+      <a class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" href="./index.html">
         <i class="ti ti-login"></i> Se connecter
       </a>
     </div>

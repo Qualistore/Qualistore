@@ -290,7 +290,7 @@ function renderNC() {
   if (deleteButton) deleteButton.style.display = canDeleteSelected ? '' : 'none';
 
   // ⚠️ AJOUTÉ : les 3 boutons d'export PDF/sélection n'étaient reliés à
-  // aucun droit (toujours visibles, codés en dur dans Qualistore.html) —
+  // aucun droit (toujours visibles, codés en dur dans index.html) —
   // gated maintenant par nc_export.
   /** @type {boolean} */
   const canExport = hasPerm('nc_export');
@@ -783,7 +783,7 @@ function _applyDateFilter(list, periodSelectId, dateInputId, dateField) {
  */
 function _pdfLogoHeader(subtitle) {
   return `<div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;margin-bottom:20px;border-bottom:2px solid #e2e6ef">
-    <img src="${LOGO_PATH}" style="height:52px;width:auto" alt="QualiStore">
+    <img src="${LOGO_PATH}" style="height:52px;width:auto" alt="HygiPerf">
     <div style="text-align:right;font-family:Arial,sans-serif">
       <div style="font-size:10px;color:#8a94a6;text-transform:uppercase;letter-spacing:.5px">Généré le ${new Date().toLocaleDateString('fr-FR')}</div>
       ${subtitle ? `<div style="font-size:11px;color:#5a6070;margin-top:2px">${subtitle}</div>` : ''}

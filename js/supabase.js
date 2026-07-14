@@ -6,7 +6,7 @@
 // ⚠️ CHANGÉ (migration Supabase Auth, étape 2/8 — voir le plan) :
 // remplace les appels fetch() manuels par le SDK officiel
 // @supabase/supabase-js (chargé en CDN dans index.html /
-// Qualistore.html, avant ce script — voir window.supabase).
+// index.html, avant ce script — voir window.supabase).
 // Nécessaire pour que chaque requête vers vos tables porte
 // automatiquement le jeton de session du vrai utilisateur connecté
 // (via Supabase Auth), condition indispensable pour que les policies

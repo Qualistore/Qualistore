@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-// CONFIG — QualiStore
+// CONFIG — HygiPerf
 // Source de vérité unique pour toutes les constantes applicatives.
 // Aucune logique métier ici — uniquement des données statiques.
 //

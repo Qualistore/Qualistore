@@ -2,54 +2,35 @@
 // MÉTROLOGIE — Suivi des balances par magasin
 //
 // Présentation PAR BALANCE : chaque balance est assignée à un magasin
-// et centralise les données qui lui sont injectées — les « passages »
-// du prestataire de métrologie : rapport(s) de passage stocké(s) TELS
-// QUELS (préfixe Storage 'metrologie/'), date du passage, échéance du
-// prochain passage, commentaire.
+// et centralise les « passages » du prestataire de métrologie :
+// rapport(s) de passage stocké(s) TELS QUELS (préfixe Storage
+// 'metrologie/'), date du passage, échéance du prochain passage,
+// commentaire.
 //
 // RAPPEL AUTOMATIQUE : 30 jours avant l'échéance du dernier passage
-// d'une balance, une ALERTE MAGASIN (DB.alertes — même structure que
-// les alertes terrain, voir saveAlert, alertes.js) est créée
+// d'une balance, une ALERTE MAGASIN (DB.alertes) est créée
 // automatiquement pour rappeler de prendre rendez-vous avec le
-// prestataire. L'alerte remet à disposition les données du dernier
-// passage : date, échéance, commentaire, et les DOCUMENTS importés
-// (référencés, pas copiés — la suppression de l'alerte ne supprime
-// jamais ces fichiers, voir _deleteAlertDocuments, magasins.js).
-// L'échéance déjà alertée est mémorisée sur la balance
-// (balance.alerte_echeance) : une seule alerte par échéance, même
-// multi-appareils (la balance est synchronisée via Supabase), et pas
-// de recréation si l'utilisateur clôture ou supprime l'alerte.
+// prestataire, avec les données du dernier passage et ses DOCUMENTS
+// joints PAR RÉFÉRENCE (la suppression de l'alerte ne supprime jamais
+// ces fichiers — voir _deleteAlertDocuments, magasins.js). Anti-doublon
+// via balance.alerte_echeance (synchronisé multi-appareils).
 //
-// Données : table Supabase `balances` (une ligne par balance, les
-// passages embarqués en jsonb — voir
-// migration-analyses-extaudits-metrologie.sql), clé DB.balances,
-// synchronisée par storage.js.
+// Données : table Supabase `balances` (une ligne par balance,
+// passages en jsonb), clé DB.balances, synchronisée par storage.js.
 //
-// ⚠️ HORS-LIGNE — AUCUN base64 : même mécanisme que analyses.js
-// (file d'attente IndexedDB du fichier ORIGINAL + réconciliateur,
-// contexte 'metrologie', pointId composite 'balanceId|passageId|docId').
-//
-// Dépend de : config.js, storage.js, supabase.js, auth.js, ui.js,
-//   alertes.js (openDocumentViewer, downloadDocument,
-//   _formatFileSize, _alertDocumentIcon),
-//   import-grille.js (_escapeHtml, _escapeHtmlAttr),
-//   analyses.js (_analyseStoragePathFromUrl — helper partagé).
+// ⚠️ HORS-LIGNE — AUCUN base64 : file d'attente IndexedDB du fichier
+// ORIGINAL, contexte 'metrologie', pointId 'balanceId|passageId|docId'.
 // ══════════════════════════════════════════════════════════════
 
-// ─────────────────────────────────────────────
-// 0. TYPEDEFS JSDoc
-// ─────────────────────────────────────────────
-
 /**
- * Document joint à un passage (même forme que AlertDocument,
- * alertes.js — réutilisable tel quel dans une alerte).
+ * Document joint à un passage (même forme que AlertDocument, alertes.js).
  * @typedef {Object} PassageDocument
  * @property {string} id - Identifiant généré (préfixé 'doc-').
  * @property {string} nom - Nom de fichier d'origine.
  * @property {string} mime - Type MIME.
  * @property {number} taille - Taille en octets.
  * @property {number} ajoutLe - Horodatage (Date.now()).
- * @property {string} url - URL publique Supabase Storage. Chaîne vide tant que le fichier est en attente d'envoi.
+ * @property {string} url - URL publique Supabase Storage ('' si en attente d'envoi).
  */
 
 /**
@@ -60,7 +41,7 @@
  * @property {string} echeance - Échéance du prochain passage ('YYYY-MM-DD').
  * @property {string} [cmt] - Commentaire libre.
  * @property {PassageDocument[]} documents - Rapports de passage (stockage brut).
- * @property {string} aud - Nom de l'utilisateur ayant enregistré le passage.
+ * @property {string} aud - Utilisateur ayant enregistré le passage.
  * @property {number} created - Horodatage (Date.now()).
  */
 
@@ -72,47 +53,35 @@
  * @property {string} nom - Nom de la balance (ex : 'Balance Boucherie 1').
  * @property {string} [sn] - Numéro de série (optionnel).
  * @property {Passage[]} passages - Historique des passages (données centralisées).
- * @property {string} [alerte_echeance] - Échéance ('YYYY-MM-DD') pour laquelle le rappel automatique a déjà été créé — évite les doublons. Nom en snake_case = nom exact de la colonne Supabase.
+ * @property {string} [alerte_echeance] - Échéance déjà alertée — anti-doublon. Nom = colonne Supabase (snake_case).
  * @property {number} created - Horodatage (Date.now()).
  */
 
-// ─────────────────────────────────────────────
-// 1. CONSTANTES & ÉTAT
-// ─────────────────────────────────────────────
-
 /**
- * Nombre de jours avant l'échéance à partir desquels le rappel
- * automatique est créé.
+ * Jours avant l'échéance à partir desquels le rappel est créé.
  * @type {number}
  */
 const METRO_ALERT_DAYS_BEFORE = 30;
 
 /**
- * Fichiers sélectionnés dans la modale de passage, en attente
- * d'enregistrement (upload réel à savePassage uniquement).
+ * Fichiers sélectionnés dans la modale de passage, en attente.
  * @type {File[]}
  */
 let _pasPendingFiles = [];
 
 /**
- * Balance actuellement affichée dans la modale de détail (pour la
- * rafraîchir après un ajout/suppression de passage), ou null.
+ * Balance affichée dans la modale de détail (pour rafraîchir), ou null.
  * @type {string | null}
  */
 let _balanceViewId = null;
 
 /**
- * Horodatage du dernier contrôle d'échéances (au plus une fois par
- * heure par session — voir checkMetrologieEcheances).
+ * Horodatage du dernier contrôle d'échéances (max 1×/heure).
  * @type {number}
  */
 let _metroLastCheck = 0;
 
-// ─────────────────────────────────────────────
-// 1bis. RÉCONCILIATEUR HORS-LIGNE
-// pointId composite : 'balanceId|passageId|docId'.
-// ─────────────────────────────────────────────
-
+// Réconciliateur hors-ligne — pointId 'balanceId|passageId|docId'.
 registerPhotoQueueReconciler('metrologie', (entry, url) => {
   /** @type {string[]} */
   const [balanceId, passageId, docId] = (entry.pointId || '').split('|');
@@ -122,7 +91,7 @@ registerPhotoQueueReconciler('metrologie', (entry, url) => {
   const passage = balance && (balance.passages || []).find(p => p.id === passageId);
   /** @type {PassageDocument | undefined} */
   const doc = passage && (passage.documents || []).find(d => d.id === docId);
-  if (!doc) return; // supprimé entre-temps — rien à faire
+  if (!doc) return;
 
   doc.url = url;
   save(['balances']);
@@ -132,13 +101,8 @@ registerPhotoQueueReconciler('metrologie', (entry, url) => {
   if (_balanceViewId === balanceId && el('m-balance-view')?.classList.contains('open')) openBalanceView(balanceId);
 });
 
-// ─────────────────────────────────────────────
-// 2. HELPERS
-// ─────────────────────────────────────────────
-
 /**
- * Retourne le dernier passage d'une balance (le plus récent par date
- * de passage), ou null si aucun.
+ * Dernier passage d'une balance (le plus récent par date), ou null.
  * @param {Balance} balance
  * @returns {Passage | null}
  */
@@ -150,8 +114,7 @@ function _lastPassage(balance) {
 }
 
 /**
- * Nombre de jours entre aujourd'hui et une date ('YYYY-MM-DD') —
- * négatif si la date est passée.
+ * Jours entre aujourd'hui et une date — négatif si passée.
  * @param {string} dateString
  * @returns {number}
  */
@@ -160,7 +123,7 @@ function _daysUntil(dateString) {
 }
 
 /**
- * Statut d'échéance d'une balance, pour l'affichage (carte + détail).
+ * Statut d'échéance d'une balance (carte + détail).
  * @param {Balance} balance
  * @returns {{label: string, color: string, icon: string}}
  */
@@ -177,14 +140,8 @@ function _balanceStatus(balance) {
   return { label: `Échéance le ${fd(last.echeance)}`, color: 'var(--success)', icon: 'ti-circle-check' };
 }
 
-// ─────────────────────────────────────────────
-// 3. RENDU DE LA PAGE (une carte par balance)
-// ─────────────────────────────────────────────
-
 /**
- * Affiche la page Métrologie : une carte par balance (magasins
- * accessibles uniquement), avec statut d'échéance, dernier passage et
- * nombre de documents centralisés.
+ * Affiche la page Métrologie : une carte par balance.
  * @returns {void}
  */
 function renderMetrologie() {
@@ -260,14 +217,9 @@ function renderMetrologie() {
   }).join('');
 }
 
-// ─────────────────────────────────────────────
-// 4. CRÉATION / MODIFICATION D'UNE BALANCE
-// ─────────────────────────────────────────────
-
 /**
- * Ouvre la modale de création (balanceId omis) ou de modification
- * d'une balance.
- * @param {string} [balanceId] - Référence vers Balance.id, si modification.
+ * Ouvre la modale de création/modification d'une balance.
+ * @param {string} [balanceId]
  * @returns {void}
  */
 function openBalanceModal(balanceId) {
@@ -291,8 +243,7 @@ function openBalanceModal(balanceId) {
 }
 
 /**
- * Valide et enregistre la balance (création ou modification), puis
- * synchronise (save(['balances'])).
+ * Valide et enregistre la balance, puis synchronise.
  * @returns {void}
  */
 function saveBalance() {
@@ -332,14 +283,9 @@ function saveBalance() {
   renderMetrologie();
 }
 
-// ─────────────────────────────────────────────
-// 5. DÉTAIL D'UNE BALANCE (données centralisées)
-// ─────────────────────────────────────────────
-
 /**
- * Ouvre la modale de détail d'une balance : informations, statut
- * d'échéance, et historique complet des passages (du plus récent au
- * plus ancien) avec leurs documents consultables/téléchargeables.
+ * Ouvre la modale de détail d'une balance : infos, statut, historique
+ * complet des passages avec documents.
  * @param {string} balanceId - Référence vers Balance.id.
  * @returns {void}
  */
@@ -419,7 +365,7 @@ function openBalanceView(balanceId) {
 }
 
 /**
- * Ouvre l'aperçu d'un document de passage (fichier affiché tel quel).
+ * Ouvre l'aperçu d'un document de passage.
  * @param {string} balanceId
  * @param {string} passageId
  * @param {string} docId
@@ -434,7 +380,7 @@ function openPassageDoc(balanceId, passageId, docId) {
 }
 
 /**
- * Télécharge un document de passage tel quel, avec son nom d'origine.
+ * Télécharge un document de passage tel quel.
  * @param {string} balanceId
  * @param {string} passageId
  * @param {string} docId
@@ -463,13 +409,8 @@ function _findPassageDoc(balanceId, passageId, docId) {
   return passage && (passage.documents || []).find(d => d.id === docId);
 }
 
-// ─────────────────────────────────────────────
-// 6. NOUVEAU PASSAGE (import de rapport + dates)
-// ─────────────────────────────────────────────
-
 /**
- * Ouvre la modale de saisie d'un nouveau passage pour une balance
- * (date du passage préremplie à aujourd'hui).
+ * Ouvre la modale de saisie d'un nouveau passage.
  * @param {string} balanceId - Référence vers Balance.id.
  * @returns {void}
  */
@@ -493,9 +434,8 @@ function openPassageModal(balanceId) {
 }
 
 /**
- * Ajoute un ou plusieurs fichiers à la liste en attente de la modale
- * de passage (upload réel à savePassage uniquement).
- * @param {HTMLInputElement} input - Élément `<input type="file" multiple>`.
+ * Ajoute des fichiers à la liste en attente de la modale de passage.
+ * @param {HTMLInputElement} input
  * @returns {void}
  */
 function handlePassageDocs(input) {
@@ -531,13 +471,9 @@ function _renderPassageDocPreviews() {
 }
 
 /**
- * Valide et enregistre un nouveau passage : uploade chaque rapport
- * TEL QUEL (préfixe 'metrologie/'), attache le passage (date +
- * échéance + commentaire + documents) à la balance, synchronise, puis
- * déclenche immédiatement le contrôle d'échéances (si la nouvelle
- * échéance est déjà à moins de 30 jours, le rappel part tout de suite).
- * Hors-ligne : fichiers ORIGINAUX en file d'attente IndexedDB
- * (contexte 'metrologie'), jamais de base64.
+ * Valide et enregistre un nouveau passage : upload des rapports TELS
+ * QUELS, attache à la balance, synchronise, puis contrôle immédiat
+ * des échéances. Hors-ligne : fichiers ORIGINAUX en file IndexedDB.
  * @returns {Promise<void>}
  */
 async function savePassage() {
@@ -606,7 +542,6 @@ async function savePassage() {
       documents.push(doc);
 
       if (!url) {
-        // Fichier ORIGINAL en file d'attente locale — jamais de base64.
         await queuePendingPhoto({
           context: 'metrologie',
           pointId: `${balanceId}|${passageId}|${doc.id}`,
@@ -629,8 +564,7 @@ async function savePassage() {
       ? `Passage enregistré — ${queuedCount} fichier(s) en attente d'envoi (départ automatique au retour du réseau).`
       : 'Passage enregistré.', queuedCount ? 'warning' : 'success');
 
-    // Si la nouvelle échéance est déjà à ≤ 30 jours, créer le rappel
-    // sans attendre le prochain passage sur le tableau de bord.
+    // Si la nouvelle échéance est déjà à ≤ 30 jours, rappel immédiat.
     checkMetrologieEcheances(true);
 
     renderMetrologie();
@@ -643,14 +577,9 @@ async function savePassage() {
   }
 }
 
-// ─────────────────────────────────────────────
-// 7. SUPPRESSIONS
-// ─────────────────────────────────────────────
-
 /**
- * Supprime du bucket Storage tous les documents d'un passage (ceux
- * déjà envoyés), et purge la file d'attente locale pour ceux encore
- * en attente.
+ * Supprime du bucket les documents d'un passage (déjà envoyés) et
+ * purge la file d'attente locale pour ceux en attente.
  * @param {string} balanceId
  * @param {Passage} passage
  * @returns {void}
@@ -667,9 +596,7 @@ function _deletePassageFiles(balanceId, passage) {
 }
 
 /**
- * Demande confirmation puis supprime un passage d'une balance (avec
- * ses fichiers). L'échéance déjà alertée (alerte_echeance) n'est PAS
- * réinitialisée : l'alerte éventuellement déjà créée reste valable.
+ * Demande confirmation puis supprime un passage (avec ses fichiers).
  * @param {string} balanceId
  * @param {string} passageId
  * @returns {void}
@@ -699,8 +626,7 @@ function deletePassage(balanceId, passageId) {
 }
 
 /**
- * Demande confirmation puis supprime une balance entière : tous les
- * fichiers de tous ses passages, la ligne Supabase, et l'entrée locale.
+ * Demande confirmation puis supprime une balance entière.
  * @param {string} balanceId - Référence vers Balance.id.
  * @returns {void}
  */
@@ -728,31 +654,14 @@ function deleteBalance(balanceId) {
   openModal('m-confirm');
 }
 
-// ─────────────────────────────────────────────
-// 8. RAPPEL AUTOMATIQUE (30 jours avant l'échéance)
-// ─────────────────────────────────────────────
-
 /**
  * Contrôle les échéances de toutes les balances et crée une ALERTE
- * MAGASIN (DB.alertes) pour chaque balance dont l'échéance du dernier
- * passage est à METRO_ALERT_DAYS_BEFORE jours ou moins (dépassée
- * comprise) et qui n'a pas encore été alertée pour CETTE échéance
- * (balance.alerte_echeance).
- *
- * L'alerte reprend les données du dernier passage (date, échéance,
- * commentaire) et joint ses documents PAR RÉFÉRENCE (mêmes URLs,
- * aucune copie de fichier) — consultables et téléchargeables
- * directement depuis l'alerte, comme n'importe quel document
- * d'alerte. Supprimer l'alerte ne supprime PAS ces fichiers (voir la
- * garantie de propriété dans _deleteAlertDocuments, magasins.js).
- *
- * Volontairement SANS création de NC/action liée (contrairement à
- * saveAlert, alertes.js) : c'est un rappel de planification, pas une
- * non-conformité.
- *
- * Appelée par renderDash (dashboard.js) — au plus une fois par heure
- * par session, sauf appel forcé (savePassage).
- * @param {boolean} [force] - Ignore la limitation horaire (utilisé après l'enregistrement d'un passage).
+ * MAGASIN pour chaque balance dont l'échéance du dernier passage est
+ * à ≤ METRO_ALERT_DAYS_BEFORE jours (dépassée comprise) et pas encore
+ * alertée pour CETTE échéance. L'alerte joint les documents du
+ * dernier passage PAR RÉFÉRENCE. Volontairement sans NC/action liée.
+ * Appelée par renderDash (max 1×/heure) et après savePassage (force).
+ * @param {boolean} [force] - Ignore la limitation horaire.
  * @returns {void}
  */
 function checkMetrologieEcheances(force) {
@@ -771,11 +680,11 @@ function checkMetrologieEcheances(force) {
     const last = _lastPassage(balance);
     if (!last || !last.echeance) return;
     if (_daysUntil(last.echeance) > METRO_ALERT_DAYS_BEFORE) return;
-    if (balance.alerte_echeance === last.echeance) return; // déjà alertée pour cette échéance
+    if (balance.alerte_echeance === last.echeance) return;
 
     /** @type {{nom: string} | undefined} */
     const store = DB.magasins.find(m => m.id === balance.mid);
-    /** @type {PassageDocument[]} Documents déjà envoyés uniquement (une URL vide ne serait pas consultable depuis l'alerte). */
+    /** @type {PassageDocument[]} Documents déjà envoyés uniquement. */
     const documents = (last.documents || []).filter(d => d.url).map(d => ({ ...d }));
 
     DB.alertes = DB.alertes || [];
@@ -786,7 +695,7 @@ function checkMetrologieEcheances(force) {
       titre: `Métrologie — échéance balance « ${balance.nom} » le ${fd(last.echeance)}`,
       type: 'Matériel',
       gravite: 'Majeure',
-      signale: 'QualiStore — rappel automatique',
+      signale: 'HygiPerf — rappel automatique',
       cmt: `Prendre rendez-vous avec le prestataire de métrologie.`
         + ` Dernier passage : ${fd(last.date)}. Échéance : ${fd(last.echeance)}.`
         + (last.cmt ? ` Commentaire du dernier passage : ${last.cmt}.` : '')

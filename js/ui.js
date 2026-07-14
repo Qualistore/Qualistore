@@ -809,7 +809,7 @@ function updateSBUser() {
  * `const PAGE_RENDERERS = { dashboard: renderDash, ... }` construit
  * au chargement de ui.js. Comme ui.js est chargé AVANT les fichiers
  * métier (dashboard.js, audits.js, etc. — voir l'ordre des <script>
- * dans Qualistore.html/index.html), les fonctions comme renderDash
+ * dans index.html/index.html), les fonctions comme renderDash
  * n'existaient pas encore au moment où cet objet était évalué, ce
  * qui provoquait un `ReferenceError: renderDash is not defined`
  * interrompant tout le script ui.js, et par cascade rendant
@@ -863,7 +863,7 @@ function _getPageRenderer(pageId) {
  */
 /**
  * Navigue vers une page depuis une carte statistique cliquable du
- * tableau de bord (voir dashboard.js / Qualistore.html) — ne fait
+ * tableau de bord (voir dashboard.js / index.html) — ne fait
  * rien si l'utilisateur n'a pas accès à cette page. Réutilise le fait
  * que buildSidebar() ne génère un `#nav-{pageId}` que pour les pages
  * autorisées : pas besoin de dupliquer une logique de permission

@@ -218,7 +218,7 @@ function showGrilleCardsView() {
   el('grille-cards-view').style.display  = '';
 
   // ⚠️ AJOUTÉ : le bouton "Nouveau rayon" n'était relié à aucun droit
-  // (toujours visible, codé en dur dans Qualistore.html) — gated
+  // (toujours visible, codé en dur dans index.html) — gated
   // maintenant par grid_create_rayon.
   if (el('btn-create-rayon')) el('btn-create-rayon').style.display = hasPerm('grid_create_rayon') ? '' : 'none';
   // ⚠️ AJOUTÉ : droit grid_import — défini dans config.js depuis la
@@ -723,7 +723,7 @@ function _buildCtrlCatSuggestions(rayon, storeId, enseigne, zone) {
  * quand l'utilisateur modifie le champ Zone dans la modale point de
  * contrôle — les catégories proposées suivent la zone en cours de
  * saisie (voir _buildCtrlCatSuggestions). Déclenché par l'`oninput`
- * de #ctrl-zone (Qualistore.html).
+ * de #ctrl-zone (index.html).
  * @returns {void}
  */
 function _onCtrlZoneInput() {
@@ -916,7 +916,7 @@ function delCtrl(rayon, pointId, storeId) {
 // Le nom d'un rayon n'est jamais figé (voir rayons.js,
 // getKnownRayons/renameRayon/createRayon/deleteRayonEverywhere) — ces
 // fonctions sont les points d'entrée UI correspondants, déclenchés
-// depuis la page Grille (Qualistore.html).
+// depuis la page Grille (index.html).
 
 /**
  * Ouvre une invite de saisie pour créer un nouveau rayon vide (voir

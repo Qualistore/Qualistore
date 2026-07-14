@@ -8,27 +8,18 @@
 //   garde typeof car chargé après ce fichier).
 //
 // ⚠️ CHANGÉ (statistiques par période) : toutes les statistiques du
-// tableau de bord (FSQS ET Qualimètre) peuvent désormais être
-// filtrées par période calendaire — mois, trimestre ou semestre —
-// via les deux menus #dash-period-type / #dash-period-value
-// (Qualistore.html). Les périodes proposées sont DÉDUITES DES DATES
-// RÉELLEMENT PRÉSENTES dans les audits visibles (aucune liste codée
-// en dur) ; « Toutes les périodes » reproduit exactement l'ancien
-// comportement. Un bouton « Exporter PDF » (#dash-export-btn) génère
-// un rapport PDF des statistiques de la période choisie, limité aux
-// magasins accessibles par l'utilisateur (visibleMids).
+// tableau de bord (FSQS ET Qualimètre) peuvent être filtrées par
+// période calendaire — mois, trimestre ou semestre — via les menus
+// #dash-period-type / #dash-period-value. Les périodes proposées
+// sont DÉDUITES DES DATES RÉELLEMENT PRÉSENTES dans les audits
+// visibles (aucune liste codée en dur). Bouton « Exporter PDF »
+// (#dash-export-btn) : rapport PDF de la période choisie, limité aux
+// magasins accessibles (visibleMids).
 //
-// ⚠️ CORRIGÉ (sécurité) : les valeurs dynamiques affichées (noms de
-// magasins, rayons, auditeurs, zones — toutes modifiables par un
-// utilisateur) sont désormais échappées via _escapeHtml avant
-// insertion dans le HTML (protection XSS), comme déjà fait ailleurs
-// dans le projet (grille.js, import-grille.js).
-//
-// ⚠️ CORRIGÉ (bug) : le compteur « Actions en retard » ignorait les
-// magasins accessibles (DB.actions n'était filtré ni par visibleMids
-// ni par rien d'autre) — un directeur voyait donc les retards de TOUS
-// les magasins. Aligné sur la logique de renderActions (actions.js) :
-// résolution de la NC liée (action.ncId) puis filtre sur NC.mid.
+// ⚠️ CORRIGÉ (sécurité) : valeurs dynamiques échappées via
+// _escapeHtml (protection XSS).
+// ⚠️ CORRIGÉ (bug) : « Actions en retard » filtré par magasins
+// accessibles via la NC liée (même logique que renderActions).
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
@@ -125,11 +116,8 @@ const CHART_SCORE_PALETTES = {
 };
 
 /**
- * ⚠️ CHANGÉ : RAYONS_FSQS n'est plus une liste fermée utilisée pour
- * valider quoi que ce soit — préférer getKnownRayons() (rayons.js)
- * dans tout nouveau code. Conservée comme tableau autonome car
- * dashboard.js est chargé AVANT rayons.js (ordre des <script> dans
- * Qualistore.html).
+ * ⚠️ CHANGÉ : RAYONS_FSQS n'est plus une liste fermée — préférer
+ * getKnownRayons() (rayons.js) dans tout nouveau code.
  * @type {string[]}
  * @deprecated Utiliser getKnownRayons().
  */
@@ -154,10 +142,9 @@ let _dashPeriodValue = '';
 // ─────────────────────────────────────────────
 
 /**
- * Retourne une couleur de la palette correspondant au score,
- * en faisant tourner les teintes pour différencier les magasins.
+ * Retourne une couleur de la palette correspondant au score.
  * @param {number} score - Score 0-100.
- * @param {number} index - Index du magasin dans la liste affichée (pour varier la teinte au sein de la palette).
+ * @param {number} index - Index du magasin dans la liste affichée.
  * @returns {string} Couleur hexadécimale.
  */
 function _scoreColor(score, index) {
@@ -171,14 +158,13 @@ function _scoreColor(score, index) {
 }
 
 /**
- * Construit (ou reconstruit) un graphique en barres avec Chart.js,
- * affichant un score moyen par étiquette.
- * @param {string} canvasId - Id de l'élément `<canvas>` cible.
+ * Construit (ou reconstruit) un graphique en barres avec Chart.js.
+ * @param {string} canvasId
  * @param {string[]} labels
- * @param {number[]} data - Scores 0-100, alignés avec `labels`.
- * @param {string[]} colors - Couleurs hexadécimales, alignées avec `labels`.
- * @param {Chart | null} [existingChart] - Instance précédente à détruire avant recréation, si présente.
- * @returns {Chart | null} La nouvelle instance Chart.js, ou null si le canvas n'existe pas.
+ * @param {number[]} data
+ * @param {string[]} colors
+ * @param {Chart | null} [existingChart]
+ * @returns {Chart | null}
  */
 function buildBarChart(canvasId, labels, data, colors, existingChart) {
   const canvas = el(canvasId);
@@ -213,11 +199,10 @@ function buildBarChart(canvasId, labels, data, colors, existingChart) {
 }
 
 /**
- * Construit (ou reconstruit) un graphique en courbes avec Chart.js
- * (utilisé pour l'évolution du score au fil des audits).
- * @param {string} canvasId - Id de l'élément `<canvas>` cible.
- * @param {Array<Object>} datasets - Datasets au format natif Chart.js (non typés en détail ici).
- * @param {Chart | null} [existingChart] - Instance précédente à détruire avant recréation, si présente.
+ * Construit (ou reconstruit) un graphique en courbes avec Chart.js.
+ * @param {string} canvasId
+ * @param {Array<Object>} datasets
+ * @param {Chart | null} [existingChart]
  * @returns {Chart | null}
  */
 function buildLineChart(canvasId, datasets, existingChart) {
@@ -250,8 +235,6 @@ function buildLineChart(canvasId, datasets, existingChart) {
 
 /**
  * Handler du menu « type de période » (#dash-period-type).
- * Reconstruit la liste des périodes précises disponibles puis
- * redessine tout le tableau de bord.
  * @returns {void}
  */
 function onDashPeriodTypeChange() {
@@ -271,9 +254,8 @@ function onDashPeriodValueChange() {
 }
 
 /**
- * Collecte toutes les dates ('YYYY-MM-DD') des audits FSQS et
- * Qualimètre visibles par l'utilisateur — sert à déduire dynamiquement
- * les périodes proposées (aucune période codée en dur).
+ * Collecte toutes les dates des audits FSQS et Qualimètre visibles —
+ * sert à déduire dynamiquement les périodes proposées.
  * @returns {string[]} Dates triées croissantes (peut être vide).
  */
 function _dashAvailableDates() {
@@ -298,10 +280,7 @@ function _dashMonthLabel(yearMonth) {
 
 /**
  * (Re)construit les options du menu « période précise » selon le type
- * choisi, de la période la plus récente à la plus ancienne, bornées
- * par les dates réellement présentes dans les données (et toujours au
- * moins la période courante). Préserve la sélection courante si elle
- * reste proposée, sinon sélectionne la période la plus récente.
+ * choisi, bornées par les dates réellement présentes dans les données.
  * @returns {void}
  */
 function _populateDashPeriodValues() {
@@ -328,7 +307,7 @@ function _populateDashPeriodValues() {
   /** @type {number} */
   const maxYear  = parseInt(todayString.slice(0, 4), 10);
 
-  /** @type {{value: string, label: string}[]} Périodes de la plus récente à la plus ancienne. */
+  /** @type {{value: string, label: string}[]} */
   const options = [];
 
   if (_dashPeriodType === 'month') {
@@ -346,7 +325,7 @@ function _populateDashPeriodValues() {
       if (month === 0) { month = 12; year--; }
     }
   } else {
-    /** @type {number} Périodes par an : 4 trimestres ou 2 semestres. */
+    /** @type {number} */
     const perYear = _dashPeriodType === 'quarter' ? 4 : 2;
     /** @type {number} */
     const monthsPerPeriod = 12 / perYear;
@@ -381,8 +360,7 @@ function _populateDashPeriodValues() {
 }
 
 /**
- * Calcule les bornes ('YYYY-MM-DD' incluses) de la période
- * actuellement sélectionnée.
+ * Bornes de la période actuellement sélectionnée.
  * @returns {DashPeriodRange | null} null si « Toutes les périodes ».
  */
 function _dashPeriodRange() {
@@ -413,7 +391,7 @@ function _dashPeriodRange() {
 
   /** @param {number} n @returns {string} */
   const pad = n => String(n).padStart(2, '0');
-  /** @type {number} Dernier jour du mois de fin (new Date(y, m, 0) = dernier jour du mois m). */
+  /** @type {number} */
   const lastDay = new Date(year, endMonth, 0).getDate();
 
   return {
@@ -424,7 +402,6 @@ function _dashPeriodRange() {
 
 /**
  * Indique si une date ISO appartient à la période sélectionnée.
- * Comparaison lexicographique (valide pour des dates 'YYYY-MM-DD').
  * @param {string | undefined} dateString
  * @returns {boolean} Toujours true si « Toutes les périodes ».
  */
@@ -464,11 +441,9 @@ function _dashPeriodLabel() {
 // ─────────────────────────────────────────────
 
 /**
- * Affiche le tableau de bord FSQS complet : compteurs principaux,
- * performances par rayon, graphique par magasin, derniers audits,
- * alertes actives, puis délègue au dashboard Qualimètre. Toutes les
- * statistiques sont restreintes aux magasins accessibles
- * (visibleMids) ET à la période sélectionnée (voir section 3bis).
+ * Affiche le tableau de bord FSQS complet, restreint aux magasins
+ * accessibles ET à la période sélectionnée, puis délègue au
+ * dashboard Qualimètre.
  * @returns {void}
  */
 function renderDash() {
@@ -481,9 +456,7 @@ function renderDash() {
   /** @type {NC[]} */
   const myNcs = _dashFilterPeriod(DB.ncs.filter(n => visibleStoreIds.includes(n.mid)));
 
-  // ⚠️ CORRIGÉ : filtre par magasins accessibles (via la NC liée,
-  // même logique que renderActions, actions.js) + période — l'ancien
-  // compteur incluait les retards de TOUS les magasins.
+  // ⚠️ CORRIGÉ : filtre par magasins accessibles (via la NC liée) + période.
   /** @type {Action[]} */
   const overdueActions = DB.actions.filter(action => {
     if (action.statut === 'Traitée' || !overdue(action.ech)) return false;
@@ -505,9 +478,7 @@ function renderDash() {
   el('d-ret').textContent    = overdueActions.length;
   el('d-score').textContent  = avgScore !== null ? avgScore + '%' : '–';
 
-  // Le badge de la sidebar reste un compteur GLOBAL (toutes périodes) :
-  // une NC ouverte reste à traiter même si le dashboard est filtré
-  // sur une autre période.
+  // Badge sidebar : compteur GLOBAL (toutes périodes).
   const ncBadge = el('nc-bdg');
   if (ncBadge) {
     ncBadge.textContent = DB.ncs.filter(n =>
@@ -515,10 +486,8 @@ function renderDash() {
   }
 
   // Rappels métrologie automatiques (échéance ≤ 30 jours) — AVANT
-  // renderAlertsDash pour qu'une alerte tout juste créée apparaisse
-  // immédiatement. Garde typeof : dashboard.js est chargé avant
-  // metrologie.js (ordre des <script>), la fonction n'existe qu'à
-  // l'exécution. Voir checkMetrologieEcheances, metrologie.js.
+  // renderAlertsDash pour affichage immédiat. Garde typeof :
+  // metrologie.js est chargé après ce fichier.
   if (typeof checkMetrologieEcheances === 'function') checkMetrologieEcheances();
 
   renderRayonDash();
@@ -529,8 +498,7 @@ function renderDash() {
 }
 
 /**
- * Affiche les 5 derniers audits FSQS (de la période) dans le tableau
- * dédié du dashboard, triés par date décroissante.
+ * Affiche les 5 derniers audits FSQS (période), triés par date desc.
  * @param {Audit[]} audits
  * @returns {void}
  */
@@ -559,11 +527,10 @@ function _renderLastAudits(audits) {
 }
 
 /**
- * Calcule le score moyen par magasin à partir d'audits déjà filtrés
- * (période + visibilité) — partagé entre l'affichage du graphique et
+ * Score moyen par magasin (audits déjà filtrés) — partagé avec
  * l'export PDF.
- * @param {string[]} storeIds - Magasins visibles.
- * @param {Array<{mid: string, score?: number, nc?: number}>} audits - Audits déjà filtrés.
+ * @param {string[]} storeIds
+ * @param {Array<{mid: string, score?: number, nc?: number}>} audits
  * @returns {{name: string, count: number, avg: number, nc: number, color: string}[]}
  */
 function _computeStoreAverages(storeIds, audits) {
@@ -583,10 +550,9 @@ function _computeStoreAverages(storeIds, audits) {
 }
 
 /**
- * Construit (ou retire) le graphique en barres du score moyen par
- * magasin, pour le dashboard FSQS.
- * @param {string[]} storeIds - Magasins visibles.
- * @param {Audit[]} audits - Audits déjà filtrés (magasins + période).
+ * Graphique en barres FSQS par magasin.
+ * @param {string[]} storeIds
+ * @param {Audit[]} audits - Déjà filtrés (magasins + période).
  * @returns {void}
  */
 function _renderFsqsChart(storeIds, audits) {
@@ -615,10 +581,8 @@ function _renderFsqsChart(storeIds, audits) {
 }
 
 /**
- * Calcule le score moyen par rayon à partir d'audits déjà filtrés —
- * partagé entre le widget « Par rayon » et l'export PDF. Itère sur
- * getKnownRayons() (rayons.js) — tout rayon créé, importé ou renommé
- * apparaît automatiquement, sans liste fixe à maintenir.
+ * Score moyen par rayon (audits déjà filtrés) — partagé avec
+ * l'export PDF. Itère sur getKnownRayons() (data-driven).
  * @param {Audit[]} audits
  * @returns {{rayon: string, count: number, score: number | null}[]}
  */
@@ -637,9 +601,7 @@ function _computeRayonAverages(audits) {
 }
 
 /**
- * Affiche le score moyen par rayon FSQS dans le widget dédié du
- * dashboard, filtré par magasin si un sélecteur est présent, ET par
- * la période sélectionnée.
+ * Widget « Par rayon », filtré par magasin éventuel + période.
  * @returns {void}
  */
 function renderRayonDash() {
@@ -680,10 +642,7 @@ function renderRayonDash() {
 // ─────────────────────────────────────────────
 
 /**
- * Affiche le tableau de bord Qualimètre complet : compteurs
- * principaux, graphique par magasin, top zones en NC, derniers
- * audits Qualimètre — restreint aux magasins accessibles et à la
- * période sélectionnée (même filtre que le dashboard FSQS).
+ * Tableau de bord Qualimètre — mêmes filtres que le FSQS.
  * @returns {void}
  */
 function renderDashQual() {
@@ -710,10 +669,9 @@ function renderDashQual() {
 }
 
 /**
- * Construit (ou retire) le graphique en barres du score moyen
- * Qualimètre par magasin.
+ * Graphique en barres Qualimètre par magasin.
  * @param {string[]} storeIds
- * @param {QualAudit[]} qualAudits - Audits déjà filtrés (magasins + période).
+ * @param {QualAudit[]} qualAudits - Déjà filtrés (magasins + période).
  * @returns {void}
  */
 function _renderQualChart(storeIds, qualAudits) {
@@ -742,10 +700,10 @@ function _renderQualChart(storeIds, qualAudits) {
 }
 
 /**
- * Agrège le nombre de NC par zone Qualimètre sur les audits fournis —
- * partagé entre le widget « Top zones NC » et l'export PDF.
+ * Agrège le nombre de NC par zone Qualimètre — partagé avec
+ * l'export PDF.
  * @param {QualAudit[]} qualAudits
- * @returns {[string, number][]} Paires [zone, total NC] triées par total décroissant.
+ * @returns {[string, number][]} Paires [zone, total NC] triées desc.
  */
 function _computeTopZonesNc(qualAudits) {
   /** @type {Record<string, number>} */
@@ -759,8 +717,7 @@ function _computeTopZonesNc(qualAudits) {
 }
 
 /**
- * Affiche les 5 zones Qualimètre les plus en non-conformité,
- * agrégées sur l'ensemble des audits Qualimètre fournis.
+ * Top 5 des zones Qualimètre en NC.
  * @param {QualAudit[]} qualAudits
  * @returns {void}
  */
@@ -780,8 +737,7 @@ function _renderTopZonesNc(qualAudits) {
 }
 
 /**
- * Affiche les 5 derniers audits Qualimètre (de la période) dans le
- * tableau dédié du dashboard, triés par date décroissante.
+ * 5 derniers audits Qualimètre (période), triés par date desc.
  * @param {QualAudit[]} qualAudits
  * @returns {void}
  */
@@ -818,9 +774,7 @@ function _renderLastQualAudits(qualAudits) {
 // ─────────────────────────────────────────────
 
 /**
- * Bascule l'onglet actif du dashboard entre FSQS et Qualimètre,
- * en stylant les boutons d'onglet et en affichant le panneau
- * correspondant.
+ * Bascule l'onglet actif du dashboard entre FSQS et Qualimètre.
  * @param {'fsqs'|'qualimetre'|string} tab
  * @returns {void}
  */
@@ -843,10 +797,9 @@ function switchDashTab(tab) {
 // ─────────────────────────────────────────────
 
 /**
- * Construit le HTML d'un tableau simple pour l'export PDF.
- * Les valeurs sont échappées par l'appelant si nécessaire.
+ * Tableau simple pour l'export PDF (valeurs échappées par l'appelant).
  * @param {string[]} headers
- * @param {string[][]} rows - Lignes de cellules (HTML déjà échappé).
+ * @param {string[][]} rows
  * @returns {string}
  */
 function _dashPdfTable(headers, rows) {
@@ -863,7 +816,7 @@ function _dashPdfTable(headers, rows) {
 /**
  * Titre de section pour l'export PDF.
  * @param {string} title
- * @param {string} color - Couleur hexadécimale de l'accent.
+ * @param {string} color
  * @returns {string}
  */
 function _dashPdfSectionTitle(title, color) {
@@ -871,13 +824,8 @@ function _dashPdfSectionTitle(title, color) {
 }
 
 /**
- * Construit le HTML complet du rapport PDF des statistiques du
- * tableau de bord : en-tête (période, date de génération, auteur),
- * section FSQS (compteurs, par magasin, par rayon, graphique) et
- * section Qualimètre (compteurs, par magasin, top zones NC,
- * graphique). Chaque section est marquée `.pdf-block` pour que la
- * pagination de exportPDF (rapport-qualimetre.js) ne coupe jamais un
- * tableau en plein milieu.
+ * HTML complet du rapport PDF des statistiques (blocs .pdf-block pour
+ * la pagination de exportPDF, rapport-qualimetre.js).
  * @returns {string}
  */
 function _buildDashboardPdfHtml() {
@@ -908,7 +856,7 @@ function _buildDashboardPdfHtml() {
   /** @type {[string, number][]} */
   const topZones = _computeTopZonesNc(qualAudits).slice(0, 10);
 
-  /** @type {string} Image du graphique FSQS si affiché à l'écran. */
+  /** @type {string} */
   let fsqsChartImg = '';
   let qualChartImg = '';
   try { if (_chartFsqs) fsqsChartImg = _chartFsqs.toBase64Image(); } catch (_) { /* graphique indisponible */ }
@@ -917,16 +865,14 @@ function _buildDashboardPdfHtml() {
   /** @type {string[]} */
   const blocks = [];
 
-  // En-tête
   blocks.push(`<div class="pdf-block" style="margin-bottom:18px">
-    <div style="font-size:20px;font-weight:700;margin-bottom:2px">QualiStore — Statistiques du tableau de bord</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:2px">HygiPerf — Statistiques du tableau de bord</div>
     <div style="font-size:12px;color:#555">
       Période : <strong>${_escapeHtml(_dashPeriodLabel())}</strong><br>
       Généré le ${fd(today())}${CU ? ` par ${_escapeHtml(CU.nom)}` : ''} · ${storeIds.length} magasin(s) accessible(s)
     </div>
   </div>`);
 
-  // FSQS — synthèse
   blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
     ${_dashPdfSectionTitle('Audits FSQS — Synthèse', '#2563eb')}
     ${_dashPdfTable(
@@ -938,7 +884,6 @@ function _buildDashboardPdfHtml() {
     )}
   </div>`);
 
-  // FSQS — par magasin
   if (fsqsPerStore.length) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
       ${_dashPdfSectionTitle('FSQS — Par magasin', '#2563eb')}
@@ -949,7 +894,6 @@ function _buildDashboardPdfHtml() {
     </div>`);
   }
 
-  // FSQS — par rayon
   if (perRayon.length) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
       ${_dashPdfSectionTitle('FSQS — Par rayon', '#2563eb')}
@@ -960,7 +904,6 @@ function _buildDashboardPdfHtml() {
     </div>`);
   }
 
-  // FSQS — graphique
   if (fsqsChartImg) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:18px">
       ${_dashPdfSectionTitle('FSQS — Score moyen par magasin (graphique)', '#2563eb')}
@@ -968,7 +911,6 @@ function _buildDashboardPdfHtml() {
     </div>`);
   }
 
-  // Qualimètre — synthèse
   blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
     ${_dashPdfSectionTitle('Audits Qualimètre — Synthèse', '#7c3aed')}
     ${_dashPdfTable(
@@ -980,7 +922,6 @@ function _buildDashboardPdfHtml() {
     )}
   </div>`);
 
-  // Qualimètre — par magasin
   if (qualPerStore.length) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
       ${_dashPdfSectionTitle('Qualimètre — Par magasin', '#7c3aed')}
@@ -991,7 +932,6 @@ function _buildDashboardPdfHtml() {
     </div>`);
   }
 
-  // Qualimètre — top zones NC
   if (topZones.length) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
       ${_dashPdfSectionTitle('Qualimètre — Zones les plus en non-conformité', '#7c3aed')}
@@ -1002,7 +942,6 @@ function _buildDashboardPdfHtml() {
     </div>`);
   }
 
-  // Qualimètre — graphique
   if (qualChartImg) {
     blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
       ${_dashPdfSectionTitle('Qualimètre — Score moyen par magasin (graphique)', '#7c3aed')}
@@ -1014,11 +953,8 @@ function _buildDashboardPdfHtml() {
 }
 
 /**
- * Exporte les statistiques du tableau de bord (période et magasins
- * actuellement filtrés) en PDF, via le moteur d'export commun
- * (exportPDF, rapport-qualimetre.js — pagination par blocs .pdf-block).
- * Remplit le conteneur invisible #dash-pdf-export (Qualistore.html),
- * lance l'export, puis vide le conteneur.
+ * Exporte les statistiques du tableau de bord en PDF (période et
+ * magasins actuellement filtrés).
  * @returns {Promise<void>}
  */
 async function exportDashboardPDF() {
@@ -1036,7 +972,7 @@ async function exportDashboardPDF() {
 
   try {
     container.innerHTML = _buildDashboardPdfHtml();
-    await exportPDF('dash-pdf-export', 'statistiques-qualistore');
+    await exportPDF('dash-pdf-export', 'statistiques-hygiperf');
   } catch (error) {
     alert('Erreur génération PDF : ' + error.message);
   } finally {

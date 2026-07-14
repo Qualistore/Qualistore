@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  * <link href>). Pour forcer un rechargement des fichiers JS/CSS modifiés
  * — notamment sur tablette/smartphone où ce cache est très agressif —
  * voir le paramètre ?v= ajouté aux balises <script>/<link> dans
- * Qualistore.html (à incrémenter à chaque déploiement).
+ * index.html (à incrémenter à chaque déploiement).
  * @returns {void}
  */
 function _clearAppCaches() {

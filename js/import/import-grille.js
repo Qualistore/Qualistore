@@ -350,7 +350,7 @@ let _importDetection = null;
 /** @type {ImportTarget} Destination de l'import. */
 let _importTarget = 'grille';
 
-/** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue). ⚠️ CHANGÉ : n'est plus réglable par l'utilisateur dans la modale (le sélecteur a été retiré, remplacé par le choix du magasin cible) — toujours 'Majeure', signalé par un astérisque dans la modale (voir Qualistore.html #imp-default-crit-note). */
+/** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue). ⚠️ CHANGÉ : n'est plus réglable par l'utilisateur dans la modale (le sélecteur a été retiré, remplacé par le choix du magasin cible) — toujours 'Majeure', signalé par un astérisque dans la modale (voir index.html #imp-default-crit-note). */
 const _importDefaultCrit = 'Majeure';
 
 /** @type {string[]} Rayon(s) FSQS choisis par l'utilisateur AVANT l'import (sélecteur au-dessus de la zone de dépose, voir _onImportDefaultRayonsChanged) — appliqué comme targetRayons par défaut à toutes les lignes de l'aperçu (cible 'grille' uniquement). Un rayon n'est jamais déduit du document : c'est toujours un choix explicite de l'utilisateur, modifiable ensuite ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). */
@@ -534,7 +534,7 @@ function _clearImportPreview() {
 /**
  * Point d'entrée public du bouton "Effacer" de l'aperçu d'import.
  * ⚠️ CORRIGÉ : ce nom était référencé par le bouton "Effacer" de
- * Qualistore.html (onclick="clearImportPreview()") sans qu'aucune
+ * index.html (onclick="clearImportPreview()") sans qu'aucune
  * fonction de ce nom exact n'existe — seule la variante interne
  * _clearImportPreview() était définie. Le bouton était donc inopérant
  * depuis l'origine. On délègue simplement à la version interne,
@@ -1689,7 +1689,7 @@ function _onMappingConceptChanged(concept, newHeader) {
 // repli non réglable par l'utilisateur, appliquée aux lignes sans
 // criticité déterminable depuis le document (signalé par l'astérisque
 // affiché entre "Rayon(s) cible(s)" et la zone de dépose, voir
-// Qualistore.html #imp-default-crit-note).
+// index.html #imp-default-crit-note).
 
 /**
  * Échappe une chaîne pour insertion sûre dans du texte HTML.
@@ -1769,7 +1769,7 @@ function _buildPreviewRow(row, index, isDuplicate) {
 
   // NOTE : en pratique, cette modale (#m-import) n'est aujourd'hui
   // ouverte qu'avec la cible 'grille' (FSQS) — openImportModal() est
-  // toujours appelée sans argument dans Qualistore.html. L'import
+  // toujours appelée sans argument dans index.html. L'import
   // Qualimètre utilise sa propre modale et son propre aperçu,
   // entièrement séparés (#m-gq-import, _gqRenderImportPreview, voir
   // grille-qualimetre.js). Les colonnes Rayon(s)/Zone ci-dessous sont

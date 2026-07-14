@@ -555,7 +555,7 @@ function _snapshotCurrentAlertAsDraft() {
  * ⚠️ Pour que le bouton "Annuler" de la modale d'alerte bénéficie
  * aussi de cette sauvegarde (au lieu de fermer sèchement sans rien
  * garder), remplacez son attribut onclick="closeModal('m-alert')" par
- * onclick="pauseAlert()" dans Qualistore.html — non modifié ici, ce
+ * onclick="pauseAlert()" dans index.html — non modifié ici, ce
  * fichier ne contenant pas le HTML de la modale.
  * @returns {void}
  */
@@ -931,7 +931,7 @@ function _applyUrgentAlertsExpanded() {
 
 /**
  * Affiche le bouton compact "alertes urgentes" en haut du tableau de
- * bord (#d-urgent-alerts, Qualistore.html) avec le décompte des
+ * bord (#d-urgent-alerts, index.html) avec le décompte des
  * alertes actives, et alimente le panneau détaillé (masqué par
  * défaut — voir toggleUrgentAlerts) avec la liste (max 8, les plus
  * récentes en premier — même ordre de stockage que DB.alertes, jamais

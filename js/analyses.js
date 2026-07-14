@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════
 // ANALYSES — Rapports d'analyses (laboratoire, eau, surfaces...)
 //
-// ⚠️ V2 — REFONTE COMPLÈTE (traitement des analyses) :
+// ⚠️ V2 — traitement des analyses :
 //  - PLUSIEURS pièces jointes par rapport, chacune classée
 //    « Rapport d'Analyses » ou « Pièce Justificative » ;
 //  - Conformité : Conforme / Non conforme (exclusifs) ;
@@ -9,50 +9,34 @@
 //  - Traitement : Fait (= traité → ARCHIVÉ, non modifiable) /
 //    À faire (= en cours de traitement, reste modifiable).
 //
-// RÈGLES MÉTIER (appliquées en direct dans la modale ET revérifiées
-// à l'enregistrement) :
+// RÈGLES MÉTIER (appliquées dans la modale ET revérifiées à
+// l'enregistrement) :
 //  - un rapport peut être créé SANS pièce jointe ;
-//  - Conforme + au moins une pièce jointe → archivage automatique
-//    (Fait forcé à l'enregistrement) ;
-//  - Non conforme → « À faire » par défaut ; « Fait » exige DU CONTENU
+//  - Conforme + pièce jointe → archivage automatique (Fait forcé) ;
+//  - Non conforme → « À faire » par défaut ; « Fait » exige du contenu
 //    dans « Actions à mettre en place » ET au moins une pièce jointe ;
 //  - « Fait » exige dans tous les cas une conformité cochée et au
 //    moins une pièce jointe.
-// Au passage à « Fait » : traite_par / traite_le sont renseignés et
-// le rapport est archivé (lecture seule, badge « Traité »).
+// Au passage à « Fait » : traite_par / traite_le renseignés, rapport
+// archivé (lecture seule, badge « Traité »).
 //
-// EXPORT PDF par rapport (exportAnalysePDF) — 4 sections dans l'ordre :
-//  1. Page de garde : personne ayant traité, date d'ouverture, et au
-//     centre la liste des pièces jointes selon leur classement ;
-//  2. Le(s) Rapport(s) d'Analyse (contenu des fichiers : images et
-//     PDF rendus page par page via pdf.js ; autres types signalés) ;
-//  3. Les Pièces Justificatives (même rendu) ;
-//  4. Page de traitement : date de l'analyse, de création, de
-//     traitement, « Actions à mettre en place » au centre, et en bas
-//     à droite le nom de la personne ayant traité le rapport.
+// EXPORT PDF (exportAnalysePDF) — 4 sections dans l'ordre :
+//  1. Page de garde (traité par, date d'ouverture, liste centrale des
+//     pièces jointes par classement) ;
+//  2. Rapport(s) d'Analyse (images insérées, PDF rendus page par page
+//     via pdf.js chargé à la demande) ;
+//  3. Pièces Justificatives (même rendu) ;
+//  4. Page de traitement (dates, actions au centre, traiteur en bas à
+//     droite).
 //
 // Stockage : fichiers TELS QUELS (bucket 'photos', préfixe
-// 'analyses/'), métadonnées dans la table Supabase `analyses`
-// (colonnes ajoutées : documents jsonb, conforme, actions, statut,
-// traite_par, traite_le — voir migration-analyses-v2.sql).
-// Compatibilité : les anciens rapports (un seul fichier via les
-// colonnes nom/mime/taille/url) restent lisibles — voir _anaDocs.
+// 'analyses/'), métadonnées dans la table Supabase `analyses`.
+// Compatibilité : anciens rapports mono-fichier lisibles (_anaDocs).
 //
-// ⚠️ HORS-LIGNE — AUCUN base64 : fichier ORIGINAL en file d'attente
-// IndexedDB (queuePendingPhoto, storage.js), contexte 'analyse',
-// pointId 'reportId|docId' (ancien format 'reportId' seul toujours
-// réconcilié pour les fichiers déjà en attente avant cette refonte).
-//
-// Dépend de : config.js (CDN_PDFJS, CDN_PDFJS_WORKER), storage.js,
-//   supabase.js, auth.js, ui.js, alertes.js (openDocumentViewer,
-//   downloadDocument, _formatFileSize, _alertDocumentIcon),
-//   import-grille.js (_escapeHtml, _escapeHtmlAttr, _loadScript),
-//   jspdf/html2canvas (globaux), pdf.js (chargé à la demande).
+// ⚠️ HORS-LIGNE — AUCUN base64 : file d'attente IndexedDB, contexte
+// 'analyse', pointId 'reportId|docId' (ancien format 'reportId' seul
+// toujours réconcilié).
 // ══════════════════════════════════════════════════════════════
-
-// ─────────────────────────────────────────────
-// 0. TYPEDEFS JSDoc
-// ─────────────────────────────────────────────
 
 /**
  * Catégorie de classement d'une pièce jointe.
@@ -60,8 +44,7 @@
  */
 
 /**
- * Pièce jointe d'un rapport d'analyses (élément de la colonne jsonb
- * `documents`).
+ * Pièce jointe d'un rapport d'analyses (colonne jsonb `documents`).
  * @typedef {Object} AnalyseDocument
  * @property {string} id - Identifiant généré (préfixé 'doc-').
  * @property {string} nom - Nom de fichier d'origine.
@@ -79,50 +62,40 @@
  * @property {string} mid - Référence vers Magasin.id.
  * @property {string} libelle - Libellé libre.
  * @property {string} date - Date de l'analyse ('YYYY-MM-DD').
- * @property {AnalyseDocument[]} [documents] - Pièces jointes (absent sur les anciens rapports mono-fichier — voir _anaDocs).
+ * @property {AnalyseDocument[]} [documents] - Pièces jointes (absent sur les anciens rapports mono-fichier).
  * @property {''|'conforme'|'nonconforme'} [conforme] - Conformité ('' = non renseignée).
  * @property {string} [actions] - « Actions à mettre en place ».
- * @property {'afaire'|'fait'} [statut] - 'fait' = traité et archivé. Absent = 'afaire'.
- * @property {string} [traite_par] - Personne ayant traité (nom exact de la colonne Supabase, snake_case).
+ * @property {'afaire'|'fait'} [statut] - 'fait' = traité et archivé.
+ * @property {string} [traite_par] - Personne ayant traité (colonne snake_case).
  * @property {string} [traite_le] - Date de traitement 'YYYY-MM-DD'.
  * @property {string} aud - Créateur du rapport.
- * @property {number} created - Horodatage (Date.now()) de création (date d'ouverture).
+ * @property {number} created - Horodatage de création (date d'ouverture).
  * @property {string} [nom] - LEGACY mono-fichier.
  * @property {string} [mime] - LEGACY mono-fichier.
  * @property {number} [taille] - LEGACY mono-fichier.
  * @property {string} [url] - LEGACY mono-fichier.
  */
 
-// ─────────────────────────────────────────────
-// 1. CONSTANTES & ÉTAT
-// ─────────────────────────────────────────────
-
-/** @type {Record<AnalyseDocCategorie, string>} Libellés affichés des catégories. */
+/** @type {Record<AnalyseDocCategorie, string>} Libellés des catégories. */
 const ANA_CAT_LABELS = { rapport: 'Rapport d\'Analyses', justificatif: 'Pièce Justificative' };
 
-/** @type {number} Nombre maximal de pages d'un PDF joint rendues dans l'export (garde-fou mémoire tablette). */
+/** @type {number} Pages max d'un PDF joint rendues dans l'export. */
 const ANA_PDF_MAX_PAGES_PER_DOC = 25;
 
 /**
- * Pièces jointes de la modale en cours d'édition : mélange de
- * documents existants (doc) et de nouveaux fichiers pas encore
- * uploadés (file) — l'upload réel n'a lieu qu'à saveAnalyse.
+ * Pièces jointes de la modale en cours d'édition (documents existants
+ * + nouveaux fichiers pas encore uploadés).
  * @type {{file?: File, doc?: AnalyseDocument, categorie: AnalyseDocCategorie}[]}
  */
 let _anaWorkingDocs = [];
 
-/** @type {AnalyseDocument[]} Documents existants retirés pendant l'édition — leurs fichiers sont supprimés du bucket à l'enregistrement. */
+/** @type {AnalyseDocument[]} Documents existants retirés pendant l'édition. */
 let _anaRemovedDocs = [];
 
 /** @type {string | null} Id du rapport en cours de modification (null = création). */
 let _anaEditingId = null;
 
-// ─────────────────────────────────────────────
-// 1bis. RÉCONCILIATEUR HORS-LIGNE
-// pointId : 'reportId|docId' (nouveau) ou 'reportId' (legacy
-// mono-fichier, fichiers mis en attente avant cette refonte).
-// ─────────────────────────────────────────────
-
+// Réconciliateur hors-ligne — pointId 'reportId|docId' ou legacy 'reportId'.
 registerPhotoQueueReconciler('analyse', (entry, url) => {
   /** @type {string[]} */
   const [reportId, docId] = (entry.pointId || '').split('|');
@@ -144,15 +117,10 @@ registerPhotoQueueReconciler('analyse', (entry, url) => {
   if (document.querySelector('.page.active')?.id === 'page-analyses') renderAnalyses();
 });
 
-// ─────────────────────────────────────────────
-// 2. HELPERS
-// ─────────────────────────────────────────────
-
 /**
- * Retourne les pièces jointes d'un rapport sous forme unifiée, que le
- * rapport soit au nouveau format (documents[]) ou au format legacy
- * mono-fichier (nom/mime/taille/url) — dans ce dernier cas le fichier
- * unique est présenté comme un « Rapport d'Analyses ».
+ * Pièces jointes d'un rapport sous forme unifiée (nouveau format
+ * documents[] ou legacy mono-fichier présenté comme un Rapport
+ * d'Analyses).
  * @param {AnalyseReport} report
  * @returns {AnalyseDocument[]}
  */
@@ -178,8 +146,7 @@ function _anaIsFait(report) { return report.statut === 'fait'; }
 
 /**
  * Extrait le chemin de stockage d'une URL publique Supabase Storage
- * (bucket 'photos') — helper partagé, utilisé aussi par
- * audits-externes.js et metrologie.js.
+ * (bucket 'photos') — helper partagé (audits-externes.js, metrologie.js).
  * @param {string} url
  * @returns {string | null}
  */
@@ -194,8 +161,8 @@ function _analyseStoragePathFromUrl(url) {
 }
 
 /**
- * Indique si une date appartient à la période de filtre ('all',
- * 'month', 'month3', 'month6') — helper partagé (audits-externes.js).
+ * Indique si une date appartient à la période de filtre — helper
+ * partagé (audits-externes.js).
  * @param {string | undefined} dateString
  * @param {string} period
  * @returns {boolean}
@@ -222,14 +189,10 @@ function _anaCreatedDate(report) {
   return report.created ? fd(new Date(report.created).toISOString().split('T')[0]) : '–';
 }
 
-// ─────────────────────────────────────────────
-// 3. RENDU DE LA PAGE
-// ─────────────────────────────────────────────
-
 /**
  * Affiche la page Analyses : filtres (magasin, période, statut) et
- * tableau — magasin, libellé, date de création, conformité, statut de
- * traitement, nombre de pièces jointes, créateur.
+ * tableau (magasin, libellé, date de création, conformité, statut,
+ * nb PJ, créateur).
  * @returns {void}
  */
 function renderAnalyses() {
@@ -310,14 +273,9 @@ function renderAnalyses() {
   }).join('');
 }
 
-// ─────────────────────────────────────────────
-// 4. MODALE DE CRÉATION / MODIFICATION / TRAITEMENT
-// ─────────────────────────────────────────────
-
 /**
- * Ouvre la modale de rapport d'analyses — création (reportId omis) ou
- * modification/traitement d'un rapport encore « À faire ». Un rapport
- * traité (Fait) est archivé et ne se modifie plus.
+ * Ouvre la modale — création (reportId omis) ou modification d'un
+ * rapport encore « À faire ».
  * @param {string} [reportId]
  * @returns {void}
  */
@@ -341,7 +299,7 @@ function openAnalyseModal(reportId) {
 
   el('ana-conf-ok').checked   = report ? report.conforme === 'conforme' : false;
   el('ana-conf-ko').checked   = report ? report.conforme === 'nonconforme' : false;
-  el('ana-st-fait').checked   = false; // 'fait' se coche explicitement (ou automatiquement)
+  el('ana-st-fait').checked   = false;
   el('ana-st-afaire').checked = true;
 
   _anaEditingId   = report ? report.id : null;
@@ -359,9 +317,9 @@ function openAnalyseModal(reportId) {
 }
 
 /**
- * Ajoute un ou plusieurs fichiers à la liste en attente (catégorie
- * « Rapport d'Analyses » par défaut, modifiable par pièce jointe).
- * @param {HTMLInputElement} input - Élément `<input type="file" multiple>`.
+ * Ajoute un ou plusieurs fichiers (catégorie « Rapport d'Analyses »
+ * par défaut, modifiable par pièce jointe).
+ * @param {HTMLInputElement} input
  * @returns {void}
  */
 function handleAnalyseFiles(input) {
@@ -373,7 +331,7 @@ function handleAnalyseFiles(input) {
 
 /**
  * Change la catégorie d'une pièce jointe en attente.
- * @param {number} index - Index dans _anaWorkingDocs.
+ * @param {number} index
  * @param {AnalyseDocCategorie} categorie
  * @returns {void}
  */
@@ -382,10 +340,9 @@ function setAnaDocCategorie(index, categorie) {
 }
 
 /**
- * Retire une pièce jointe de la modale. Un document existant retiré
- * sera réellement supprimé du bucket à l'enregistrement (pas avant :
- * annuler la modale ne doit rien détruire).
- * @param {number} index - Index dans _anaWorkingDocs.
+ * Retire une pièce jointe (un document existant retiré ne sera
+ * supprimé du bucket qu'à l'enregistrement).
+ * @param {number} index
  * @returns {void}
  */
 function removeAnaWorkingDoc(index) {
@@ -399,8 +356,7 @@ function removeAnaWorkingDoc(index) {
 }
 
 /**
- * Affiche la liste des pièces jointes de la modale (existantes + en
- * attente), avec sélecteur de catégorie et bouton de retrait.
+ * Affiche la liste des pièces jointes de la modale.
  * @returns {void}
  */
 function _renderAnalyseDocPreviews() {
@@ -443,9 +399,8 @@ function _anaConformite() {
 }
 
 /**
- * Indique si « Fait » est actuellement autorisé : conformité cochée,
- * au moins une pièce jointe, et — si Non conforme — du contenu dans
- * « Actions à mettre en place ».
+ * Indique si « Fait » est autorisé : conformité cochée, ≥ 1 pièce
+ * jointe, et si Non conforme du contenu dans les actions.
  * @returns {boolean}
  */
 function _anaCanBeFait() {
@@ -458,9 +413,7 @@ function _anaCanBeFait() {
 }
 
 /**
- * Handler des cases Conforme / Non conforme (exclusives). Non
- * conforme coche « À faire » par défaut, puis les règles automatiques
- * sont réappliquées.
+ * Handler des cases Conforme / Non conforme (exclusives).
  * @param {'conforme'|'nonconforme'} which
  * @returns {void}
  */
@@ -475,9 +428,7 @@ function onAnaConformeChange(which) {
 }
 
 /**
- * Handler des cases Fait / À faire (exclusives), avec application des
- * règles : Fait refusé tant que les prérequis ne sont pas remplis ;
- * À faire refusé si Conforme + pièce jointe (archivage obligatoire).
+ * Handler des cases Fait / À faire (exclusives) avec règles.
  * @param {'fait'|'afaire'} which
  * @returns {void}
  */
@@ -502,7 +453,6 @@ function onAnaStatutChange(which) {
   }
   if (which === 'afaire' && afaireCb.checked) {
     if (_anaConformite() === 'conforme' && _anaWorkingDocs.length) {
-      // Conforme + pièce jointe → l'archivage est obligatoire.
       afaireCb.checked = false;
       faitCb.checked = true;
       showToast('Conforme avec pièce jointe : le rapport sera archivé à l\'enregistrement.', 'warning');
@@ -515,10 +465,7 @@ function onAnaStatutChange(which) {
 }
 
 /**
- * Applique les règles automatiques dans la modale et met à jour les
- * indications visuelles : Conforme + pièce jointe → Fait coché
- * automatiquement ; mention « obligatoire » sur les actions si Non
- * conforme ; texte d'aide contextuel.
+ * Applique les règles automatiques et met à jour les aides visuelles.
  * @returns {void}
  */
 function _anaApplyAutoRules() {
@@ -565,12 +512,10 @@ function _showAnalyseError(message) {
 }
 
 /**
- * Valide la saisie selon les règles métier (voir l'en-tête), uploade
- * les nouveaux fichiers TELS QUELS, supprime du bucket les documents
- * retirés, puis crée ou met à jour le rapport et synchronise. Au
- * passage à « Fait » : traite_par / traite_le renseignés, rapport
- * archivé. Hors-ligne : fichiers ORIGINAUX en file d'attente
- * IndexedDB, jamais de base64.
+ * Valide selon les règles métier, uploade les nouveaux fichiers TELS
+ * QUELS, supprime les documents retirés, crée/met à jour le rapport
+ * et synchronise. Passage à « Fait » : traite_par / traite_le +
+ * archivage.
  * @returns {Promise<void>}
  */
 async function saveAnalyse() {
@@ -590,8 +535,6 @@ async function saveAnalyse() {
 
   if (!mid || !libelle || !date) { _showAnalyseError('Merci de renseigner le magasin, le libellé et la date de l\'analyse.'); return; }
 
-  // ── Détermination du statut final, règles métier revérifiées ici
-  //    (jamais uniquement dans l'UI).
   /** @type {number} */
   const docCount = _anaWorkingDocs.length;
   /** @type {'afaire'|'fait'} */
@@ -623,7 +566,6 @@ async function saveAnalyse() {
     /** @type {string} */
     const reportId = existing ? existing.id : 'ana-' + uid();
 
-    // ── Upload des nouveaux fichiers (raw) / conservation des existants
     /** @type {AnalyseDocument[]} */
     const documents = [];
     /** @type {number} */
@@ -658,7 +600,6 @@ async function saveAnalyse() {
       }
     }
 
-    // ── Suppression effective des documents retirés pendant l'édition
     _anaRemovedDocs.forEach(doc => {
       /** @type {string | null} */
       const storagePath = _analyseStoragePathFromUrl(doc.url);
@@ -680,8 +621,7 @@ async function saveAnalyse() {
       mid, libelle, date, documents, conforme, actions, statut,
       traite_par: statut === 'fait' ? (becomesFait ? (CU ? CU.nom : '') : (existing?.traite_par || (CU ? CU.nom : ''))) : '',
       traite_le:  statut === 'fait' ? (becomesFait ? today() : (existing?.traite_le || today())) : '',
-      // Neutralise les champs legacy mono-fichier une fois migré au
-      // format documents[] (le fichier legacy a été repris dedans).
+      // Neutralise les champs legacy mono-fichier une fois migré.
       nom: null, mime: null, taille: null, url: null,
     };
 
@@ -719,15 +659,8 @@ async function saveAnalyse() {
   }
 }
 
-// ─────────────────────────────────────────────
-// 5. MODALE DE CONSULTATION
-// ─────────────────────────────────────────────
-
 /**
- * Ouvre la modale de détail d'un rapport : métadonnées, conformité,
- * statut de traitement, actions, pièces jointes groupées par
- * classement (consultables/téléchargeables). Boutons : Exporter PDF,
- * Modifier/Traiter (si non archivé et droit d'upload), Fermer.
+ * Ouvre la modale de détail d'un rapport.
  * @param {string} reportId - Référence vers AnalyseReport.id.
  * @returns {void}
  */
@@ -802,14 +735,9 @@ function openAnalyseViewModal(reportId) {
   openModal('m-analyse-view');
 }
 
-// ─────────────────────────────────────────────
-// 6. SUPPRESSION
-// ─────────────────────────────────────────────
-
 /**
- * Demande confirmation puis supprime un rapport : tous ses fichiers
- * du bucket, les entrées de file d'attente locale, la ligne Supabase
- * et l'entrée locale.
+ * Demande confirmation puis supprime un rapport (fichiers, file
+ * d'attente, ligne Supabase, entrée locale).
  * @param {string} reportId - Référence vers AnalyseReport.id.
  * @returns {void}
  */
@@ -844,19 +772,16 @@ function deleteAnalyse(reportId) {
 }
 
 // ─────────────────────────────────────────────
-// 7. EXPORT PDF (4 sections, dans l'ordre)
+// EXPORT PDF (4 sections, dans l'ordre)
 // ─────────────────────────────────────────────
 
 /** @type {number} Marge des pages de l'export PDF (points). */
 const _ANA_PDF_MARGIN = 32;
 
 /**
- * Rend un HTML dans une page du PDF (nouvelle page sauf `first`).
- * `fullPage` force le HTML à occuper exactement une page A4 (utile
- * pour la page de garde et la page de traitement, dont la mise en
- * page verticale — contenu centré, signature en bas — a besoin de la
- * hauteur complète). Un HTML plus haut qu'une page est découpé en
- * tranches.
+ * Rend un HTML dans une page du PDF. `fullPage` force une page A4
+ * entière (page de garde, page de traitement). HTML trop haut =
+ * découpé en tranches.
  * @param {Object} pdf - Instance jsPDF.
  * @param {string} html
  * @param {boolean} [first] - Premier contenu du document (pas d'addPage).
@@ -874,7 +799,7 @@ async function _anaAddHtmlToPdf(pdf, html, first, fullPage) {
   const usableH = pdfH - _ANA_PDF_MARGIN * 2;
 
   const wrapper = document.createElement('div');
-  /** @type {number} Largeur px de rendu (≈ largeur A4 utile à 96 dpi). */
+  /** @type {number} */
   const renderW = 794;
   wrapper.style.cssText = [
     'position:fixed', 'left:-9999px', 'top:0', `width:${renderW}px`,
@@ -900,7 +825,6 @@ async function _anaAddHtmlToPdf(pdf, html, first, fullPage) {
     if (totalH <= usableH + 1) {
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', _ANA_PDF_MARGIN, _ANA_PDF_MARGIN, usableW, totalH);
     } else {
-      // Découpage en tranches d'une page (HTML long, ex : très longues actions).
       /** @type {number} */
       const ratio = usableW / canvas.width;
       let yOffset = 0;
@@ -928,14 +852,12 @@ async function _anaAddHtmlToPdf(pdf, html, first, fullPage) {
 }
 
 /**
- * Ajoute une image (dessinée dans un canvas fourni) sur une nouvelle
- * page du PDF, ajustée à la zone utile en conservant ses proportions,
- * avec une éventuelle bannière de section et une légende (nom du
- * fichier).
+ * Ajoute une image (canvas) sur une nouvelle page, ajustée à la zone
+ * utile, avec bannière de section et légende éventuelles.
  * @param {Object} pdf - Instance jsPDF.
  * @param {HTMLCanvasElement} canvas
- * @param {string | null} banner - Titre de section (première pièce de la section uniquement).
- * @param {string | null} caption - Légende (nom du fichier), null pour les pages 2+ d'un PDF joint.
+ * @param {string | null} banner
+ * @param {string | null} caption
  * @returns {void}
  */
 function _anaAddCanvasPage(pdf, canvas, banner, caption) {
@@ -981,8 +903,7 @@ function _anaAddCanvasPage(pdf, canvas, banner, caption) {
 }
 
 /**
- * Ajoute une page « placeholder » pour une pièce jointe non affichable
- * (type non supporté, fichier en attente d'envoi, erreur de lecture).
+ * Page « placeholder » pour une pièce jointe non affichable.
  * @param {Object} pdf - Instance jsPDF.
  * @param {AnalyseDocument} doc
  * @param {string | null} banner
@@ -1001,13 +922,11 @@ async function _anaAddPlaceholderPage(pdf, doc, banner, message) {
 
 /**
  * Ajoute une pièce jointe au PDF : image → page dédiée ; PDF → chaque
- * page rendue via pdf.js (chargé à la demande, plafond
- * ANA_PDF_MAX_PAGES_PER_DOC) ; autre type ou fichier en attente →
- * page placeholder. Ne lève jamais : toute erreur retombe sur le
- * placeholder pour ne pas faire échouer l'export entier.
+ * page rendue via pdf.js ; autre/en attente → placeholder. Ne lève
+ * jamais (toute erreur retombe sur le placeholder).
  * @param {Object} pdf - Instance jsPDF.
  * @param {AnalyseDocument} doc
- * @param {string | null} banner - Titre de section (première pièce de la section uniquement).
+ * @param {string | null} banner - Titre de section (première pièce uniquement).
  * @returns {Promise<void>}
  */
 async function _anaAddDocToPdf(pdf, doc, banner) {
@@ -1035,7 +954,7 @@ async function _anaAddDocToPdf(pdf, doc, banner) {
     }
 
     if (doc.mime === 'application/pdf') {
-      await _loadScript(CDN_PDFJS); // sans effet si déjà chargé (voir _loadScript, import-grille.js)
+      await _loadScript(CDN_PDFJS); // sans effet si déjà chargé
       pdfjsLib.GlobalWorkerOptions.workerSrc = CDN_PDFJS_WORKER;
 
       const response = await fetch(doc.url);
@@ -1069,8 +988,7 @@ async function _anaAddDocToPdf(pdf, doc, banner) {
 }
 
 /**
- * HTML de la page de garde : traité par, date d'ouverture, et au
- * centre la liste des pièces jointes selon leur classement.
+ * HTML de la page de garde.
  * @param {AnalyseReport} report
  * @returns {string}
  */
@@ -1103,7 +1021,7 @@ function _anaBuildCoverHtml(report) {
 
   return `<div style="height:100%;display:flex;flex-direction:column;padding:36px 44px;box-sizing:border-box">
     <div style="text-align:center;margin-bottom:28px">
-      <div style="font-size:13px;color:#999;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px">QualiStore</div>
+      <div style="font-size:13px;color:#999;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px">HygiPerf</div>
       <div style="font-size:26px;font-weight:700;margin-bottom:6px">Rapport d'Analyses</div>
       <div style="font-size:16px;color:#444">${_escapeHtml(report.libelle || '')}</div>
       <div style="font-size:13px;color:#666;margin-top:4px">${store ? _escapeHtml(store.nom) : ''}</div>
@@ -1118,14 +1036,12 @@ function _anaBuildCoverHtml(report) {
       ${docList('rapport')}
       ${docList('justificatif')}
     </div>
-    <div style="text-align:center;font-size:10px;color:#bbb">Document généré par QualiStore le ${fd(today())}</div>
+    <div style="text-align:center;font-size:10px;color:#bbb">Document généré par HygiPerf le ${fd(today())}</div>
   </div>`;
 }
 
 /**
- * HTML de la page de traitement : dates (analyse, création,
- * traitement), « Actions à mettre en place » au centre, et en bas à
- * droite le nom de la personne ayant traité le rapport.
+ * HTML de la page de traitement.
  * @param {AnalyseReport} report
  * @returns {string}
  */
@@ -1155,9 +1071,7 @@ function _anaBuildTreatmentHtml(report) {
 }
 
 /**
- * Exporte un rapport d'analyses en PDF, 4 sections dans l'ordre :
- * page de garde, Rapport(s) d'Analyse, Pièces Justificatives, page de
- * traitement (voir l'en-tête du fichier).
+ * Exporte un rapport d'analyses en PDF (4 sections dans l'ordre).
  * @param {string} reportId - Référence vers AnalyseReport.id.
  * @returns {Promise<void>}
  */

@@ -40,7 +40,7 @@
  * @typedef {Object} User
  * @property {string} id
  * @property {string} nom
- * @property {string} login - Email réel, ou adresse technique interne (@qualistore.local) pour les comptes sans email.
+ * @property {string} login - Email réel, ou adresse technique interne (@hygiperf.local) pour les comptes sans email.
  * @property {UserRole} role
  * @property {'actif'|'inactif'|'invitation'|string} statut
  * @property {string[]} magasins
@@ -154,7 +154,9 @@ function _buildUserStoresList(user) {
  * @returns {boolean}
  */
 function _isInternalLogin(login) {
-  return (login || '').endsWith('@qualistore.local');
+  // Accepte AUSSI l'ancien domaine : les comptes internes créés avant
+  // le passage à HygiPerf gardent leur adresse technique d'origine.
+  return (login || '').endsWith('@hygiperf.local') || (login || '').endsWith('@qualistore.local');
 }
 
 // ─────────────────────────────────────────────
@@ -184,7 +186,7 @@ async function renderUsers() {
     const isLastAdmin = user.role === 'admin' && onlyOneAdmin;
     /** @type {string} */
     const loginDisplay = _isInternalLogin(user.login)
-      ? `<span title="Compte sans email — identifiant interne">${user.login.replace('@qualistore.local', '')} <i class="ti ti-lock" style="font-size:11px;opacity:.6"></i></span>`
+      ? `<span title="Compte sans email — identifiant interne">${user.login.replace(/@(hygiperf|qualistore)\.local$/, '')} <i class="ti ti-lock" style="font-size:11px;opacity:.6"></i></span>`
       : user.login;
 
     return `<tr>

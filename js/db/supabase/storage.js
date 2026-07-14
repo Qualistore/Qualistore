@@ -1171,7 +1171,7 @@ window.addEventListener('online', () => {
 /**
  * Exporte toute la DB en fichier JSON téléchargeable.
  * Déclenche un téléchargement navigateur nommé
- * `qualistore-backup-{date}.json`.
+ * `hygiperf-backup-{date}.json`.
  * @returns {void}
  */
 function exportBackup() {
@@ -1184,7 +1184,7 @@ function exportBackup() {
   /** @type {HTMLAnchorElement} */
   const link = document.createElement('a');
   link.href     = url;
-  link.download = `qualistore-backup-${today()}.json`;
+  link.download = `hygiperf-backup-${today()}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1263,7 +1263,9 @@ function importBackup(input) {
  */
 
 /** @type {string} */
-const PHOTO_QUEUE_DB_NAME = 'qualistore-photo-queue';
+const PHOTO_QUEUE_DB_NAME = 'hygiperf-photo-queue';
+/** @type {string} Ancien nom de la base IndexedDB (avant le passage à HygiPerf) — utilisé UNIQUEMENT pour migrer une file d'attente existante vers la nouvelle base, puis supprimer l'ancienne (voir _migrateLegacyPhotoQueue). */
+const LEGACY_PHOTO_QUEUE_DB_NAME = 'qualistore-photo-queue';
 /** @type {number} */
 const PHOTO_QUEUE_DB_VERSION = 1;
 /** @type {string} */
@@ -1433,6 +1435,58 @@ async function flushPendingPhotoQueue() {
 // (l'événement 'online' ne se déclenche pas dans ce cas).
 setInterval(flushPendingPhotoQueue, 30_000);
 
+/**
+ * Migration ponctuelle : déplace les entrées de l'ancienne base
+ * IndexedDB (nom d'avant le passage à HygiPerf) vers la nouvelle,
+ * puis supprime l'ancienne base. Sans effet si l'ancienne base
+ * n'existe pas ou est vide ; toute erreur est silencieuse (la
+ * migration retentera au prochain chargement tant que l'ancienne
+ * base n'a pas été supprimée).
+ * @returns {Promise<void>}
+ */
+async function _migrateLegacyPhotoQueue() {
+  try {
+    /** @type {IDBDatabase} */
+    const legacyDb = await new Promise((resolve, reject) => {
+      /** @type {IDBOpenDBRequest} */
+      const request = indexedDB.open(LEGACY_PHOTO_QUEUE_DB_NAME, PHOTO_QUEUE_DB_VERSION);
+      request.onupgradeneeded = () => { /* base absente : créée vide, supprimée juste après */ };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror   = () => reject(request.error);
+    });
+
+    if (legacyDb.objectStoreNames.contains(PHOTO_QUEUE_STORE)) {
+      /** @type {PendingPhotoEntry[]} */
+      const entries = await new Promise((resolve, reject) => {
+        /** @type {IDBTransaction} */
+        const tx = legacyDb.transaction(PHOTO_QUEUE_STORE, 'readonly');
+        /** @type {IDBRequest} */
+        const request = tx.objectStore(PHOTO_QUEUE_STORE).getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror   = () => reject(request.error);
+      });
+
+      if (entries.length) {
+        /** @type {IDBDatabase} */
+        const db = await _openPhotoQueueDb();
+        await new Promise((resolve, reject) => {
+          /** @type {IDBTransaction} */
+          const tx = db.transaction(PHOTO_QUEUE_STORE, 'readwrite');
+          entries.forEach(entry => tx.objectStore(PHOTO_QUEUE_STORE).put(entry));
+          tx.oncomplete = resolve;
+          tx.onerror    = () => reject(tx.error);
+        });
+        console.log(`📦 File d'attente photos migrée vers la nouvelle base (${entries.length} entrée(s)).`);
+      }
+    }
+    legacyDb.close();
+    indexedDB.deleteDatabase(LEGACY_PHOTO_QUEUE_DB_NAME);
+  } catch (err) {
+    console.warn("Migration de l'ancienne file d'attente photos impossible :", err);
+  }
+}
+
 // Tentative dès le chargement de la page, au cas où des photos
-// seraient restées en attente d'une session précédente.
-flushPendingPhotoQueue();
+// seraient restées en attente d'une session précédente — précédée de
+// la migration ponctuelle depuis l'ancienne base (voir ci-dessus).
+_migrateLegacyPhotoQueue().finally(() => flushPendingPhotoQueue());

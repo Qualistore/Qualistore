@@ -2,7 +2,7 @@
 // QUALIMETRE — Page référentiel Qualimètre (lecture seule)
 // Dépend de : storage.js (DB, CU), ui.js, grille-qualimetre.js (_getAllZones — plus aucune zone prédéfinie)
 // ⚠️ Page apparemment non reliée à la navigation actuelle (aucun
-//    #page-qualimetre dans Qualistore.html) — code conservé tel quel,
+//    #page-qualimetre dans index.html) — code conservé tel quel,
 //    signalé à l'utilisateur plutôt que supprimé de sa propre initiative.
 // Note : l'édition se fait depuis la page "Grille Qualimètre" (grille-qualimetre.js)
 // ══════════════════════════════════════════════════════════════

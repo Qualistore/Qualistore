@@ -10,7 +10,7 @@
 //   - Les salariés sans adresse email pro se voient attribuer un
 //     identifiant interne (ex : 'jean.dupont.a1b2') relié en
 //     coulisses à une adresse technique invisible
-//     ('...@qualistore.local', voir INTERNAL_EMAIL_DOMAIN) —
+//     ('...@hygiperf.local', voir INTERNAL_EMAIL_DOMAIN) —
 //     jamais une vraie boîte mail. doLogin() ajoute automatiquement
 //     ce suffixe si la personne tape juste son identifiant sans '@'.
 //   - Ces comptes sont créés avec un mot de passe temporaire généré
@@ -67,7 +67,10 @@
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 /** @type {string} Domaine technique des comptes sans email réel — jamais une vraie boîte mail. Doit rester identique à INTERNAL_EMAIL_DOMAIN côté Edge Function invite-user. */
-const INTERNAL_EMAIL_DOMAIN = 'qualistore.local';
+const INTERNAL_EMAIL_DOMAIN = 'hygiperf.local';
+
+/** @type {string} Ancien domaine technique des comptes internes créés AVANT le passage à HygiPerf. INDISPENSABLE : ces comptes existent dans Supabase Auth avec leur adresse d'origine — sans ce repli, plus aucun d'eux ne pourrait se connecter. Supprimable uniquement après migration de leurs emails dans Supabase Auth (et mise à jour de la Edge Function invite-user). */
+const LEGACY_INTERNAL_EMAIL_DOMAIN = 'qualistore.local';
 
 // ─────────────────────────────────────────────
 // 2. ÉTAT
@@ -194,22 +197,32 @@ async function _fetchProfile(userId) {
  * 'f-login' / 'f-pass', via Supabase Auth. Le champ 'f-login'
  * accepte soit un email réel, soit un simple identifiant interne
  * (ex : 'jean.dupont.a1b2') — dans ce second cas, le domaine
- * technique @qualistore.local est ajouté automatiquement avant
+ * technique @hygiperf.local est ajouté automatiquement avant
  * l'appel à Supabase (la personne n'a jamais besoin de le connaître
  * ni de le taper).
  * @returns {Promise<void>}
  */
 async function doLogin() {
   /** @type {string} */
-  let email = v('f-login').trim().toLowerCase();
-  if (email && !email.includes('@')) {
-    email = `${email}@${INTERNAL_EMAIL_DOMAIN}`;
-  }
+  const rawLogin = v('f-login').trim().toLowerCase();
+  /** @type {boolean} */
+  const isInternalIdentifier = !!rawLogin && !rawLogin.includes('@');
+  /** @type {string} */
+  const email = isInternalIdentifier ? `${rawLogin}@${INTERNAL_EMAIL_DOMAIN}` : rawLogin;
   /** @type {string} */
   const password = v('f-pass');
   const errorEl  = el('login-err');
 
-  const { data: authData, error: authError } = await _sb.auth.signInWithPassword({ email, password });
+  let { data: authData, error: authError } = await _sb.auth.signInWithPassword({ email, password });
+
+  // Compte interne créé AVANT le passage à HygiPerf : nouvelle
+  // tentative avec l'ancien domaine technique, de façon totalement
+  // transparente pour l'utilisateur (voir LEGACY_INTERNAL_EMAIL_DOMAIN).
+  if ((authError || !authData.user) && isInternalIdentifier) {
+    ({ data: authData, error: authError } = await _sb.auth.signInWithPassword({
+      email: `${rawLogin}@${LEGACY_INTERNAL_EMAIL_DOMAIN}`, password,
+    }));
+  }
 
   if (authError || !authData.user) {
     errorEl.textContent = 'Identifiant ou mot de passe incorrect.';

@@ -1573,7 +1573,7 @@ function _buildDraftRow(draft) {
 
   // ⚠️ AJOUTÉ : badge de type, pour distinguer les 3 origines
   // possibles d'un brouillon dans la même table partagée (voir Type
-  // dans l'en-tête, Qualistore.html).
+  // dans l'en-tête, index.html).
   /** @type {string} */
   const typeBadge = draft.type === 'qualimetre'
     ? '<span class="badge" style="background:#eef2ff;color:#3730a3">Qualimètre</span>'

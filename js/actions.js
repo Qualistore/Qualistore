@@ -239,7 +239,7 @@ function renderActions() {
 /**
  * Construit la ligne `<tr>` HTML pour une action corrective donnée.
  *
- * ⚠️ CORRIGÉ : le tableau avait un en-tête "NC" en trop (Qualistore.html)
+ * ⚠️ CORRIGÉ : le tableau avait un en-tête "NC" en trop (index.html)
  * sans cellule correspondante ici — chaque ligne avait donc une colonne
  * de décalage par rapport à son en-tête (ex : "Magasin" affichait en
  * réalité "Responsable"). Remplacé par une vraie colonne case à cocher

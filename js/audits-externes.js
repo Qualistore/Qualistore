@@ -6,9 +6,8 @@
 // DU DERNIER AUDIT EXTERNE. Le fichier est stocké TEL QUEL (aucune
 // compression ni conversion) dans le bucket Supabase Storage 'photos'
 // sous le préfixe 'audits-externes/'. Les métadonnées vivent dans la
-// table Supabase `audits_externes` (voir
-// migration-analyses-extaudits-metrologie.sql), synchronisée par
-// storage.js (DB.auditsExternes).
+// table Supabase `audits_externes`, synchronisée par storage.js
+// (DB.auditsExternes).
 //
 // ⚠️ HORS-LIGNE — AUCUN base64 : même mécanisme que analyses.js
 // (file d'attente IndexedDB du fichier ORIGINAL + réconciliateur,
@@ -16,13 +15,7 @@
 //
 // Visibilité : magasins accessibles (visibleMids) + droits
 // granulaires extaudit_view / extaudit_upload / extaudit_delete.
-//
-// Dépend de : mêmes modules que analyses.js.
 // ══════════════════════════════════════════════════════════════
-
-// ─────────────────────────────────────────────
-// 0. TYPEDEFS JSDoc
-// ─────────────────────────────────────────────
 
 /**
  * Rapport d'audit externe (une ligne de la table Supabase `audits_externes`).
@@ -31,29 +24,22 @@
  * @property {string} mid - Référence vers Magasin.id.
  * @property {string} libelle - Libellé libre saisi à l'upload.
  * @property {string} date - Date du dernier audit externe ('YYYY-MM-DD').
- * @property {string} nom - Nom de fichier d'origine (le chemin de stockage utilise un nom généré).
+ * @property {string} nom - Nom de fichier d'origine.
  * @property {string} mime - Type MIME du fichier.
  * @property {number} taille - Taille du fichier en octets.
- * @property {string} url - URL publique Supabase Storage. Chaîne vide tant que le fichier est en attente d'envoi.
- * @property {string} aud - Nom de l'utilisateur ayant ajouté le rapport.
+ * @property {string} url - URL publique Supabase Storage ('' si en attente d'envoi).
+ * @property {string} aud - Utilisateur ayant ajouté le rapport.
  * @property {number} created - Horodatage (Date.now()) de l'ajout.
  */
 
-// ─────────────────────────────────────────────
-// 1. ÉTAT
-// ─────────────────────────────────────────────
-
 /**
  * Fichier sélectionné dans la modale d'upload, en attente
- * d'enregistrement (upload réel à saveExtAudit uniquement).
+ * d'enregistrement.
  * @type {File | null}
  */
 let _exaPendingFile = null;
 
-// ─────────────────────────────────────────────
-// 1bis. RÉCONCILIATEUR HORS-LIGNE (voir analyses.js pour le principe)
-// ─────────────────────────────────────────────
-
+// Réconciliateur hors-ligne (voir analyses.js pour le principe).
 registerPhotoQueueReconciler('extaudit', (entry, url) => {
   /** @type {ExtAuditReport | undefined} */
   const report = (DB.auditsExternes || []).find(a => a.id === entry.pointId);
@@ -66,14 +52,8 @@ registerPhotoQueueReconciler('extaudit', (entry, url) => {
   if (document.querySelector('.page.active')?.id === 'page-audits-externes') renderAuditsExternes();
 });
 
-// ─────────────────────────────────────────────
-// 2. RENDU DE LA PAGE
-// ─────────────────────────────────────────────
-
 /**
- * Affiche la page Audits Externes FSQS : filtres (magasin, période),
- * compteur et tableau des rapports, restreints aux magasins
- * accessibles.
+ * Affiche la page Audits Externes FSQS : filtres, compteur, tableau.
  * @returns {void}
  */
 function renderAuditsExternes() {
@@ -143,10 +123,6 @@ function renderAuditsExternes() {
     </tr>`;
   }).join('');
 }
-
-// ─────────────────────────────────────────────
-// 3. MODALE D'UPLOAD
-// ─────────────────────────────────────────────
 
 /**
  * Ouvre la modale d'ajout d'un rapport d'audit externe.
@@ -226,10 +202,9 @@ function _showExtAuditError(message) {
 }
 
 /**
- * Valide la saisie, uploade le fichier TEL QUEL (préfixe
- * 'audits-externes/'), enregistre les métadonnées dans
- * DB.auditsExternes et synchronise. Hors-ligne : fichier ORIGINAL en
- * file d'attente IndexedDB (contexte 'extaudit'), jamais de base64.
+ * Valide, uploade le fichier TEL QUEL (préfixe 'audits-externes/'),
+ * enregistre et synchronise. Hors-ligne : fichier ORIGINAL en file
+ * d'attente IndexedDB (contexte 'extaudit'), jamais de base64.
  * @returns {Promise<void>}
  */
 async function saveExtAudit() {
@@ -302,13 +277,8 @@ async function saveExtAudit() {
   }
 }
 
-// ─────────────────────────────────────────────
-// 4. MODALE DE CONSULTATION / RÉCUPÉRATION
-// ─────────────────────────────────────────────
-
 /**
- * Ouvre la modale de détail d'un rapport d'audit externe (métadonnées
- * + Consulter / Télécharger — fichier restitué tel quel).
+ * Ouvre la modale de détail d'un rapport d'audit externe.
  * @param {string} reportId - Référence vers ExtAuditReport.id.
  * @returns {void}
  */
@@ -370,8 +340,7 @@ function openExtAuditDoc(reportId) {
 }
 
 /**
- * Télécharge le fichier d'un rapport d'audit externe tel quel, avec
- * son nom d'origine.
+ * Télécharge le fichier d'un rapport d'audit externe tel quel.
  * @param {string} reportId
  * @returns {void}
  */
@@ -383,14 +352,8 @@ function downloadExtAuditDoc(reportId) {
   downloadDocument(report.url, report.nom);
 }
 
-// ─────────────────────────────────────────────
-// 5. SUPPRESSION
-// ─────────────────────────────────────────────
-
 /**
- * Demande confirmation puis supprime un rapport d'audit externe :
- * fichier du bucket Storage (si déjà envoyé), entrée éventuelle de la
- * file d'attente locale, ligne Supabase, et entrée locale.
+ * Demande confirmation puis supprime un rapport d'audit externe.
  * @param {string} reportId - Référence vers ExtAuditReport.id.
  * @returns {void}
  */

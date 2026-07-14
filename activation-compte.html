@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QualiStore — Activation du compte</title>
+<title>HygiPerf — Activation du compte</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
@@ -11,7 +11,7 @@
 
 <div style="background:#fff;border-radius:12px;padding:32px;max-width:400px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,.2)">
   <div style="text-align:center;margin-bottom:20px">
-    <img src="assets/logo.png" style="width:120px;height:auto" alt="QualiStore">
+    <img src="assets/logo.png" style="width:120px;height:auto" alt="HygiPerf">
   </div>
 
   <h2 id="act-title" style="text-align:center;font-size:18px;margin-bottom:16px">Bienvenue — activez votre compte</h2>
@@ -52,7 +52,7 @@
   </div>
 
   <div id="act-login-link" style="display:none;text-align:center;margin-top:12px">
-    <a href="./Qualistore.html" style="color:#1d4ed8;font-size:14px">Aller à la page de connexion</a>
+    <a href="./" style="color:#1d4ed8;font-size:14px">Aller à la page de connexion</a>
   </div>
 </div>
 
@@ -139,7 +139,7 @@ function _showActError(message) {
  * ici, au clic), définit le mot de passe choisi, active le profil
  * (activate_own_profile), puis redirige DIRECTEMENT vers l'app —
  * la session ouverte par verifyOtp() reste valide (on ne déconnecte
- * plus l'utilisateur), donc Qualistore.html le reconnaît déjà
+ * plus l'utilisateur), donc index.html le reconnaît déjà
  * connecté et l'amène droit sur le tableau de bord.
  * Toute erreur (y compris une exception inattendue) est
  * systématiquement affichée à l'écran.
@@ -201,7 +201,7 @@ async function confirmActivation() {
     successEl.textContent = 'Compte activé ! Redirection vers l\'application...';
     successEl.style.display = '';
 
-    setTimeout(() => { window.location.href = './Qualistore.html'; }, 900);
+    setTimeout(() => { window.location.href = './'; }, 900);
   } catch (err) {
     _showActError('Erreur technique inattendue : ' + String(err && err.message ? err.message : err));
   } finally {
