@@ -9,16 +9,27 @@
 // `analyses` (voir migration-analyses.sql), synchronisée par
 // storage.js (DB.analyses) comme les autres tables.
 //
+// ⚠️ HORS-LIGNE — AUCUN base64 : si l'upload échoue (connexion
+// terrain instable), le fichier ORIGINAL est mis en file d'attente
+// locale IndexedDB (queuePendingPhoto, storage.js — mécanisme
+// générique déjà utilisé pour les photos d'audit) et renvoyé
+// automatiquement au retour de la connexion. Le rapport apparaît
+// alors « En attente d'envoi » ; son URL est complétée par le
+// réconciliateur dédié (registerPhotoQueueReconciler, plus bas) une
+// fois l'envoi réussi. Le fichier n'est jamais converti.
+//
 // Visibilité : filtrée par magasins accessibles (visibleMids, ui.js)
 // et gouvernée par les droits granulaires analysis_view /
 // analysis_upload / analysis_delete (config.js).
 //
 // Dépend de : config.js, storage.js (DB, CU, save, uid,
-//   _saveToLocalStorage), supabase.js (sbDeleteWhere, sbDeletePhoto),
-//   auth.js (hasPerm), ui.js (el, v, sv, fd, today, showToast,
-//   openModal, closeModal, populateMagSelect, visibleMids,
-//   uploadPhotoWithRetry), alertes.js (openDocumentViewer,
-//   downloadDocument, _formatFileSize, _alertDocumentIcon),
+//   _saveToLocalStorage, queuePendingPhoto, getPendingPhotos,
+//   removePendingPhoto, registerPhotoQueueReconciler),
+//   supabase.js (sbDeleteWhere, sbDeletePhoto), auth.js (hasPerm),
+//   ui.js (el, v, sv, fd, today, showToast, openModal, closeModal,
+//   populateMagSelect, visibleMids, uploadPhotoWithRetry),
+//   alertes.js (openDocumentViewer, downloadDocument,
+//   _formatFileSize, _alertDocumentIcon),
 //   import-grille.js (_escapeHtml, _escapeHtmlAttr).
 // ══════════════════════════════════════════════════════════════
 
@@ -36,24 +47,14 @@
  * @property {string} nom - Nom de fichier d'origine (le chemin de stockage utilise un nom généré).
  * @property {string} mime - Type MIME du fichier.
  * @property {number} taille - Taille du fichier en octets.
- * @property {string} url - URL publique Supabase Storage, ou data URL base64 en fallback hors-ligne.
+ * @property {string} url - URL publique Supabase Storage. Chaîne vide tant que le fichier est en attente d'envoi (file IndexedDB, voir l'en-tête).
  * @property {string} aud - Nom de l'utilisateur ayant ajouté le rapport.
  * @property {number} created - Horodatage (Date.now()) de l'ajout.
  */
 
 // ─────────────────────────────────────────────
-// 1. CONSTANTES & ÉTAT
+// 1. ÉTAT
 // ─────────────────────────────────────────────
-
-/**
- * Taille maximale (octets) acceptée pour le fallback hors-ligne en
- * data URL base64 — au-delà, l'upload est refusé tant que la
- * connexion n'est pas rétablie (une data URL de plusieurs Mo dans
- * DB.analyses saturerait le quota localStorage, cassant la sauvegarde
- * de toutes les autres données — voir _saveToLocalStorage, storage.js).
- * @type {number}
- */
-const ANALYSE_OFFLINE_MAX_BYTES = 4 * 1024 * 1024;
 
 /**
  * Fichier sélectionné dans la modale d'upload, en attente
@@ -65,12 +66,34 @@ const ANALYSE_OFFLINE_MAX_BYTES = 4 * 1024 * 1024;
 let _anaPendingFile = null;
 
 // ─────────────────────────────────────────────
+// 1bis. RÉCONCILIATEUR HORS-LIGNE
+// Appelé par flushPendingPhotoQueue (storage.js) quand un fichier
+// d'analyses précédemment mis en attente a enfin été envoyé :
+// complète l'URL du rapport correspondant et resynchronise.
+// ─────────────────────────────────────────────
+
+registerPhotoQueueReconciler('analyse', (entry, url) => {
+  /** @type {AnalyseReport | undefined} */
+  const report = (DB.analyses || []).find(a => a.id === entry.pointId);
+  if (!report) return; // rapport supprimé entre-temps — rien à faire
+
+  report.url = url;
+  save(['analyses']);
+  showToast('Rapport d\'analyses envoyé.', 'success');
+
+  // Rafraîchit la page si elle est affichée.
+  if (document.querySelector('.page.active')?.id === 'page-analyses') renderAnalyses();
+});
+
+// ─────────────────────────────────────────────
 // 2. RENDU DE LA PAGE
 // ─────────────────────────────────────────────
 
 /**
  * Affiche la page Analyses : filtres (magasin, période), compteur et
- * tableau des rapports, restreints aux magasins accessibles.
+ * tableau des rapports, restreints aux magasins accessibles. Un
+ * rapport dont le fichier est encore en attente d'envoi affiche un
+ * badge dédié à la place des boutons de consultation.
  * @returns {void}
  */
 function renderAnalyses() {
@@ -112,6 +135,17 @@ function renderAnalyses() {
   tbody.innerHTML = reports.map(report => {
     /** @type {{nom: string} | undefined} */
     const store = DB.magasins.find(m => m.id === report.mid);
+    /** @type {boolean} */
+    const isPending = !report.url;
+
+    /** @type {string} */
+    const actionButtons = isPending
+      ? `<span class="badge b-prog" title="Le fichier original est en file d'attente locale et partira automatiquement au retour de la connexion.">
+           <i class="ti ti-cloud-upload" style="font-size:12px"></i> En attente d'envoi
+         </span>`
+      : `<button class="btn btn-secondary btn-sm" onclick="openAnalyseViewModal('${_escapeHtmlAttr(report.id)}')" title="Consulter / récupérer le fichier"><i class="ti ti-eye"></i></button>
+         <button class="btn btn-secondary btn-sm" onclick="downloadAnalyseDoc('${_escapeHtmlAttr(report.id)}')" title="Télécharger"><i class="ti ti-download"></i></button>`;
+
     return `<tr>
       <td>${store ? _escapeHtml(store.nom) : '–'}</td>
       <td>${_escapeHtml(report.libelle || '')}</td>
@@ -123,8 +157,7 @@ function renderAnalyses() {
       </td>
       <td style="font-size:12px;color:var(--text2)">${_escapeHtml(report.aud || '–')}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-secondary btn-sm" onclick="openAnalyseViewModal('${_escapeHtmlAttr(report.id)}')" title="Consulter / récupérer le fichier"><i class="ti ti-eye"></i></button>
-        <button class="btn btn-secondary btn-sm" onclick="downloadAnalyseDoc('${_escapeHtmlAttr(report.id)}')" title="Télécharger"><i class="ti ti-download"></i></button>
+        ${actionButtons}
         ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="deleteAnalyse('${_escapeHtmlAttr(report.id)}')" title="Supprimer"><i class="ti ti-trash"></i></button>` : ''}
       </td>
     </tr>`;
@@ -237,27 +270,17 @@ function _showAnalyseError(message) {
 }
 
 /**
- * Lit un fichier en data URL base64 (fallback hors-ligne uniquement).
- * @param {File} file
- * @returns {Promise<string | null>} La data URL, ou null en cas d'échec de lecture.
- */
-function _anaReadFileAsDataUrl(file) {
-  return new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload  = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(file);
-  });
-}
-
-/**
  * Valide la saisie, uploade le fichier TEL QUEL dans le bucket
  * Storage (préfixe 'analyses/', nom généré — le nom d'origine est
  * conservé dans les métadonnées), enregistre les métadonnées dans
- * DB.analyses et synchronise (save, storage.js). En cas d'échec
- * d'upload (hors-ligne), retombe sur une data URL base64 si le
- * fichier est assez petit (ANALYSE_OFFLINE_MAX_BYTES), sinon refuse
- * proprement sans rien enregistrer.
+ * DB.analyses et synchronise (save, storage.js).
+ *
+ * En cas d'échec d'upload (hors-ligne, connexion instable) : le
+ * rapport est enregistré avec une URL vide et le fichier ORIGINAL
+ * (aucune conversion) est mis en file d'attente IndexedDB
+ * (queuePendingPhoto, storage.js) — il sera envoyé automatiquement
+ * au retour de la connexion, et l'URL complétée par le
+ * réconciliateur 'analyse' (voir section 1bis).
  * @returns {Promise<void>}
  */
 async function saveAnalyse() {
@@ -292,18 +315,7 @@ async function saveAnalyse() {
     const storagePath = `analyses/${uid()}.${ext}`;
 
     /** @type {string | null} */
-    let url = await uploadPhotoWithRetry(file, storagePath);
-
-    if (!url) {
-      if (file.size <= ANALYSE_OFFLINE_MAX_BYTES) {
-        url = await _anaReadFileAsDataUrl(file);
-      }
-      if (!url) {
-        _showAnalyseError('Upload impossible (connexion instable ?) — réessayez une fois la connexion rétablie.');
-        return;
-      }
-      showToast('Hors-ligne : fichier conservé localement, il sera consultable mais pensez à le ré-uploader une fois en ligne.', 'warning');
-    }
+    const url = await uploadPhotoWithRetry(file, storagePath);
 
     /** @type {AnalyseReport} */
     const report = {
@@ -314,7 +326,7 @@ async function saveAnalyse() {
       nom:     file.name,
       mime:    file.type || 'application/octet-stream',
       taille:  file.size,
-      url,
+      url:     url || '',
       aud:     CU ? CU.nom : '',
       created: Date.now(),
     };
@@ -323,9 +335,17 @@ async function saveAnalyse() {
     DB.analyses.push(report);
     save(['analyses']);
 
+    if (!url) {
+      // Fichier ORIGINAL en file d'attente locale (IndexedDB) — jamais
+      // de conversion base64, voir l'en-tête du fichier.
+      await queuePendingPhoto({ context: 'analyse', pointId: report.id, blob: file, storagePath });
+      showToast('Connexion indisponible : le fichier original est en attente et partira automatiquement au retour du réseau.', 'warning');
+    } else {
+      showToast('Rapport d\'analyses enregistré.');
+    }
+
     _anaPendingFile = null;
     closeModal('m-analyse');
-    showToast('Rapport d\'analyses enregistré.');
     renderAnalyses();
   } finally {
     if (saveBtn) {
@@ -344,7 +364,8 @@ async function saveAnalyse() {
  * boutons « Consulter » (aperçu inline si image/PDF, sinon nouvel
  * onglet — voir openDocumentViewer, alertes.js) et « Télécharger »
  * (fichier restitué tel quel avec son nom d'origine — voir
- * downloadDocument, alertes.js).
+ * downloadDocument, alertes.js). Si le fichier est encore en attente
+ * d'envoi, les boutons sont remplacés par un message explicatif.
  * @param {string} reportId - Référence vers AnalyseReport.id.
  * @returns {void}
  */
@@ -355,6 +376,8 @@ function openAnalyseViewModal(reportId) {
 
   /** @type {{nom: string} | undefined} */
   const store = DB.magasins.find(m => m.id === report.mid);
+  /** @type {boolean} */
+  const isPending = !report.url;
 
   /**
    * Ligne de métadonnée (libellé + valeur HTML déjà échappée).
@@ -369,9 +392,12 @@ function openAnalyseViewModal(reportId) {
   el('ana-view-body').innerHTML = `
     <div class="doc-chip" style="margin-bottom:14px">
       <i class="ti ${_alertDocumentIcon(report.mime)}"></i>
-      <span class="doc-name" onclick="openAnalyseDoc('${_escapeHtmlAttr(report.id)}')" title="${_escapeHtmlAttr(report.nom)}">${_escapeHtml(report.nom)}</span>
+      <span class="doc-name" ${isPending ? '' : `onclick="openAnalyseDoc('${_escapeHtmlAttr(report.id)}')"`} title="${_escapeHtmlAttr(report.nom)}">${_escapeHtml(report.nom)}</span>
       <span class="doc-size">${_formatFileSize(report.taille)}</span>
     </div>
+    ${isPending ? `<div style="background:var(--warning-light);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--warning-dark)">
+      <i class="ti ti-cloud-upload"></i> Le fichier original est en file d'attente locale — il sera envoyé automatiquement au retour de la connexion, puis consultable ici.
+    </div>` : ''}
     ${row('Magasin', store ? _escapeHtml(store.nom) : '–')}
     ${row('Libellé', _escapeHtml(report.libelle || '–'))}
     ${row('Date de l\'analyse', fd(report.date))}
@@ -379,10 +405,11 @@ function openAnalyseViewModal(reportId) {
     ${row('Ajouté le', report.created ? fd(new Date(report.created).toISOString().split('T')[0]) : '–')}
     <div style="font-size:11px;color:var(--text3);margin-top:10px">Le fichier est restitué tel qu'il a été fourni, sans aucune modification.</div>`;
 
-  el('ana-view-foot').innerHTML = `
-    <button class="btn btn-secondary" onclick="closeModal('m-analyse-view')">Fermer</button>
-    <button class="btn btn-secondary" onclick="openAnalyseDoc('${_escapeHtmlAttr(report.id)}')"><i class="ti ti-eye"></i> Consulter</button>
-    <button class="btn btn-primary" onclick="downloadAnalyseDoc('${_escapeHtmlAttr(report.id)}')"><i class="ti ti-download"></i> Télécharger</button>`;
+  el('ana-view-foot').innerHTML = isPending
+    ? `<button class="btn btn-secondary" onclick="closeModal('m-analyse-view')">Fermer</button>`
+    : `<button class="btn btn-secondary" onclick="closeModal('m-analyse-view')">Fermer</button>
+       <button class="btn btn-secondary" onclick="openAnalyseDoc('${_escapeHtmlAttr(report.id)}')"><i class="ti ti-eye"></i> Consulter</button>
+       <button class="btn btn-primary" onclick="downloadAnalyseDoc('${_escapeHtmlAttr(report.id)}')"><i class="ti ti-download"></i> Télécharger</button>`;
 
   openModal('m-analyse-view');
 }
@@ -396,7 +423,9 @@ function openAnalyseViewModal(reportId) {
 function openAnalyseDoc(reportId) {
   /** @type {AnalyseReport | undefined} */
   const report = (DB.analyses || []).find(a => a.id === reportId);
-  if (report) openDocumentViewer(report.url, report.mime, report.nom);
+  if (!report) return;
+  if (!report.url) { showToast('Fichier encore en attente d\'envoi — réessayez une fois la connexion rétablie.', 'warning'); return; }
+  openDocumentViewer(report.url, report.mime, report.nom);
 }
 
 /**
@@ -408,7 +437,9 @@ function openAnalyseDoc(reportId) {
 function downloadAnalyseDoc(reportId) {
   /** @type {AnalyseReport | undefined} */
   const report = (DB.analyses || []).find(a => a.id === reportId);
-  if (report) downloadDocument(report.url, report.nom);
+  if (!report) return;
+  if (!report.url) { showToast('Fichier encore en attente d\'envoi — réessayez une fois la connexion rétablie.', 'warning'); return; }
+  downloadDocument(report.url, report.nom);
 }
 
 // ─────────────────────────────────────────────
@@ -420,10 +451,10 @@ function downloadAnalyseDoc(reportId) {
  * (bucket 'photos'), pour pouvoir supprimer le fichier lui-même en
  * même temps que ses métadonnées.
  * @param {string} url - AnalyseReport.url.
- * @returns {string | null} null si l'URL n'est pas une URL Storage (ex : data URL hors-ligne).
+ * @returns {string | null} null si l'URL est vide (fichier encore en attente) ou n'est pas une URL Storage.
  */
 function _analyseStoragePathFromUrl(url) {
-  if (!url || url.startsWith('data:')) return null;
+  if (!url) return null;
   /** @type {string} */
   const marker = '/object/public/photos/';
   /** @type {number} */
@@ -434,8 +465,9 @@ function _analyseStoragePathFromUrl(url) {
 
 /**
  * Demande confirmation (modale m-confirm, Qualistore.html) puis
- * supprime un rapport d'analyses : fichier du bucket Storage (si URL
- * Storage), ligne Supabase, et entrée locale.
+ * supprime un rapport d'analyses : fichier du bucket Storage (si déjà
+ * envoyé), entrée éventuelle de la file d'attente locale (si encore
+ * en attente d'envoi), ligne Supabase, et entrée locale.
  * @param {string} reportId - Référence vers AnalyseReport.id.
  * @returns {void}
  */
@@ -452,6 +484,13 @@ function deleteAnalyse(reportId) {
     /** @type {string | null} */
     const storagePath = _analyseStoragePathFromUrl(report.url);
     if (storagePath) sbDeletePhoto(storagePath);
+
+    // Purge aussi la file d'attente locale si le fichier n'était pas
+    // encore parti — sinon il serait uploadé plus tard pour un rapport
+    // qui n'existe plus (fichier orphelin dans le bucket).
+    getPendingPhotos().then(pending => pending
+      .filter(p => p.context === 'analyse' && p.pointId === reportId)
+      .forEach(p => removePendingPhoto(p.id)));
 
     DB.analyses = (DB.analyses || []).filter(a => a.id !== reportId);
     sbDeleteWhere('analyses', 'id', reportId);
