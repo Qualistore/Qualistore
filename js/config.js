@@ -121,6 +121,14 @@ const PERMISSION_GROUPS = [
     ],
   },
   {
+    id: 'analyses', label: 'Rapports d\'analyses', icon: 'ti-flask',
+    permissions: [
+      { id: 'analysis_view',   label: 'Voir les rapports d\'analyses' },
+      { id: 'analysis_upload', label: 'Ajouter un rapport d\'analyses' },
+      { id: 'analysis_delete', label: 'Supprimer un rapport d\'analyses' },
+    ],
+  },
+  {
     id: 'magasins', label: 'Magasins & enseignes', icon: 'ti-building-store',
     permissions: [
       { id: 'store_manage', label: 'Gérer les magasins (créer/modifier/supprimer/rayons)' },
@@ -190,6 +198,7 @@ const DEFAULT_PERMISSIONS = {
     nc_view: 1, nc_edit_status: 1, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
     action_view: 1, action_edit_status: 1, action_delete: 0, action_restore: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
+    analysis_view: 1, analysis_upload: 1, analysis_delete: 0,
     store_manage: 0, brand_manage: 0,
     grid_view: 1, grid_create_rayon: 1, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 1, grid_delete: 0,
     qgrid_view: 1, qgrid_manage: 0,
@@ -203,6 +212,7 @@ const DEFAULT_PERMISSIONS = {
     nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
     action_view: 1, action_edit_status: 0, action_delete: 0, action_restore: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
+    analysis_view: 1, analysis_upload: 1, analysis_delete: 0,
     store_manage: 0, brand_manage: 0,
     grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
     qgrid_view: 0, qgrid_manage: 0,
@@ -216,6 +226,7 @@ const DEFAULT_PERMISSIONS = {
     nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
     action_view: 0, action_edit_status: 0, action_delete: 0, action_restore: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
+    analysis_view: 1, analysis_upload: 0, analysis_delete: 0,
     store_manage: 0, brand_manage: 0,
     grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
     qgrid_view: 0, qgrid_manage: 0,
@@ -229,6 +240,7 @@ const DEFAULT_PERMISSIONS = {
     nc_view: 0, nc_edit_status: 0, nc_edit_deadline: 0, nc_delete: 0, nc_reopen: 0,
     action_view: 0, action_edit_status: 0, action_delete: 0, action_restore: 0,
     alert_create: 1, alert_edit: 1, alert_close: 1, alert_delete: 0,
+    analysis_view: 0, analysis_upload: 0, analysis_delete: 0,
     store_manage: 0, brand_manage: 0,
     grid_view: 0, grid_create_rayon: 0, grid_edit_rayon: 0, grid_edit_point: 0, grid_import: 0, grid_delete: 0,
     qgrid_view: 0, qgrid_manage: 0,

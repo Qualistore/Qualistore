@@ -1,35 +1,47 @@
 // ══════════════════════════════════════════════════════════════
 // DASHBOARD — Tableau de bord FSQS & Qualimètre
 // Dépend de : storage.js (DB, CU), ui.js, auth.js (hasPerm),
-//   rayons.js (getKnownRayons, RAYONS_BASE_SEED)
+//   rayons.js (getKnownRayons, RAYONS_BASE_SEED),
+//   import-grille.js (_escapeHtml, _escapeHtmlAttr — chargé avant),
+//   rapport-qualimetre.js (exportPDF — appelé à l'usage uniquement).
+//
+// ⚠️ CHANGÉ (statistiques par période) : toutes les statistiques du
+// tableau de bord (FSQS ET Qualimètre) peuvent désormais être
+// filtrées par période calendaire — mois, trimestre ou semestre —
+// via les deux menus #dash-period-type / #dash-period-value
+// (Qualistore.html). Les périodes proposées sont DÉDUITES DES DATES
+// RÉELLEMENT PRÉSENTES dans les audits visibles (aucune liste codée
+// en dur) ; « Toutes les périodes » reproduit exactement l'ancien
+// comportement. Un bouton « Exporter PDF » (#dash-export-btn) génère
+// un rapport PDF des statistiques de la période choisie, limité aux
+// magasins accessibles par l'utilisateur (visibleMids).
+//
+// ⚠️ CORRIGÉ (sécurité) : les valeurs dynamiques affichées (noms de
+// magasins, rayons, auditeurs, zones — toutes modifiables par un
+// utilisateur) sont désormais échappées via _escapeHtml avant
+// insertion dans le HTML (protection XSS), comme déjà fait ailleurs
+// dans le projet (grille.js, import-grille.js).
+//
+// ⚠️ CORRIGÉ (bug) : le compteur « Actions en retard » ignorait les
+// magasins accessibles (DB.actions n'était filtré ni par visibleMids
+// ni par rien d'autre) — un directeur voyait donc les retards de TOUS
+// les magasins. Aligné sur la logique de renderActions (actions.js) :
+// résolution de la NC liée (action.ncId) puis filtre sur NC.mid.
 // ══════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────
 // 0. TYPEDEFS JSDoc (pour inférence VSCode / TypeScript)
-//    ⚠️ Déduits de l'usage dans ce fichier. QualAudit n'est ici que
-//    LU (jamais construit) — confiance moyenne-élevée, à confirmer
-//    si un fichier audit-qualimetre.js est fourni.
-//
-//    ⚠️ DUPLICATION HISTORIQUE RÉSOLUE : RAYONS_FSQS pointait vers
-//    une copie figée strictement identique à RAYONS_LIST (rayons.js).
-//    Les deux sont désormais des alias de RAYONS_BASE_SEED
-//    (rayons.js) ; la vraie source de vérité dynamique est
-//    getKnownRayons() — voir rayons.js.
 // ─────────────────────────────────────────────
 
 /**
- * Résultat de zone au sein d'un audit Qualimètre (PAS la même chose
- * que QMZone dans config.js, qui décrit une zone définie plutôt
- * qu'un résultat chiffré pour un audit donné).
+ * Résultat de zone au sein d'un audit Qualimètre.
  * @typedef {Object} QualAuditZoneResult
  * @property {string} nom
  * @property {number} [nc] - Nombre de non-conformités relevées dans cette zone.
  */
 
 /**
- * Audit "Qualimètre" (variante d'audit distincte des Audit FSQS,
- * voir storage.js). Propriétés observées en lecture dans ce fichier
- * uniquement — structure de construction non observée ici.
+ * Audit "Qualimètre" (variante d'audit distincte des Audit FSQS).
  * @typedef {Object} QualAudit
  * @property {string} id
  * @property {string} mid - Référence vers Magasin.id.
@@ -42,8 +54,7 @@
  */
 
 /**
- * Audit FSQS. Seules .mid, .rayon, .score, .nc, .date, .mag, .aud,
- * .id sont accédées dans ce fichier ; structure complète dans audits.js.
+ * Audit FSQS. Structure complète dans audits.js.
  * @typedef {Object} Audit
  * @property {string} id
  * @property {string} mid
@@ -56,24 +67,24 @@
  */
 
 /**
- * Non-conformité. Seule .mid et .statut sont accédées dans ce
- * fichier ; structure complète dans nc.js.
+ * Non-conformité. Structure complète dans nc.js.
  * @typedef {Object} NC
+ * @property {string} id
  * @property {string} mid
+ * @property {string} date - Date de l'audit d'origine ('YYYY-MM-DD').
  * @property {'Ouverte'|'En cours'|'Clôturée'} statut
  */
 
 /**
- * Action corrective. Seules .statut et .ech sont accédées dans ce
- * fichier ; structure complète dans actions.js.
+ * Action corrective. Structure complète dans actions.js.
  * @typedef {Object} Action
+ * @property {string} ncId - Référence vers NC.id.
  * @property {'Ouverte'|'En cours'|'Traitée'} statut
  * @property {string} ech
  */
 
 /**
- * Magasin. Seules .id et .nom sont accédées dans ce fichier ;
- * structure complète dans magasins.js.
+ * Magasin. Structure complète dans magasins.js.
  * @typedef {Object} Magasin
  * @property {string} id
  * @property {string} nom
@@ -82,6 +93,18 @@
 /**
  * Nom de palette de couleurs de score.
  * @typedef {'excellent'|'satisfaisant'|'ameliorer'|'insuffisant'} ScorePaletteName
+ */
+
+/**
+ * Type de période du tableau de bord.
+ * @typedef {'all'|'month'|'quarter'|'semester'} DashPeriodType
+ */
+
+/**
+ * Bornes d'une période calendaire, dates ISO 'YYYY-MM-DD' incluses.
+ * @typedef {Object} DashPeriodRange
+ * @property {string} start
+ * @property {string} end
  */
 
 // ─────────────────────────────────────────────
@@ -102,14 +125,9 @@ const CHART_SCORE_PALETTES = {
 /**
  * ⚠️ CHANGÉ : RAYONS_FSQS n'est plus une liste fermée utilisée pour
  * valider quoi que ce soit — préférer getKnownRayons() (rayons.js)
- * dans tout nouveau code. Conservée comme tableau autonome (et non
- * comme référence vers RAYONS_BASE_SEED, rayons.js) car l'ordre de
- * chargement des scripts dans Qualistore.html place dashboard.js
- * AVANT rayons.js — une référence directe provoquerait une
- * ReferenceError au chargement (les `const` top-level s'évaluent
- * immédiatement, contrairement aux déclarations `function`, qui
- * bénéficient du hoisting). Les valeurs doivent rester identiques à
- * RAYONS_BASE_SEED par convention, pas par référence.
+ * dans tout nouveau code. Conservée comme tableau autonome car
+ * dashboard.js est chargé AVANT rayons.js (ordre des <script> dans
+ * Qualistore.html).
  * @type {string[]}
  * @deprecated Utiliser getKnownRayons().
  */
@@ -124,14 +142,15 @@ let _chartFsqs = null;
 /** @type {Chart | null} Instance Chart.js du graphique Qualimètre par magasin. */
 let _chartQual = null;
 
+/** @type {DashPeriodType} Type de période actuellement sélectionné. */
+let _dashPeriodType = 'all';
+/** @type {string} Période précise sélectionnée ('' si type 'all' ; sinon 'YYYY-MM', 'YYYY-Qn' ou 'YYYY-Sn'). */
+let _dashPeriodValue = '';
+
 // ─────────────────────────────────────────────
 // 3. UTILITAIRES GRAPHIQUES
 // ─────────────────────────────────────────────
 
-/**
- * Retourne une couleur de la palette correspondant au score,
- * en faisant tourner les teintes pour différencier les magasins.
- */
 /**
  * Retourne une couleur de la palette correspondant au score,
  * en faisant tourner les teintes pour différencier les magasins.
@@ -224,29 +243,258 @@ function buildLineChart(canvasId, datasets, existingChart) {
 }
 
 // ─────────────────────────────────────────────
+// 3bis. PÉRIODE DU TABLEAU DE BORD
+// ─────────────────────────────────────────────
+
+/**
+ * Handler du menu « type de période » (#dash-period-type).
+ * Reconstruit la liste des périodes précises disponibles puis
+ * redessine tout le tableau de bord.
+ * @returns {void}
+ */
+function onDashPeriodTypeChange() {
+  _dashPeriodType = /** @type {DashPeriodType} */ (v('dash-period-type'));
+  _dashPeriodValue = '';
+  _populateDashPeriodValues();
+  renderDash();
+}
+
+/**
+ * Handler du menu « période précise » (#dash-period-value).
+ * @returns {void}
+ */
+function onDashPeriodValueChange() {
+  _dashPeriodValue = v('dash-period-value');
+  renderDash();
+}
+
+/**
+ * Collecte toutes les dates ('YYYY-MM-DD') des audits FSQS et
+ * Qualimètre visibles par l'utilisateur — sert à déduire dynamiquement
+ * les périodes proposées (aucune période codée en dur).
+ * @returns {string[]} Dates triées croissantes (peut être vide).
+ */
+function _dashAvailableDates() {
+  /** @type {string[]} */
+  const storeIds = visibleMids();
+  /** @type {string[]} */
+  const dates = [];
+  DB.audits.forEach(a => { if (storeIds.includes(a.mid) && a.date) dates.push(a.date); });
+  (DB.qualAudits || []).forEach(a => { if (storeIds.includes(a.mid) && a.date) dates.push(a.date); });
+  return dates.sort();
+}
+
+/**
+ * Libellé français d'un mois 'YYYY-MM' (ex : 'janvier 2026').
+ * @param {string} yearMonth
+ * @returns {string}
+ */
+function _dashMonthLabel(yearMonth) {
+  const [year, month] = yearMonth.split('-').map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
+/**
+ * (Re)construit les options du menu « période précise » selon le type
+ * choisi, de la période la plus récente à la plus ancienne, bornées
+ * par les dates réellement présentes dans les données (et toujours au
+ * moins la période courante). Préserve la sélection courante si elle
+ * reste proposée, sinon sélectionne la période la plus récente.
+ * @returns {void}
+ */
+function _populateDashPeriodValues() {
+  /** @type {HTMLSelectElement | null} */
+  const select = el('dash-period-value');
+  if (!select) return;
+
+  if (_dashPeriodType === 'all') {
+    select.style.display = 'none';
+    select.innerHTML = '';
+    _dashPeriodValue = '';
+    return;
+  }
+
+  /** @type {string[]} */
+  const dates = _dashAvailableDates();
+  /** @type {string} */
+  const todayString = today();
+  /** @type {string} */
+  const minDate = dates.length ? dates[0] : todayString;
+
+  /** @type {number} */
+  const minYear  = parseInt(minDate.slice(0, 4), 10);
+  /** @type {number} */
+  const maxYear  = parseInt(todayString.slice(0, 4), 10);
+
+  /** @type {{value: string, label: string}[]} Périodes de la plus récente à la plus ancienne. */
+  const options = [];
+
+  if (_dashPeriodType === 'month') {
+    /** @type {number} */
+    let year  = maxYear;
+    /** @type {number} */
+    let month = parseInt(todayString.slice(5, 7), 10);
+    /** @type {number} */
+    const minMonth = parseInt(minDate.slice(5, 7), 10);
+    while (year > minYear || (year === minYear && month >= minMonth)) {
+      /** @type {string} */
+      const value = `${year}-${String(month).padStart(2, '0')}`;
+      options.push({ value, label: _dashMonthLabel(value) });
+      month--;
+      if (month === 0) { month = 12; year--; }
+    }
+  } else {
+    /** @type {number} Périodes par an : 4 trimestres ou 2 semestres. */
+    const perYear = _dashPeriodType === 'quarter' ? 4 : 2;
+    /** @type {number} */
+    const monthsPerPeriod = 12 / perYear;
+    /** @type {string} */
+    const prefix = _dashPeriodType === 'quarter' ? 'T' : 'S';
+    /** @type {number} */
+    const currentIdx = Math.ceil(parseInt(todayString.slice(5, 7), 10) / monthsPerPeriod);
+    /** @type {number} */
+    const minIdx = Math.ceil(parseInt(minDate.slice(5, 7), 10) / monthsPerPeriod);
+    /** @type {number} */
+    let year = maxYear;
+    /** @type {number} */
+    let idx = currentIdx;
+    while (year > minYear || (year === minYear && idx >= minIdx)) {
+      options.push({ value: `${year}-${prefix}${idx}`, label: `${prefix}${idx} ${year}` });
+      idx--;
+      if (idx === 0) { idx = perYear; year--; }
+    }
+  }
+
+  /** @type {string} */
+  const previousValue = _dashPeriodValue;
+  select.innerHTML = options
+    .map(o => `<option value="${o.value}">${o.label}</option>`)
+    .join('');
+  select.style.display = '';
+
+  if (previousValue && options.some(o => o.value === previousValue)) {
+    select.value = previousValue;
+  }
+  _dashPeriodValue = select.value;
+}
+
+/**
+ * Calcule les bornes ('YYYY-MM-DD' incluses) de la période
+ * actuellement sélectionnée.
+ * @returns {DashPeriodRange | null} null si « Toutes les périodes ».
+ */
+function _dashPeriodRange() {
+  if (_dashPeriodType === 'all' || !_dashPeriodValue) return null;
+
+  /** @type {string[]} */
+  const [yearStr, part] = _dashPeriodValue.split('-');
+  /** @type {number} */
+  const year = parseInt(yearStr, 10);
+  /** @type {number} */
+  let startMonth;
+  /** @type {number} */
+  let endMonth;
+
+  if (_dashPeriodType === 'month') {
+    startMonth = endMonth = parseInt(part, 10);
+  } else if (_dashPeriodType === 'quarter') {
+    /** @type {number} */
+    const quarter = parseInt(part.slice(1), 10);
+    startMonth = (quarter - 1) * 3 + 1;
+    endMonth   = quarter * 3;
+  } else {
+    /** @type {number} */
+    const semester = parseInt(part.slice(1), 10);
+    startMonth = semester === 1 ? 1 : 7;
+    endMonth   = semester === 1 ? 6 : 12;
+  }
+
+  /** @param {number} n @returns {string} */
+  const pad = n => String(n).padStart(2, '0');
+  /** @type {number} Dernier jour du mois de fin (new Date(y, m, 0) = dernier jour du mois m). */
+  const lastDay = new Date(year, endMonth, 0).getDate();
+
+  return {
+    start: `${year}-${pad(startMonth)}-01`,
+    end:   `${year}-${pad(endMonth)}-${pad(lastDay)}`,
+  };
+}
+
+/**
+ * Indique si une date ISO appartient à la période sélectionnée.
+ * Comparaison lexicographique (valide pour des dates 'YYYY-MM-DD').
+ * @param {string | undefined} dateString
+ * @returns {boolean} Toujours true si « Toutes les périodes ».
+ */
+function _inDashPeriod(dateString) {
+  /** @type {DashPeriodRange | null} */
+  const range = _dashPeriodRange();
+  if (!range) return true;
+  if (!dateString) return false;
+  return dateString >= range.start && dateString <= range.end;
+}
+
+/**
+ * Filtre une liste d'objets datés (.date) sur la période sélectionnée.
+ * @template {{date?: string}} T
+ * @param {T[]} list
+ * @returns {T[]}
+ */
+function _dashFilterPeriod(list) {
+  if (_dashPeriodType === 'all' || !_dashPeriodValue) return list;
+  return list.filter(item => _inDashPeriod(item.date));
+}
+
+/**
+ * Libellé lisible de la période sélectionnée (pour l'export PDF).
+ * @returns {string}
+ */
+function _dashPeriodLabel() {
+  if (_dashPeriodType === 'all' || !_dashPeriodValue) return 'Toutes les périodes';
+  if (_dashPeriodType === 'month') return _dashMonthLabel(_dashPeriodValue);
+  /** @type {string[]} */
+  const [year, part] = _dashPeriodValue.split('-');
+  return `${part.startsWith('T') ? 'Trimestre' : 'Semestre'} ${part.slice(1)} — ${year}`;
+}
+
+// ─────────────────────────────────────────────
 // 4. DASHBOARD FSQS
 // ─────────────────────────────────────────────
 
 /**
  * Affiche le tableau de bord FSQS complet : compteurs principaux,
  * performances par rayon, graphique par magasin, derniers audits,
- * alertes actives, puis délègue au dashboard Qualimètre.
+ * alertes actives, puis délègue au dashboard Qualimètre. Toutes les
+ * statistiques sont restreintes aux magasins accessibles
+ * (visibleMids) ET à la période sélectionnée (voir section 3bis).
  * @returns {void}
  */
 function renderDash() {
+  _populateDashPeriodValues();
+
   /** @type {string[]} */
   const visibleStoreIds = visibleMids();
   /** @type {Audit[]} */
-  const myAudits  = DB.audits.filter(a => visibleStoreIds.includes(a.mid));
+  const myAudits = _dashFilterPeriod(DB.audits.filter(a => visibleStoreIds.includes(a.mid)));
   /** @type {NC[]} */
-  const myNcs     = DB.ncs.filter(n => visibleStoreIds.includes(n.mid));
+  const myNcs = _dashFilterPeriod(DB.ncs.filter(n => visibleStoreIds.includes(n.mid)));
+
+  // ⚠️ CORRIGÉ : filtre par magasins accessibles (via la NC liée,
+  // même logique que renderActions, actions.js) + période — l'ancien
+  // compteur incluait les retards de TOUS les magasins.
   /** @type {Action[]} */
-  const overdueActions = DB.actions.filter(a => a.statut !== 'Traitée' && overdue(a.ech));
+  const overdueActions = DB.actions.filter(action => {
+    if (action.statut === 'Traitée' || !overdue(action.ech)) return false;
+    /** @type {NC | undefined} */
+    const linkedNc = DB.ncs.find(nc => nc.id === action.ncId);
+    if (!linkedNc || !visibleStoreIds.includes(linkedNc.mid)) return false;
+    return _inDashPeriod(linkedNc.date);
+  });
 
   /** @type {number} */
   const openNcCount = myNcs.filter(n => n.statut === 'Ouverte').length;
   /** @type {number | null} */
-  const avgScore    = myAudits.length
+  const avgScore = myAudits.length
     ? Math.round(myAudits.reduce((sum, a) => sum + a.score, 0) / myAudits.length)
     : null;
 
@@ -255,8 +503,14 @@ function renderDash() {
   el('d-ret').textContent    = overdueActions.length;
   el('d-score').textContent  = avgScore !== null ? avgScore + '%' : '–';
 
+  // Le badge de la sidebar reste un compteur GLOBAL (toutes périodes) :
+  // une NC ouverte reste à traiter même si le dashboard est filtré
+  // sur une autre période.
   const ncBadge = el('nc-bdg');
-  if (ncBadge) ncBadge.textContent = openNcCount;
+  if (ncBadge) {
+    ncBadge.textContent = DB.ncs.filter(n =>
+      visibleStoreIds.includes(n.mid) && n.statut === 'Ouverte').length;
+  }
 
   renderRayonDash();
   _renderFsqsChart(visibleStoreIds, myAudits);
@@ -266,13 +520,14 @@ function renderDash() {
 }
 
 /**
- * Affiche les 5 derniers audits FSQS dans le tableau dédié du
- * dashboard.
+ * Affiche les 5 derniers audits FSQS (de la période) dans le tableau
+ * dédié du dashboard, triés par date décroissante.
  * @param {Audit[]} audits
  * @returns {void}
  */
 function _renderLastAudits(audits) {
   const tbody = el('d-last');
+  if (!tbody) return;
   if (!audits.length) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state" style="padding:24px">
       <i class="ti ti-clipboard-check" style="font-size:28px"></i><p>Aucun audit</p>
@@ -280,37 +535,54 @@ function _renderLastAudits(audits) {
     return;
   }
 
-  tbody.innerHTML = [...audits].reverse().slice(0, 5).map(audit => `<tr>
-    <td>${audit.mag}</td>
-    <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(audit.rayon)} ${audit.rayon}</td>
-    <td>${fd(audit.date)}</td>
-    <td>${audit.aud}</td>
-    <td>${sbadge(audit.score)}</td>
-    <td style="color:${audit.nc > 0 ? 'var(--danger)' : 'var(--success)'};font-weight:600">${audit.nc}</td>
-    <td><button class="btn btn-secondary btn-sm" onclick="showAud('${audit.id}')"><i class="ti ti-eye"></i></button></td>
-  </tr>`).join('');
+  tbody.innerHTML = [...audits]
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .slice(0, 5)
+    .map(audit => `<tr>
+      <td>${_escapeHtml(audit.mag)}</td>
+      <td style="display:flex;align-items:center;gap:6px;padding-top:14px">${rIcon(audit.rayon)} ${_escapeHtml(audit.rayon)}</td>
+      <td>${fd(audit.date)}</td>
+      <td>${_escapeHtml(audit.aud)}</td>
+      <td>${sbadge(audit.score)}</td>
+      <td style="color:${audit.nc > 0 ? 'var(--danger)' : 'var(--success)'};font-weight:600">${audit.nc}</td>
+      <td><button class="btn btn-secondary btn-sm" onclick="showAud('${_escapeHtmlAttr(audit.id)}')"><i class="ti ti-eye"></i></button></td>
+    </tr>`).join('');
+}
+
+/**
+ * Calcule le score moyen par magasin à partir d'audits déjà filtrés
+ * (période + visibilité) — partagé entre l'affichage du graphique et
+ * l'export PDF.
+ * @param {string[]} storeIds - Magasins visibles.
+ * @param {Array<{mid: string, score?: number, nc?: number}>} audits - Audits déjà filtrés.
+ * @returns {{name: string, count: number, avg: number, nc: number, color: string}[]}
+ */
+function _computeStoreAverages(storeIds, audits) {
+  return DB.magasins
+    .filter(m => storeIds.includes(m.id))
+    .map((store, index) => {
+      /** @type {Array<{mid: string, score?: number, nc?: number}>} */
+      const storeAudits = audits.filter(a => a.mid === store.id);
+      if (!storeAudits.length) return null;
+      /** @type {number} */
+      const avg = Math.round(storeAudits.reduce((sum, a) => sum + (a.score || 0), 0) / storeAudits.length);
+      /** @type {number} */
+      const nc = storeAudits.reduce((sum, a) => sum + (a.nc || 0), 0);
+      return { name: store.nom, count: storeAudits.length, avg, nc, color: _scoreColor(avg, index) };
+    })
+    .filter(Boolean);
 }
 
 /**
  * Construit (ou retire) le graphique en barres du score moyen par
  * magasin, pour le dashboard FSQS.
  * @param {string[]} storeIds - Magasins visibles.
- * @param {Audit[]} audits - Audits déjà filtrés pour ces magasins.
+ * @param {Audit[]} audits - Audits déjà filtrés (magasins + période).
  * @returns {void}
  */
 function _renderFsqsChart(storeIds, audits) {
   /** @type {{name: string, avg: number, color: string}[]} */
-  const storesWithData = DB.magasins
-    .filter(m => storeIds.includes(m.id))
-    .map((store, index) => {
-      /** @type {Audit[]} */
-      const storeAudits = audits.filter(a => a.mid === store.id);
-      if (!storeAudits.length) return null;
-      /** @type {number} */
-      const avg = Math.round(storeAudits.reduce((sum, a) => sum + a.score, 0) / storeAudits.length);
-      return { name: store.nom, avg, color: _scoreColor(avg, index) };
-    })
-    .filter(Boolean);
+  const storesWithData = _computeStoreAverages(storeIds, audits);
 
   const container = el('d-mag');
   if (!container) return;
@@ -319,6 +591,7 @@ function _renderFsqsChart(storeIds, audits) {
     container.innerHTML = `<div class="empty-state" style="padding:24px">
       <i class="ti ti-chart-bar" style="font-size:28px"></i><p>Aucune donnée</p>
     </div>`;
+    _chartFsqs = null;
     return;
   }
 
@@ -333,10 +606,31 @@ function _renderFsqsChart(storeIds, audits) {
 }
 
 /**
+ * Calcule le score moyen par rayon à partir d'audits déjà filtrés —
+ * partagé entre le widget « Par rayon » et l'export PDF. Itère sur
+ * getKnownRayons() (rayons.js) — tout rayon créé, importé ou renommé
+ * apparaît automatiquement, sans liste fixe à maintenir.
+ * @param {Audit[]} audits
+ * @returns {{rayon: string, count: number, score: number | null}[]}
+ */
+function _computeRayonAverages(audits) {
+  return getKnownRayons().map(rayon => {
+    /** @type {Audit[]} */
+    const rayonAudits = audits.filter(a => a.rayon === rayon);
+    return {
+      rayon,
+      count: rayonAudits.length,
+      score: rayonAudits.length
+        ? Math.round(rayonAudits.reduce((sum, a) => sum + a.score, 0) / rayonAudits.length)
+        : null,
+    };
+  });
+}
+
+/**
  * Affiche le score moyen par rayon FSQS dans le widget dédié du
- * dashboard, filtré par magasin si un sélecteur est présent. Itère
- * sur getKnownRayons() (rayons.js) — tout rayon créé, importé ou
- * renommé apparaît automatiquement ici, sans liste fixe à maintenir.
+ * dashboard, filtré par magasin si un sélecteur est présent, ET par
+ * la période sélectionnée.
  * @returns {void}
  */
 function renderRayonDash() {
@@ -348,33 +642,28 @@ function renderRayonDash() {
   const filterMid = filterSel ? filterSel.value : '';
 
   /** @type {Audit[]} */
-  const filteredAudits = DB.audits.filter(a => {
+  const filteredAudits = _dashFilterPeriod(DB.audits.filter(a => {
     if (!storeIds.includes(a.mid)) return false;
     if (filterMid && a.mid !== filterMid) return false;
     return true;
-  });
+  }));
 
-  el('d-ray').innerHTML = getKnownRayons().map(rayon => {
-    /** @type {Audit[]} */
-    const rayonAudits = filteredAudits.filter(a => a.rayon === rayon);
-    /** @type {number | null} */
-    const score = rayonAudits.length
-      ? Math.round(rayonAudits.reduce((sum, a) => sum + a.score, 0) / rayonAudits.length)
-      : null;
+  const container = el('d-ray');
+  if (!container) return;
 
-    return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+  container.innerHTML = _computeRayonAverages(filteredAudits).map(({ rayon, score }) =>
+    `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       ${rIcon(rayon)}
       <div style="flex:1">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:500">${rayon}</span>
+          <span style="font-size:13px;font-weight:500">${_escapeHtml(rayon)}</span>
           <span style="font-size:13px;font-weight:700;color:${score !== null ? sc(score) : 'var(--text3)'}">
             ${score !== null ? score + '%' : '–'}
           </span>
         </div>
         ${score !== null ? pbar(score) : ''}
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 }
 
 // ─────────────────────────────────────────────
@@ -384,14 +673,15 @@ function renderRayonDash() {
 /**
  * Affiche le tableau de bord Qualimètre complet : compteurs
  * principaux, graphique par magasin, top zones en NC, derniers
- * audits Qualimètre.
+ * audits Qualimètre — restreint aux magasins accessibles et à la
+ * période sélectionnée (même filtre que le dashboard FSQS).
  * @returns {void}
  */
 function renderDashQual() {
   /** @type {string[]} */
-  const storeIds  = visibleMids();
+  const storeIds = visibleMids();
   /** @type {QualAudit[]} */
-  const qualAudits = (DB.qualAudits || []).filter(a => storeIds.includes(a.mid));
+  const qualAudits = _dashFilterPeriod((DB.qualAudits || []).filter(a => storeIds.includes(a.mid)));
 
   /** @type {number} */
   const totalNc  = qualAudits.reduce((sum, a) => sum + (a.nc || 0), 0);
@@ -414,22 +704,12 @@ function renderDashQual() {
  * Construit (ou retire) le graphique en barres du score moyen
  * Qualimètre par magasin.
  * @param {string[]} storeIds
- * @param {QualAudit[]} qualAudits
+ * @param {QualAudit[]} qualAudits - Audits déjà filtrés (magasins + période).
  * @returns {void}
  */
 function _renderQualChart(storeIds, qualAudits) {
   /** @type {{name: string, avg: number, color: string}[]} */
-  const storesWithData = DB.magasins
-    .filter(m => storeIds.includes(m.id))
-    .map((store, index) => {
-      /** @type {QualAudit[]} */
-      const storeAudits = qualAudits.filter(a => a.mid === store.id);
-      if (!storeAudits.length) return null;
-      /** @type {number} */
-      const avg = Math.round(storeAudits.reduce((sum, a) => sum + (a.score || 0), 0) / storeAudits.length);
-      return { name: store.nom, avg, color: _scoreColor(avg, index) };
-    })
-    .filter(Boolean);
+  const storesWithData = _computeStoreAverages(storeIds, qualAudits);
 
   const container = el('dq-mag');
   if (!container) return;
@@ -438,6 +718,7 @@ function _renderQualChart(storeIds, qualAudits) {
     container.innerHTML = `<div class="empty-state" style="padding:24px">
       <i class="ti ti-chart-bar" style="font-size:28px"></i><p>Aucune donnée</p>
     </div>`;
+    _chartQual = null;
     return;
   }
 
@@ -452,12 +733,12 @@ function _renderQualChart(storeIds, qualAudits) {
 }
 
 /**
- * Affiche les 5 zones Qualimètre les plus en non-conformité,
- * agrégées sur l'ensemble des audits Qualimètre fournis.
+ * Agrège le nombre de NC par zone Qualimètre sur les audits fournis —
+ * partagé entre le widget « Top zones NC » et l'export PDF.
  * @param {QualAudit[]} qualAudits
- * @returns {void}
+ * @returns {[string, number][]} Paires [zone, total NC] triées par total décroissant.
  */
-function _renderTopZonesNc(qualAudits) {
+function _computeTopZonesNc(qualAudits) {
   /** @type {Record<string, number>} */
   const zoneNcCounts = {};
   qualAudits.forEach(audit =>
@@ -465,14 +746,23 @@ function _renderTopZonesNc(qualAudits) {
       if (zone.nc) zoneNcCounts[zone.nom] = (zoneNcCounts[zone.nom] || 0) + zone.nc;
     })
   );
+  return Object.entries(zoneNcCounts).sort((a, b) => b[1] - a[1]);
+}
 
+/**
+ * Affiche les 5 zones Qualimètre les plus en non-conformité,
+ * agrégées sur l'ensemble des audits Qualimètre fournis.
+ * @param {QualAudit[]} qualAudits
+ * @returns {void}
+ */
+function _renderTopZonesNc(qualAudits) {
   /** @type {[string, number][]} */
-  const topZones = Object.entries(zoneNcCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const topZones = _computeTopZonesNc(qualAudits).slice(0, 5);
 
   el('dq-zones').innerHTML = topZones.length
     ? topZones.map(([name, count]) => `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <span style="font-size:13px">${name}</span>
+          <span style="font-size:13px">${_escapeHtml(name)}</span>
           <span class="badge b-open">${count} NC</span>
         </div>`).join('')
     : `<div class="empty-state" style="padding:24px">
@@ -481,13 +771,14 @@ function _renderTopZonesNc(qualAudits) {
 }
 
 /**
- * Affiche les 5 derniers audits Qualimètre dans le tableau dédié du
- * dashboard.
+ * Affiche les 5 derniers audits Qualimètre (de la période) dans le
+ * tableau dédié du dashboard, triés par date décroissante.
  * @param {QualAudit[]} qualAudits
  * @returns {void}
  */
 function _renderLastQualAudits(qualAudits) {
   const tbody = el('dq-last');
+  if (!tbody) return;
   if (!qualAudits.length) {
     tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state" style="padding:24px">
       <i class="ti ti-rosette" style="font-size:28px"></i><p>Aucun audit Qualimètre</p>
@@ -495,19 +786,22 @@ function _renderLastQualAudits(qualAudits) {
     return;
   }
 
-  tbody.innerHTML = [...qualAudits].reverse().slice(0, 5).map(audit => {
-    /** @type {Magasin | undefined} */
-    const store = DB.magasins.find(m => m.id === audit.mid);
-    return `<tr>
-      <td>${audit.num || '–'}</td>
-      <td>${store ? store.nom : '–'}</td>
-      <td>${fd(audit.date)}</td>
-      <td>${audit.aud || '–'}</td>
-      <td>${audit.score != null ? sbadge(audit.score) : '–'}</td>
-      <td style="color:${(audit.nc || 0) > 0 ? 'var(--danger)' : 'var(--success)'};font-weight:600">${audit.nc || 0}</td>
-      <td><button class="btn btn-secondary btn-sm" onclick="navigate('audit-qualimetre')"><i class="ti ti-eye"></i></button></td>
-    </tr>`;
-  }).join('');
+  tbody.innerHTML = [...qualAudits]
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .slice(0, 5)
+    .map(audit => {
+      /** @type {Magasin | undefined} */
+      const store = DB.magasins.find(m => m.id === audit.mid);
+      return `<tr>
+        <td>${audit.num ? _escapeHtml(audit.num) : '–'}</td>
+        <td>${store ? _escapeHtml(store.nom) : '–'}</td>
+        <td>${fd(audit.date)}</td>
+        <td>${audit.aud ? _escapeHtml(audit.aud) : '–'}</td>
+        <td>${audit.score != null ? sbadge(audit.score) : '–'}</td>
+        <td style="color:${(audit.nc || 0) > 0 ? 'var(--danger)' : 'var(--success)'};font-weight:600">${audit.nc || 0}</td>
+        <td><button class="btn btn-secondary btn-sm" onclick="navigate('audit-qualimetre')"><i class="ti ti-eye"></i></button></td>
+      </tr>`;
+    }).join('');
 }
 
 // ─────────────────────────────────────────────
@@ -533,4 +827,214 @@ function switchDashTab(tab) {
   if (qualBtn) qualBtn.classList.toggle('active', !isFsqs);
   if (fsqsPane) fsqsPane.style.display = isFsqs ? '' : 'none';
   if (qualPane) qualPane.style.display = !isFsqs ? '' : 'none';
+}
+
+// ─────────────────────────────────────────────
+// 7. EXPORT PDF DES STATISTIQUES
+// ─────────────────────────────────────────────
+
+/**
+ * Construit le HTML d'un tableau simple pour l'export PDF.
+ * Les valeurs sont échappées par l'appelant si nécessaire.
+ * @param {string[]} headers
+ * @param {string[][]} rows - Lignes de cellules (HTML déjà échappé).
+ * @returns {string}
+ */
+function _dashPdfTable(headers, rows) {
+  /** @type {string} */
+  const thStyle = 'padding:6px 10px;border:1px solid #d8dce6;background:#f2f4f8;text-align:left;font-size:11px';
+  /** @type {string} */
+  const tdStyle = 'padding:6px 10px;border:1px solid #d8dce6;font-size:11px';
+  return `<table style="width:100%;border-collapse:collapse;margin-top:6px">
+    <thead><tr>${headers.map(h => `<th style="${thStyle}">${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(cells => `<tr>${cells.map(c => `<td style="${tdStyle}">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+/**
+ * Titre de section pour l'export PDF.
+ * @param {string} title
+ * @param {string} color - Couleur hexadécimale de l'accent.
+ * @returns {string}
+ */
+function _dashPdfSectionTitle(title, color) {
+  return `<div style="font-size:14px;font-weight:700;margin:0 0 4px;padding-bottom:4px;border-bottom:2px solid ${color}">${title}</div>`;
+}
+
+/**
+ * Construit le HTML complet du rapport PDF des statistiques du
+ * tableau de bord : en-tête (période, date de génération, auteur),
+ * section FSQS (compteurs, par magasin, par rayon, graphique) et
+ * section Qualimètre (compteurs, par magasin, top zones NC,
+ * graphique). Chaque section est marquée `.pdf-block` pour que la
+ * pagination de exportPDF (rapport-qualimetre.js) ne coupe jamais un
+ * tableau en plein milieu.
+ * @returns {string}
+ */
+function _buildDashboardPdfHtml() {
+  /** @type {string[]} */
+  const storeIds = visibleMids();
+  /** @type {Audit[]} */
+  const audits = _dashFilterPeriod(DB.audits.filter(a => storeIds.includes(a.mid)));
+  /** @type {NC[]} */
+  const ncs = _dashFilterPeriod(DB.ncs.filter(n => storeIds.includes(n.mid)));
+  /** @type {QualAudit[]} */
+  const qualAudits = _dashFilterPeriod((DB.qualAudits || []).filter(a => storeIds.includes(a.mid)));
+
+  /** @type {number | null} */
+  const avgFsqs = audits.length
+    ? Math.round(audits.reduce((sum, a) => sum + a.score, 0) / audits.length) : null;
+  /** @type {number | null} */
+  const avgQual = qualAudits.length
+    ? Math.round(qualAudits.reduce((sum, a) => sum + (a.score || 0), 0) / qualAudits.length) : null;
+  /** @type {number} */
+  const openNcCount = ncs.filter(n => n.statut === 'Ouverte').length;
+
+  /** @type {{name: string, count: number, avg: number, nc: number}[]} */
+  const fsqsPerStore = _computeStoreAverages(storeIds, audits);
+  /** @type {{rayon: string, count: number, score: number | null}[]} */
+  const perRayon = _computeRayonAverages(audits).filter(r => r.count > 0);
+  /** @type {{name: string, count: number, avg: number, nc: number}[]} */
+  const qualPerStore = _computeStoreAverages(storeIds, qualAudits);
+  /** @type {[string, number][]} */
+  const topZones = _computeTopZonesNc(qualAudits).slice(0, 10);
+
+  /** @type {string} Image du graphique FSQS si affiché à l'écran. */
+  let fsqsChartImg = '';
+  let qualChartImg = '';
+  try { if (_chartFsqs) fsqsChartImg = _chartFsqs.toBase64Image(); } catch (_) { /* graphique indisponible */ }
+  try { if (_chartQual) qualChartImg = _chartQual.toBase64Image(); } catch (_) { /* graphique indisponible */ }
+
+  /** @type {string[]} */
+  const blocks = [];
+
+  // En-tête
+  blocks.push(`<div class="pdf-block" style="margin-bottom:18px">
+    <div style="font-size:20px;font-weight:700;margin-bottom:2px">QualiStore — Statistiques du tableau de bord</div>
+    <div style="font-size:12px;color:#555">
+      Période : <strong>${_escapeHtml(_dashPeriodLabel())}</strong><br>
+      Généré le ${fd(today())}${CU ? ` par ${_escapeHtml(CU.nom)}` : ''} · ${storeIds.length} magasin(s) accessible(s)
+    </div>
+  </div>`);
+
+  // FSQS — synthèse
+  blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
+    ${_dashPdfSectionTitle('Audits FSQS — Synthèse', '#2563eb')}
+    ${_dashPdfTable(
+      ['Audits réalisés', 'Score moyen', 'NC relevées', 'NC ouvertes'],
+      [[String(audits.length),
+        avgFsqs !== null ? avgFsqs + '%' : '–',
+        String(ncs.length),
+        String(openNcCount)]]
+    )}
+  </div>`);
+
+  // FSQS — par magasin
+  if (fsqsPerStore.length) {
+    blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
+      ${_dashPdfSectionTitle('FSQS — Par magasin', '#2563eb')}
+      ${_dashPdfTable(
+        ['Magasin', 'Audits', 'Score moyen', 'NC relevées'],
+        fsqsPerStore.map(s => [_escapeHtml(s.name), String(s.count), s.avg + '%', String(s.nc)])
+      )}
+    </div>`);
+  }
+
+  // FSQS — par rayon
+  if (perRayon.length) {
+    blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
+      ${_dashPdfSectionTitle('FSQS — Par rayon', '#2563eb')}
+      ${_dashPdfTable(
+        ['Rayon', 'Audits', 'Score moyen'],
+        perRayon.map(r => [_escapeHtml(r.rayon), String(r.count), r.score !== null ? r.score + '%' : '–'])
+      )}
+    </div>`);
+  }
+
+  // FSQS — graphique
+  if (fsqsChartImg) {
+    blocks.push(`<div class="pdf-block" style="margin-bottom:18px">
+      ${_dashPdfSectionTitle('FSQS — Score moyen par magasin (graphique)', '#2563eb')}
+      <img src="${fsqsChartImg}" style="width:100%;margin-top:6px" alt="Graphique FSQS">
+    </div>`);
+  }
+
+  // Qualimètre — synthèse
+  blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
+    ${_dashPdfSectionTitle('Audits Qualimètre — Synthèse', '#7c3aed')}
+    ${_dashPdfTable(
+      ['Audits réalisés', 'Score moyen', 'Points NC', 'Magasins audités'],
+      [[String(qualAudits.length),
+        avgQual !== null ? avgQual + '%' : '–',
+        String(qualAudits.reduce((sum, a) => sum + (a.nc || 0), 0)),
+        String(new Set(qualAudits.map(a => a.mid)).size)]]
+    )}
+  </div>`);
+
+  // Qualimètre — par magasin
+  if (qualPerStore.length) {
+    blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
+      ${_dashPdfSectionTitle('Qualimètre — Par magasin', '#7c3aed')}
+      ${_dashPdfTable(
+        ['Magasin', 'Audits', 'Score moyen', 'Points NC'],
+        qualPerStore.map(s => [_escapeHtml(s.name), String(s.count), s.avg + '%', String(s.nc)])
+      )}
+    </div>`);
+  }
+
+  // Qualimètre — top zones NC
+  if (topZones.length) {
+    blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
+      ${_dashPdfSectionTitle('Qualimètre — Zones les plus en non-conformité', '#7c3aed')}
+      ${_dashPdfTable(
+        ['Zone', 'NC cumulées'],
+        topZones.map(([name, count]) => [_escapeHtml(name), String(count)])
+      )}
+    </div>`);
+  }
+
+  // Qualimètre — graphique
+  if (qualChartImg) {
+    blocks.push(`<div class="pdf-block" style="margin-bottom:14px">
+      ${_dashPdfSectionTitle('Qualimètre — Score moyen par magasin (graphique)', '#7c3aed')}
+      <img src="${qualChartImg}" style="width:100%;margin-top:6px" alt="Graphique Qualimètre">
+    </div>`);
+  }
+
+  return blocks.join('');
+}
+
+/**
+ * Exporte les statistiques du tableau de bord (période et magasins
+ * actuellement filtrés) en PDF, via le moteur d'export commun
+ * (exportPDF, rapport-qualimetre.js — pagination par blocs .pdf-block).
+ * Remplit le conteneur invisible #dash-pdf-export (Qualistore.html),
+ * lance l'export, puis vide le conteneur.
+ * @returns {Promise<void>}
+ */
+async function exportDashboardPDF() {
+  const container = el('dash-pdf-export');
+  if (!container) return;
+
+  /** @type {HTMLButtonElement | null} */
+  const btn = el('dash-export-btn');
+  /** @type {string} */
+  const originalLabel = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader" style="display:inline-block;animation:spin .8s linear infinite"></i> Génération…';
+  }
+
+  try {
+    container.innerHTML = _buildDashboardPdfHtml();
+    await exportPDF('dash-pdf-export', 'statistiques-qualistore');
+  } catch (error) {
+    alert('Erreur génération PDF : ' + error.message);
+  } finally {
+    container.innerHTML = '';
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalLabel;
+    }
+  }
 }

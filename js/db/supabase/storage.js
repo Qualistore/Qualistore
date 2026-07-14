@@ -201,6 +201,7 @@
  * @property {QualimetreGlobalMap} qualimetreGlobal - Données globales qualimètre (équivalent de la ligne '__global__' isolée côté Supabase).
  * @property {QualimetreZoneLabelsMap} qualimetreZoneLabels - Renommages manuels de zones (équivalent de la ligne '__zone_labels__' isolée côté Supabase).
  * @property {QualAudit[]} qualAudits
+ * @property {Object[]} analyses - Rapports d'analyses uploadés (métadonnées + URL du fichier brut — voir analyses.js).
  */
 
 // ─────────────────────────────────────────────
@@ -315,6 +316,7 @@ function _buildDefaultDB() {
     ncs:               [],
     actions:           [],
     alertes:           [],
+    analyses:          [],
     drafts:            [],
     grilleCustom:      {},
     grilleCustomByStore: {},
@@ -401,12 +403,12 @@ async function loadDB() {
     /** @type {[Magasin[], Audit[], NC[], Action[], Alerte[], SupabaseRow[], QualAudit[], SupabaseRow[], Draft[]]} */
     const [
       magasins, audits, ncs, actions, alertes,
-      grilleRows, qualAudits, qualRows, drafts,
+      grilleRows, qualAudits, qualRows, drafts, analyses,
     ] = await Promise.all([
       sbSelect('magasins'),   sbSelect('audits'),
       sbSelect('ncs'),      sbSelect('actions'),    sbSelect('alertes'),
       sbSelect('grille_custom'), sbSelect('qual_audits'),
-      sbSelect('qualimetre_custom'), sbSelect('drafts'),
+      sbSelect('qualimetre_custom'), sbSelect('drafts'), sbSelect('analyses'),
     ]);
 
     DB = {
@@ -422,6 +424,7 @@ async function loadDB() {
       ncs:      ncs      || [],
       actions:  actions  || [],
       alertes:  alertes  || [],
+      analyses: analyses || [],
       drafts:   drafts   || [],
       grilleCustom:     _parseGrilleCustom(grilleRows),
       grilleCustomByStore: _parseGrilleCustomByStore(grilleRows),
@@ -494,7 +497,7 @@ function _parseGrilleCustom(rows) {
   /** @type {GrilleCustomMap} */
   const result = {};
   (rows || [])
-    .filter(row => row.rayon.startsWith('__common__'))
+    .filter(row => (row.rayon || '').startsWith('__common__'))
     .forEach(row => {
       // Format : '__common__{enseigne}__{rayon}' — découpe sur les
       // deux premières occurrences du séparateur seulement (un nom
@@ -543,7 +546,7 @@ function _parseGrilleCustomByStore(rows) {
   /** @type {Record<string, GrilleCustomMap>} */
   const result = {};
   (rows || [])
-    .filter(row => row.rayon.startsWith('__store__'))
+    .filter(row => (row.rayon || '').startsWith('__store__'))
     .forEach(row => {
       // Format : '__store__{storeId}__{rayon}' — storeId et rayon
       // peuvent eux-mêmes contenir '__' en théorie (peu probable en
@@ -748,6 +751,7 @@ async function _pushToSupabase(tables) {
     if (pushAll || tables.includes('ncs'))        operations.push(sbUpsert('ncs',        DB.ncs));
     if (pushAll || tables.includes('actions'))    operations.push(sbUpsert('actions',    DB.actions));
     if (pushAll || tables.includes('alertes'))    operations.push(sbUpsert('alertes',    DB.alertes));
+    if (pushAll || tables.includes('analyses'))   operations.push(sbUpsert('analyses',   DB.analyses || []));
     if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
     if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
 
@@ -1025,9 +1029,10 @@ setInterval(async () => {
 
   try {
     /** @type {[Audit[], NC[], Action[], Alerte[], QualAudit[], Draft[]]} */
-    const [audits, ncs, actions, alertes, qualAudits, drafts] = await Promise.all([
+    const [audits, ncs, actions, alertes, qualAudits, drafts, analyses] = await Promise.all([
       sbSelect('audits'), sbSelect('ncs'), sbSelect('actions'),
       sbSelect('alertes'), sbSelect('qual_audits'), sbSelect('drafts'),
+      sbSelect('analyses'),
     ]);
 
     /** @type {boolean} */
@@ -1037,7 +1042,8 @@ setInterval(async () => {
       JSON.stringify(actions)    !== JSON.stringify(DB.actions)    ||
       JSON.stringify(alertes)    !== JSON.stringify(DB.alertes)    ||
       JSON.stringify(qualAudits) !== JSON.stringify(DB.qualAudits) ||
-      JSON.stringify(drafts)     !== JSON.stringify(DB.drafts);
+      JSON.stringify(drafts)     !== JSON.stringify(DB.drafts)     ||
+      JSON.stringify(analyses)   !== JSON.stringify(DB.analyses);
 
     if (!hasChanges) return;
 
@@ -1047,6 +1053,7 @@ setInterval(async () => {
     DB.alertes    = alertes    || [];
     DB.qualAudits = qualAudits || [];
     DB.drafts     = drafts     || [];
+    DB.analyses   = analyses   || [];
     _saveToLocalStorage();
 
     _refreshActivePage();
@@ -1086,6 +1093,7 @@ function _refreshActivePage() {
     dashboard:         renderDash,
     'audit-qualimetre': renderQualAudits,
     brouillons:        renderDrafts,
+    analyses:          renderAnalyses,
   };
 
   pageRefreshMap[pageId]?.();

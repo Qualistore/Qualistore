@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QualiStore</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
-<link rel="stylesheet" href="css/app.css?v=4">
+<link rel="stylesheet" href="css/app.css?v=5">
 </head>
 <body>
 
@@ -162,6 +162,21 @@
               <i class="ti ti-rosette" style="font-size:14px"></i> Qualimètre
             </button>
           </div>
+          <!-- Sélecteur de période (mois / trimestre / semestre) — les
+               valeurs du 2e menu sont déduites des dates réellement
+               présentes dans les audits visibles (voir
+               _populateDashPeriodValues, dashboard.js) : aucune période
+               codée en dur. -->
+          <select class="form-control" style="width:auto;font-size:13px" id="dash-period-type" onchange="onDashPeriodTypeChange()" title="Filtrer les statistiques par période">
+            <option value="all">Toutes les périodes</option>
+            <option value="month">Par mois</option>
+            <option value="quarter">Par trimestre</option>
+            <option value="semester">Par semestre</option>
+          </select>
+          <select class="form-control" style="width:auto;font-size:13px;display:none" id="dash-period-value" onchange="onDashPeriodValueChange()" title="Choisir la période précise"></select>
+          <button class="btn btn-secondary btn-sm" id="dash-export-btn" style="margin-left:auto" onclick="exportDashboardPDF()">
+            <i class="ti ti-file-download"></i> Exporter PDF
+          </button>
         </div>
 
         <!-- STATS FSQS -->
@@ -204,6 +219,30 @@
             <div class="card-hdr"><div class="card-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Derniers audits Qualimètre</div><button class="btn btn-secondary btn-sm" onclick="navigate('audit-qualimetre')">Voir tout</button></div>
             <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Date</th><th>Auditeur</th><th>Score</th><th>NC</th><th></th></tr></thead><tbody id="dq-last"></tbody></table></div>
           </div>
+        </div>
+      </div>
+
+      <!-- ANALYSES — Rapports d'analyses (laboratoire, eau, surfaces...)
+           stockés TELS QUELS (aucune modification du fichier), voir
+           analyses.js. Filtrés par magasins accessibles (visibleMids). -->
+      <div class="page" id="page-analyses">
+        <div class="flex-btw mb-4" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="form-control" style="width:auto" id="flt-ana-mag" onchange="renderAnalyses()"><option value="">Tous les magasins</option></select>
+            <select class="form-control" style="width:auto" id="flt-ana-period" onchange="renderAnalyses()">
+              <option value="all">Toutes les périodes</option>
+              <option value="month">Mois en cours</option>
+              <option value="month3">3 derniers mois</option>
+              <option value="month6">6 derniers mois</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="tsm tm" id="ana-cnt"></span>
+            <button class="btn btn-primary" id="btn-add-analyse" onclick="openAnalyseUploadModal()"><i class="ti ti-upload"></i> Ajouter un rapport</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table><thead><tr><th>Magasin</th><th>Libellé</th><th>Date de l'analyse</th><th>Fichier</th><th>Ajouté par</th><th></th></tr></thead><tbody id="ana-tb"></tbody></table></div>
         </div>
       </div>
 
@@ -1129,7 +1168,7 @@
     <div class="modal-hdr">
       <div class="modal-title"><i class="ti ti-rosette" style="color:var(--qual)"></i> Nouvel audit Qualimètre</div>
       <div style="display:flex;align-items:center;gap:8px">
-        <a id="btn-ref-affichage" href="assets/referentiel-affichage.pdf" target="_blank" style="display:none" class="btn btn-sm" style="background:#fbbf24;border-color:var(--warning);color:var(--warning-dark);font-size:12px;padding:4px 10px"><i class="ti ti-file-text"></i> Référentiel affichage</a>
+        <a id="btn-ref-affichage" href="assets/referentiel-affichage.pdf" target="_blank" class="btn btn-sm" style="display:none;background:#fbbf24;border-color:var(--warning);color:var(--warning-dark);font-size:12px;padding:4px 10px"><i class="ti ti-file-text"></i> Référentiel affichage</a>
         <button class="btn-x" onclick="qaStep===2?pauseQualAudit():closeModal('m-qual-audit')">&times;</button>
       </div>
     </div>
@@ -1314,45 +1353,94 @@
     </div>
   </div>
 </div>
-</body>
-</html>
+
+<!-- MODAL: AJOUT RAPPORT D'ANALYSES -->
+<div class="modal-ov" id="m-analyse">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-flask" style="color:var(--primary)"></i> Nouveau rapport d'analyses</div>
+      <button class="btn-x" onclick="closeModal('m-analyse')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-err" id="ana-err"></div>
+      <div class="form-group">
+        <label class="form-label">Magasin *</label>
+        <select class="form-control" id="ana-mag"><option value="">Sélectionner...</option></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Libellé *</label><input class="form-control" id="ana-libelle" placeholder="ex : Analyse eau — laboratoire X"></div>
+        <div class="form-group"><label class="form-label">Date de l'analyse *</label><input type="date" class="form-control" id="ana-date"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fichier *</label>
+        <div id="ana-file-prev" style="margin-bottom:8px"></div>
+        <input type="file" id="ana-file-input" style="display:none" onchange="handleAnalyseFile(this)">
+        <button class="btn btn-secondary btn-sm" onclick="el('ana-file-input').click()"><i class="ti ti-paperclip"></i> Choisir un fichier</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Le fichier est stocké tel quel, sans aucune modification — pour consultation et téléchargement uniquement.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-analyse')">Annuler</button>
+      <button class="btn btn-primary" id="ana-save-btn" onclick="saveAnalyse()"><i class="ti ti-check"></i> Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DÉTAIL / RÉCUPÉRATION D'UN RAPPORT D'ANALYSES -->
+<div class="modal-ov" id="m-analyse-view">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-hdr">
+      <div class="modal-title"><i class="ti ti-flask" style="color:var(--primary)"></i> Rapport d'analyses</div>
+      <button class="btn-x" onclick="closeModal('m-analyse-view')">&times;</button>
+    </div>
+    <div class="modal-body" id="ana-view-body"></div>
+    <div class="modal-foot" id="ana-view-foot">
+      <button class="btn btn-secondary" onclick="closeModal('m-analyse-view')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Conteneur invisible utilisé par l'export PDF du tableau de bord
+     (rempli puis vidé par exportDashboardPDF, dashboard.js) -->
+<div id="dash-pdf-export" style="display:none"></div>
 
 <!-- Librairies externes -->
-<script src="js/jspdf.umd.min.js?v=4"></script>
-<script src="js/html2canvas.min.js?v=4"></script>
-<script src="js/chart.umd.min.js?v=4"></script>
+<script src="js/jspdf.umd.min.js?v=5"></script>
+<script src="js/html2canvas.min.js?v=5"></script>
+<script src="js/chart.umd.min.js?v=5"></script>
 
 <!-- Infrastructure -->
-<script src="js/config.js?v=4"></script>
+<script src="js/config.js?v=5"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="js/supabase.js?v=4"></script>
-<script src="js/db/supabase/storage.js?v=4"></script>
-<script src="js/auth.js?v=4"></script>
-<script src="js/ui.js?v=4"></script>
+<script src="js/supabase.js?v=5"></script>
+<script src="js/db/supabase/storage.js?v=5"></script>
+<script src="js/auth.js?v=5"></script>
+<script src="js/ui.js?v=5"></script>
 
 <!-- Import de référentiels (chargé avant grille-qualimetre.js, qui réutilise detectConceptMapping/normalizeRows/_resolveOrCreateZoneFromDocument) -->
-<script src="js/import/import-detect.js?v=4"></script>
-<script src="js/import/import-normalize.js?v=4"></script>
-<script src="js/import/import-grille.js?v=4"></script>
+<script src="js/import/import-detect.js?v=5"></script>
+<script src="js/import/import-normalize.js?v=5"></script>
+<script src="js/import/import-grille.js?v=5"></script>
 
 <!-- Modules métier -->
-<script src="js/dashboard.js?v=4"></script>
-<script src="js/audits.js?v=4"></script>
-<script src="js/nc.js?v=4"></script>
-<script src="js/actions.js?v=4"></script>
-<script src="js/magasins.js?v=4"></script>
-<script src="js/rayons.js?v=4"></script>
-<script src="js/grille.js?v=4"></script>
-<script src="js/alertes.js?v=4"></script>
-<script src="js/users.js?v=4"></script>
-<script src="js/rapports-fsqs.js?v=4"></script>
-<script src="js/import/grille-qualimetre.js?v=4"></script> 
-<script src="js/qualimetre.js?v=4"></script>
-<script src="js/audit-qualimetre.js?v=4"></script>
-<script src="js/rapport-qualimetre.js?v=4"></script>
+<script src="js/dashboard.js?v=5"></script>
+<script src="js/audits.js?v=5"></script>
+<script src="js/nc.js?v=5"></script>
+<script src="js/actions.js?v=5"></script>
+<script src="js/magasins.js?v=5"></script>
+<script src="js/rayons.js?v=5"></script>
+<script src="js/grille.js?v=5"></script>
+<script src="js/alertes.js?v=5"></script>
+<script src="js/analyses.js?v=5"></script>
+<script src="js/users.js?v=5"></script>
+<script src="js/rapports-fsqs.js?v=5"></script>
+<script src="js/import/grille-qualimetre.js?v=5"></script> 
+<script src="js/qualimetre.js?v=5"></script>
+<script src="js/audit-qualimetre.js?v=5"></script>
+<script src="js/rapport-qualimetre.js?v=5"></script>
 
 <!-- Point d'entrée -->
-<script src="js/init.js?v=4"></script>
+<script src="js/init.js?v=5"></script>
 
 </body>
 </html>

@@ -19,7 +19,7 @@
 
 /**
  * Identifiant de page, clé commune à PAGE_METADATA et PAGE_RENDERERS.
- * @typedef {'dashboard'|'audits'|'nc'|'actions'|'magasins'|'rayons'|'rapports'|'utilisateurs'|'grille'|'qualimetre'|'audit-qualimetre'|'rapport-qualimetre'|'grille-qualimetre'|'brouillons'|'backup'} PageId
+ * @typedef {'dashboard'|'audits'|'nc'|'actions'|'magasins'|'rayons'|'rapports'|'utilisateurs'|'grille'|'qualimetre'|'audit-qualimetre'|'rapport-qualimetre'|'grille-qualimetre'|'brouillons'|'backup'|'analyses'} PageId
  */
 
 /**
@@ -88,6 +88,7 @@ const PAGE_METADATA = {
   dashboard:           ['Tableau de bord',       'Vue d\'ensemble'],
   audits:              ['Audits FSQS',            'Historique'],
   nc:                  ['Non-conformités',        'Suivi des écarts'],
+  analyses:            ['Analyses',               'Rapports d\'analyses (laboratoire, eau, surfaces...)'],
   actions:             ['Actions correctives',    'Plan d\'actions'],
   magasins:            ['Magasins',               'Gestion du parc'],
   'stats-audits':      ['Statistiques d\'audit',  'Par magasin et par rayon'],
@@ -680,6 +681,7 @@ function buildSidebar() {
     hasPerm('report_fsqs_view') && { id: 'rapports',            icon: 'ti-file-analytics',  label: 'Rapport FSQS' },
     hasPerm('report_qualimetre_view') && { id: 'rapport-qualimetre',  icon: 'ti-gauge',           label: 'Rapport Qualimètre', style: 'color:var(--qual-pale)' },
     hasPerm('nc_view')       && { id: 'nc',                  icon: 'ti-alert-triangle',  label: 'Non-conformités', badge: 'nc-bdg' },
+    hasPerm('analysis_view') && { id: 'analyses',            icon: 'ti-flask',           label: 'Analyses' },
     { section: 'Paramètres' },
     hasPerm('users_manage')  && { id: 'utilisateurs',       icon: 'ti-users',           label: 'Utilisateurs' },
     hasPerm('brand_manage')  && { id: 'enseignes',          icon: 'ti-building',        label: 'Enseignes' },
@@ -839,6 +841,7 @@ function _getPageRenderer(pageId) {
     qualimetre:          showQualimetre,
     'audit-qualimetre':  renderQualAudits,
     'grille-qualimetre': showGrilleQualimetre,
+    analyses:            renderAnalyses,
     brouillons:          renderDrafts,
     backup:              () => {},
   };

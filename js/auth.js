@@ -448,6 +448,11 @@ async function confirmForcedPasswordChange() {
 
   /** @type {{ data: { session: Object|null } }} */
   const { data: { session } } = await _sb.auth.getSession();
+  if (!session || !session.user) {
+    msgEl.textContent = 'Session expirée — reconnectez-vous avec votre nouveau mot de passe.';
+    msgEl.className   = 'login-err show';
+    return;
+  }
   /** @type {User | null} */
   const profile = await _fetchProfile(session.user.id);
 
