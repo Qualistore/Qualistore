@@ -555,7 +555,7 @@ function _snapshotCurrentAlertAsDraft() {
  * ⚠️ Pour que le bouton "Annuler" de la modale d'alerte bénéficie
  * aussi de cette sauvegarde (au lieu de fermer sèchement sans rien
  * garder), remplacez son attribut onclick="closeModal('m-alert')" par
- * onclick="pauseAlert()" dans index.html — non modifié ici, ce
+ * onclick="pauseAlert()" dans HygiPerf.html — non modifié ici, ce
  * fichier ne contenant pas le HTML de la modale.
  * @returns {void}
  */
@@ -931,7 +931,7 @@ function _applyUrgentAlertsExpanded() {
 
 /**
  * Affiche le bouton compact "alertes urgentes" en haut du tableau de
- * bord (#d-urgent-alerts, index.html) avec le décompte des
+ * bord (#d-urgent-alerts, HygiPerf.html) avec le décompte des
  * alertes actives, et alimente le panneau détaillé (masqué par
  * défaut — voir toggleUrgentAlerts) avec la liste (max 8, les plus
  * récentes en premier — même ordre de stockage que DB.alertes, jamais
@@ -952,7 +952,16 @@ function renderAlertsDash() {
   if (!wrapper || !toggle) return;
 
   /** @type {Alerte[]} */
-  const activeAlerts = DB.alertes.filter(a => a.statut === 'Active');
+  // ⚠️ CORRIGÉ (fuite de visibilité) : les alertes actives de TOUS
+  // les magasins étaient affichées à tout le monde — seul écran de
+  // l'application à ne pas appliquer visibleMids. Une alerte sans
+  // magasin rattaché (ancienne donnée) reste visible, faute de
+  // pouvoir la relier à un magasin.
+  /** @type {string[]} */
+  const storeIds = visibleMids();
+  /** @type {Alerte[]} */
+  const activeAlerts = DB.alertes.filter(a =>
+    a.statut === 'Active' && (!a.mid || storeIds.includes(a.mid)));
 
   if (!activeAlerts.length) {
     wrapper.style.display = 'none';

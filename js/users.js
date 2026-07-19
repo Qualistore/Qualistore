@@ -390,14 +390,66 @@ function _renderStoreCheckboxesForFilter() {
   const filteredMagasins = enseigneId ? _magasinsForEnseigne(enseigneId) : DB.magasins;
 
   const container = el('u-mag-cbs');
-  container.innerHTML = filteredMagasins.length
-    ? filteredMagasins.map(m => `
-        <label class="cb-item">
-          <input type="checkbox" value="${m.id}" class="mcb" ${_selectedMagasinIds.has(m.id) ? 'checked' : ''}
-            onchange="_onStoreCheckboxChange(this)"> ${m.nom}
-        </label>`).join('')
+
+  // ⚠️ CHANGÉ : assignation présentée par ENSEIGNE puis par magasin —
+  // une case d'enseigne (dé)coche tous ses magasins d'un coup.
+  // Purement visuel et data-driven (groupes dérivés de
+  // Magasin.enseigne) : les liaisons existantes restent des IDs de
+  // magasins (User.magasins), rien à migrer.
+  /** @type {Map<string, Magasin[]>} */
+  const byEnseigne = new Map();
+  filteredMagasins.forEach(store => {
+    /** @type {string} */
+    const enseigne = (store.enseigne || '').trim() || 'Sans enseigne';
+    if (!byEnseigne.has(enseigne)) byEnseigne.set(enseigne, []);
+    byEnseigne.get(enseigne).push(store);
+  });
+  /** @type {string[]} */
+  const enseignes = [...byEnseigne.keys()].sort((a, b) => {
+    if (a === 'Sans enseigne') return 1;
+    if (b === 'Sans enseigne') return -1;
+    return a.localeCompare(b, 'fr');
+  });
+
+  container.innerHTML = enseignes.length
+    ? enseignes.map(enseigne => {
+        /** @type {Magasin[]} */
+        const stores = byEnseigne.get(enseigne);
+        /** @type {boolean} */
+        const allChecked = stores.every(m => _selectedMagasinIds.has(m.id));
+        return `<div style="margin-bottom:8px">
+          <label class="cb-item" style="font-weight:700">
+            <input type="checkbox" class="ens-cb" data-enseigne="${_escapeHtmlAttr(enseigne)}" ${allChecked ? 'checked' : ''} onchange="_onUserEnseigneToggle(this)">
+            <i class="ti ti-building" style="font-size:13px;opacity:.7"></i> ${_escapeHtml(enseigne)}
+          </label>
+          <div style="margin-left:22px">
+            ${stores.map(m => `<label class="cb-item">
+              <input type="checkbox" value="${m.id}" class="mcb" data-enseigne="${_escapeHtmlAttr(enseigne)}" ${_selectedMagasinIds.has(m.id) ? 'checked' : ''}
+                onchange="_onStoreCheckboxChange(this)"> ${_escapeHtml(m.nom)}
+            </label>`).join('')}
+          </div>
+        </div>`;
+      }).join('')
     : '<span class="tm tsm">Aucun magasin pour cette enseigne</span>';
 
+  _updateStoreSelectionCount();
+}
+
+/**
+ * (Dé)coche d'un coup tous les magasins d'une enseigne dans la
+ * modale utilisateur, et synchronise la sélection (_selectedMagasinIds).
+ * @param {HTMLInputElement} enseigneCheckbox
+ * @returns {void}
+ */
+function _onUserEnseigneToggle(enseigneCheckbox) {
+  /** @type {string} */
+  const enseigne = enseigneCheckbox.dataset.enseigne || '';
+  document.querySelectorAll('#u-mag-cbs .mcb').forEach(cb => {
+    if ((cb.dataset.enseigne || '') !== enseigne) return;
+    cb.checked = enseigneCheckbox.checked;
+    if (cb.checked) _selectedMagasinIds.add(cb.value);
+    else _selectedMagasinIds.delete(cb.value);
+  });
   _updateStoreSelectionCount();
 }
 
@@ -408,6 +460,15 @@ function _renderStoreCheckboxesForFilter() {
 function _onStoreCheckboxChange(checkbox) {
   if (checkbox.checked) _selectedMagasinIds.add(checkbox.value);
   else _selectedMagasinIds.delete(checkbox.value);
+  // Recale la case de l'enseigne : cochée si tous ses magasins le sont.
+  /** @type {string} */
+  const enseigne = checkbox.dataset.enseigne || '';
+  document.querySelectorAll('#u-mag-cbs .ens-cb').forEach(ensCb => {
+    if ((ensCb.dataset.enseigne || '') !== enseigne) return;
+    /** @type {HTMLInputElement[]} */
+    const stores = [...document.querySelectorAll('#u-mag-cbs .mcb')].filter(cb => (cb.dataset.enseigne || '') === enseigne);
+    ensCb.checked = stores.length > 0 && stores.every(cb => cb.checked);
+  });
   _updateStoreSelectionCount();
 }
 
@@ -641,6 +702,8 @@ function toggleAllMags(selectAll) {
     if (selectAll) _selectedMagasinIds.add(cb.value);
     else _selectedMagasinIds.delete(cb.value);
   });
+  // Les cases d'enseigne suivent (voir _renderStoreCheckboxesForFilter).
+  document.querySelectorAll('#u-mag-cbs .ens-cb').forEach(cb => { cb.checked = selectAll; });
   _updateStoreSelectionCount();
 }
 
@@ -733,10 +796,9 @@ function _computeResetPasswordRedirect() {
  * Extrait le VRAI message d'erreur d'un appel functions.invoke.
  *
  * ⚠️ AJOUTÉ : en cas de statut non-2xx, supabase-js renvoie une
- * erreur générique (« Edge Function returned a non-2xx status
- * code ») et `data` reste null — le message précis renvoyé par la
- * fonction ({ error: '...' }) se trouve dans error.context (l'objet
- * Response de la réponse HTTP), qu'il faut lire explicitement.
+ * erreur générique et `data` reste null — le message précis renvoyé
+ * par la fonction ({ error: '...' }) se trouve dans error.context
+ * (l'objet Response), qu'il faut lire explicitement.
  * @param {{error?: string}|null} data
  * @param {{message?: string, context?: Response}|null} error
  * @returns {Promise<string|undefined>} Message d'erreur, ou undefined si succès.
@@ -755,16 +817,10 @@ async function _edgeFunctionErrorMessage(data, error) {
 }
 
 /**
- * Supprime COMPLÈTEMENT un utilisateur : d'abord son compte Supabase
- * Auth via l'Edge Function invite-user (action 'delete-user' — la clé
- * anon ne peut pas supprimer un compte Auth depuis le navigateur),
- * puis la ligne `profiles`.
- *
- * ⚠️ AJOUTÉ (bug des comptes orphelins) : la suppression ne retirait
- * que la ligne `profiles` — le compte restait dans Authentication →
- * Users, et son email/identifiant devenait impossible à réutiliser
- * (« A user with this email address has already been registered »).
- * Appelée par confirmDel('user'), magasins.js.
+ * Supprime COMPLÈTEMENT un utilisateur : son compte Supabase Auth via
+ * l'Edge Function invite-user (action 'delete-user'), puis la ligne
+ * `profiles`. ⚠️ AJOUTÉ (bug des comptes orphelins) — voir
+ * confirmDel('user'), magasins.js.
  * @param {string} userId - Référence vers profiles.id / auth.users.id.
  * @returns {Promise<void>}
  */
@@ -775,10 +831,6 @@ async function deleteUserCompletely(userId) {
   /** @type {string|undefined} */
   const functionError = await _edgeFunctionErrorMessage(data, error);
   if (functionError) {
-    // Fonction indisponible (ancienne version pas encore déployée,
-    // réseau...) : on supprime quand même le profil (comportement
-    // historique) et on signale que le compte Auth restera à nettoyer
-    // dans Authentication → Users.
     showToast('Profil supprimé, mais compte Auth restant : ' + functionError, 'warning');
   }
   sbDeleteWhere('profiles', 'id', userId);

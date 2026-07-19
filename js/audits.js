@@ -1522,12 +1522,20 @@ function renderDrafts() {
 
   // ⚠️ CORRIGÉ : "admin voit tout, les autres voient seulement les
   // leurs" -> droits granulaires draft_view_others / draft_view_own.
+  // ⚠️ CORRIGÉ (fuite de visibilité) : draft_view_others donnait accès
+  // aux brouillons de TOUS les magasins — désormais borné aux magasins
+  // accessibles (visibleMids), comme partout ailleurs. Un brouillon
+  // sans magasin (pas encore choisi à l'étape 1) reste visible selon
+  // les droits, faute de pouvoir le rattacher.
+  /** @type {string[]} */
+  const storeIds = visibleMids();
   /** @type {Draft[]} */
-  const drafts = hasPerm('draft_view_others')
+  const drafts = (hasPerm('draft_view_others')
     ? [...DB.drafts].reverse()
     : hasPerm('draft_view_own')
       ? [...DB.drafts].reverse().filter(d => CU && d.uid === CU.id)
-      : [];
+      : [])
+    .filter(d => !d.mid || storeIds.includes(d.mid));
 
   el('drafts-cnt').textContent = `${drafts.length} brouillon(s)`;
 
@@ -1573,7 +1581,7 @@ function _buildDraftRow(draft) {
 
   // ⚠️ AJOUTÉ : badge de type, pour distinguer les 3 origines
   // possibles d'un brouillon dans la même table partagée (voir Type
-  // dans l'en-tête, index.html).
+  // dans l'en-tête, HygiPerf.html).
   /** @type {string} */
   const typeBadge = draft.type === 'qualimetre'
     ? '<span class="badge" style="background:#eef2ff;color:#3730a3">Qualité de service</span>'
