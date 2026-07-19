@@ -734,6 +734,33 @@ function _computeResetPasswordRedirect() {
 }
 
 /**
+ * Extrait le VRAI message d'erreur d'un appel functions.invoke.
+ *
+ * ⚠️ AJOUTÉ : en cas de statut non-2xx, supabase-js renvoie une
+ * erreur générique (« Edge Function returned a non-2xx status
+ * code ») et `data` reste null — le message précis renvoyé par la
+ * fonction ({ error: '...' }) se trouve dans error.context (l'objet
+ * Response de la réponse HTTP), qu'il faut lire explicitement.
+ * Sans cette lecture, l'utilisateur ne voyait jamais la cause
+ * réelle (limite d'envoi d'emails, nom manquant, etc.).
+ * @param {{error?: string}|null} data
+ * @param {{message?: string, context?: Response}|null} error
+ * @returns {Promise<string|undefined>} Message d'erreur, ou undefined si succès.
+ */
+async function _edgeFunctionErrorMessage(data, error) {
+  if (data && data.error) return data.error;
+  if (!error) return undefined;
+  if (error.context && typeof error.context.json === 'function') {
+    try {
+      /** @type {{error?: string}} */
+      const body = await error.context.json();
+      if (body && body.error) return body.error;
+    } catch (_) { /* corps illisible — repli sur le message générique */ }
+  }
+  return error.message || 'Erreur inconnue.';
+}
+
+/**
  * Crée un utilisateur — avec email (invitation) ou sans email
  * (identifiant prenom.nom + mot de passe = ce même identifiant,
  * changement forcé à la première connexion).
@@ -773,7 +800,7 @@ async function _createNewUser(nom, prenom, nomFamille, role, magasins, perms, er
   });
 
   /** @type {string|undefined} */
-  const functionError = (data && data.error) || error?.message;
+  const functionError = await _edgeFunctionErrorMessage(data, error);
   if (functionError) {
     errorEl.textContent = 'Erreur : ' + functionError;
     errorEl.classList.add('show');
@@ -831,7 +858,7 @@ async function resendInvitation(userId) {
   });
 
   /** @type {string|undefined} */
-  const functionError = (data && data.error) || error?.message;
+  const functionError = await _edgeFunctionErrorMessage(data, error);
   if (functionError) {
     errorEl.textContent = 'Erreur : ' + functionError;
     errorEl.classList.add('show');
@@ -905,7 +932,7 @@ async function confirmAdminResetPassword() {
   });
 
   /** @type {string|undefined} */
-  const functionError = (data && data.error) || error?.message;
+  const functionError = await _edgeFunctionErrorMessage(data, error);
   if (functionError) {
     errorEl.textContent = 'Erreur : ' + functionError;
     errorEl.classList.add('show');
