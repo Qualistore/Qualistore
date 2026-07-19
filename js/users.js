@@ -432,12 +432,9 @@ function _updateStoreSelectionCount() {
  */
 function _buildPermissionsSection() {
   const container = el('u-perms-container');
-  // ⚠️ AJOUTÉ : droit users_edit_permissions — défini dans config.js
-  // depuis la refonte des permissions mais jamais vérifié : tout
-  // détenteur de users_manage pouvait modifier les droits. Sans ce
-  // droit, la section reste VISIBLE mais en lecture seule (cases
-  // désactivées), et saveUser ignore les cases (voir
-  // _readStoreAndPermsFromForm).
+  // ⚠️ AJOUTÉ : droit users_edit_permissions — sans ce droit, la
+  // section reste VISIBLE mais en lecture seule (cases désactivées),
+  // et saveUser ignore les cases (voir _readStoreAndPermsFromForm).
   /** @type {boolean} */
   const canEditPerms = !!hasPerm('users_edit_permissions');
   /** @type {string} */
@@ -661,10 +658,9 @@ function _readStoreAndPermsFromForm() {
   const magasins = role === 'admin' ? [] : [..._selectedMagasinIds];
   /** @type {UserPerms} */
   const perms = {};
-  // ⚠️ AJOUTÉ : sans users_edit_permissions, les cases (désactivées,
-  // voir _buildPermissionsSection) sont IGNORÉES — on conserve les
-  // droits existants de l'utilisateur modifié, ou les défauts du rôle
-  // pour une création. Jamais uniquement une protection d'UI.
+  // ⚠️ AJOUTÉ : sans users_edit_permissions, les cases (désactivées)
+  // sont IGNORÉES — droits existants conservés, ou défauts du rôle en
+  // création. Jamais uniquement une protection d'UI.
   if (!hasPerm('users_edit_permissions')) {
     /** @type {User | undefined} */
     const existing = _cachedProfiles.find(u => u.id === v('u-id'));
@@ -741,8 +737,6 @@ function _computeResetPasswordRedirect() {
  * code ») et `data` reste null — le message précis renvoyé par la
  * fonction ({ error: '...' }) se trouve dans error.context (l'objet
  * Response de la réponse HTTP), qu'il faut lire explicitement.
- * Sans cette lecture, l'utilisateur ne voyait jamais la cause
- * réelle (limite d'envoi d'emails, nom manquant, etc.).
  * @param {{error?: string}|null} data
  * @param {{message?: string, context?: Response}|null} error
  * @returns {Promise<string|undefined>} Message d'erreur, ou undefined si succès.
@@ -758,6 +752,37 @@ async function _edgeFunctionErrorMessage(data, error) {
     } catch (_) { /* corps illisible — repli sur le message générique */ }
   }
   return error.message || 'Erreur inconnue.';
+}
+
+/**
+ * Supprime COMPLÈTEMENT un utilisateur : d'abord son compte Supabase
+ * Auth via l'Edge Function invite-user (action 'delete-user' — la clé
+ * anon ne peut pas supprimer un compte Auth depuis le navigateur),
+ * puis la ligne `profiles`.
+ *
+ * ⚠️ AJOUTÉ (bug des comptes orphelins) : la suppression ne retirait
+ * que la ligne `profiles` — le compte restait dans Authentication →
+ * Users, et son email/identifiant devenait impossible à réutiliser
+ * (« A user with this email address has already been registered »).
+ * Appelée par confirmDel('user'), magasins.js.
+ * @param {string} userId - Référence vers profiles.id / auth.users.id.
+ * @returns {Promise<void>}
+ */
+async function deleteUserCompletely(userId) {
+  const { data, error } = await _sb.functions.invoke('invite-user', {
+    body: { action: 'delete-user', userId },
+  });
+  /** @type {string|undefined} */
+  const functionError = await _edgeFunctionErrorMessage(data, error);
+  if (functionError) {
+    // Fonction indisponible (ancienne version pas encore déployée,
+    // réseau...) : on supprime quand même le profil (comportement
+    // historique) et on signale que le compte Auth restera à nettoyer
+    // dans Authentication → Users.
+    showToast('Profil supprimé, mais compte Auth restant : ' + functionError, 'warning');
+  }
+  sbDeleteWhere('profiles', 'id', userId);
+  renderUsers();
 }
 
 /**
