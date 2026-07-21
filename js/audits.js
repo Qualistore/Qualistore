@@ -481,6 +481,13 @@ function _onAuditMagChanged() {
   el('a-ray').value    = '';
   el('a-ray').disabled = rayons.length === 0;
 
+  // ⚠️ AJOUTÉ (types de commerce) : le libellé du champ suit le type
+  // du magasin choisi — « Rayon * » (distribution) ou « Zone * »
+  // (restauration, industrie). Nécessite id="a-ray-label" sur le
+  // <label> dans index.html ; sans lui, aucun effet (garde el()).
+  const rayLabelEl = el('a-ray-label');
+  if (rayLabelEl) rayLabelEl.textContent = `${rayonWord(storeId ? getCommerceTypeForMagasin(storeId) : null, false)} *`;
+
   if (el('a-ray-empty-hint')) {
     el('a-ray-empty-hint').style.display = (storeId && rayons.length === 0) ? '' : 'none';
   }
@@ -1522,11 +1529,8 @@ function renderDrafts() {
 
   // ⚠️ CORRIGÉ : "admin voit tout, les autres voient seulement les
   // leurs" -> droits granulaires draft_view_others / draft_view_own.
-  // ⚠️ CORRIGÉ (fuite de visibilité) : draft_view_others donnait accès
-  // aux brouillons de TOUS les magasins — désormais borné aux magasins
-  // accessibles (visibleMids), comme partout ailleurs. Un brouillon
-  // sans magasin (pas encore choisi à l'étape 1) reste visible selon
-  // les droits, faute de pouvoir le rattacher.
+  // ⚠️ CORRIGÉ (fuite de visibilité) : draft_view_others désormais
+  // borné aux magasins accessibles (visibleMids), comme partout.
   /** @type {string[]} */
   const storeIds = visibleMids();
   /** @type {Draft[]} */

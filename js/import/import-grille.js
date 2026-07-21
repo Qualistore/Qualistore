@@ -350,7 +350,7 @@ let _importDetection = null;
 /** @type {ImportTarget} Destination de l'import. */
 let _importTarget = 'grille';
 
-/** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue). ⚠️ CHANGÉ : n'est plus réglable par l'utilisateur dans la modale (le sélecteur a été retiré, remplacé par le choix du magasin cible) — toujours 'Majeure', signalé par un astérisque dans la modale (voir index.html #imp-default-crit-note). */
+/** @type {GrilleCriticite} Criticité appliquée aux lignes dont la criticité n'a pas pu être déterminée depuis le document (colonne absente ou valeur non reconnue). ⚠️ CHANGÉ : n'est plus réglable par l'utilisateur dans la modale (le sélecteur a été retiré, remplacé par le choix du magasin cible) — toujours 'Majeure', signalé par un astérisque dans la modale (voir HygiPerf.html #imp-default-crit-note). */
 const _importDefaultCrit = 'Majeure';
 
 /** @type {string[]} Rayon(s) FSQS choisis par l'utilisateur AVANT l'import (sélecteur au-dessus de la zone de dépose, voir _onImportDefaultRayonsChanged) — appliqué comme targetRayons par défaut à toutes les lignes de l'aperçu (cible 'grille' uniquement). Un rayon n'est jamais déduit du document : c'est toujours un choix explicite de l'utilisateur, modifiable ensuite ligne par ligne ou en masse (voir applyBulkRayonZoneAssignment). */
@@ -393,12 +393,33 @@ let _importDefaultStore = '';
  * @param {ImportTarget} [target] - Destination de l'import ; 'grille' par défaut.
  * @returns {void}
  */
+/**
+ * (Re)construit les cases des rayons/zones cibles de l'import.
+ * ⚠️ AJOUTÉ (types de commerce) : si une enseigne est sélectionnée et
+ * que son type définit des rayons/zones, seule cette liste est
+ * proposée — sinon tous les rayons connus (comportement historique).
+ * @returns {void}
+ */
+function _renderImportDefaultRayonCbs() {
+  const container = el('imp-default-rayon-cbs');
+  if (!container) return;
+  /** @type {string} */
+  const enseigne = el('imp-default-enseigne-sel') ? el('imp-default-enseigne-sel').value : '';
+  /** @type {ReturnType<typeof getCommerceTypeForEnseigne>} */
+  const type = enseigne ? getCommerceTypeForEnseigne(enseigne) : null;
+  /** @type {string[]} */
+  const typeList = type ? ((DB.typeRayons || {})[type.id] || []) : [];
+  /** @type {string[]} */
+  const rayons = typeList.length ? [...typeList].sort((a, b) => a.localeCompare(b, 'fr')) : getKnownRayons();
+  container.innerHTML = rayons.map(rayon =>
+    `<label class="cb-item"><input type="checkbox" class="imp-default-rayon-cb" value="${_escapeHtmlAttr(rayon)}" onchange="_onImportDefaultRayonsChanged()"> ${rayon}</label>`
+  ).join('');
+}
+
 function openImportModal(target) {
   // ⚠️ AJOUTÉ : droit granulaire — grid_import pour la grille FSQS ;
-  // si la cible 'qualimetre' est un jour réactivée, elle relève de
-  // qgrid_manage (même droit que openGqImportModal,
-  // grille-qualimetre.js). Garde applicative, pas seulement le
-  // masquage du bouton.
+  // la cible 'qualimetre' relève de qgrid_manage. Garde applicative,
+  // pas seulement le masquage du bouton.
   if ((target || 'grille') === 'qualimetre' ? !hasPerm('qgrid_manage') : !hasPerm('grid_import')) return;
   _importTarget        = target || 'grille';
   _importRows          = [];
@@ -423,11 +444,7 @@ function openImportModal(target) {
   if (el('imp-default-crit-note')) {
     el('imp-default-crit-note').style.display = _importTarget === 'qualimetre' ? 'none' : '';
   }
-  if (el('imp-default-rayon-cbs')) {
-    el('imp-default-rayon-cbs').innerHTML = getKnownRayons().map(rayon =>
-      `<label class="cb-item"><input type="checkbox" class="imp-default-rayon-cb" value="${_escapeHtmlAttr(rayon)}" onchange="_onImportDefaultRayonsChanged()"> ${rayon}</label>`
-    ).join('');
-  }
+  _renderImportDefaultRayonCbs();
   if (el('imp-default-enseigne-sel')) {
     el('imp-default-enseigne-sel').innerHTML = '<option value="">— Grille commune (toutes enseignes) —</option>' +
       getKnownEnseignes().map(e => `<option value="${_escapeHtmlAttr(e)}">${e}</option>`).join('');
@@ -467,6 +484,8 @@ function _onImportDefaultRayonsChanged() {
  * @returns {void}
  */
 function _onImportDefaultEnseigneChanged() {
+  // Les rayons/zones proposés suivent le type de l'enseigne choisie.
+  _renderImportDefaultRayonCbs();
   _importDefaultEnseigne = v('imp-default-enseigne-sel');
   _importDefaultStore = '';
   _populateImportDefaultStoreSelect();
@@ -534,7 +553,7 @@ function _clearImportPreview() {
 /**
  * Point d'entrée public du bouton "Effacer" de l'aperçu d'import.
  * ⚠️ CORRIGÉ : ce nom était référencé par le bouton "Effacer" de
- * index.html (onclick="clearImportPreview()") sans qu'aucune
+ * HygiPerf.html (onclick="clearImportPreview()") sans qu'aucune
  * fonction de ce nom exact n'existe — seule la variante interne
  * _clearImportPreview() était définie. Le bouton était donc inopérant
  * depuis l'origine. On délègue simplement à la version interne,
@@ -1689,7 +1708,7 @@ function _onMappingConceptChanged(concept, newHeader) {
 // repli non réglable par l'utilisateur, appliquée aux lignes sans
 // criticité déterminable depuis le document (signalé par l'astérisque
 // affiché entre "Rayon(s) cible(s)" et la zone de dépose, voir
-// index.html #imp-default-crit-note).
+// HygiPerf.html #imp-default-crit-note).
 
 /**
  * Échappe une chaîne pour insertion sûre dans du texte HTML.
@@ -1769,7 +1788,7 @@ function _buildPreviewRow(row, index, isDuplicate) {
 
   // NOTE : en pratique, cette modale (#m-import) n'est aujourd'hui
   // ouverte qu'avec la cible 'grille' (FSQS) — openImportModal() est
-  // toujours appelée sans argument dans index.html. L'import
+  // toujours appelée sans argument dans HygiPerf.html. L'import
   // Qualité de service utilise sa propre modale et son propre aperçu,
   // entièrement séparés (#m-gq-import, _gqRenderImportPreview, voir
   // grille-qualimetre.js). Les colonnes Rayon(s)/Zone ci-dessous sont
@@ -2282,7 +2301,7 @@ function _importIntoQualimetre(rows) {
 
   /** @type {string} */
   const storeId = v('qual-mag-sel');
-  if (!storeId) { alert('Sélectionnez d\'abord un magasin dans la Qualité de service.'); return; }
+  if (!storeId) { alert('Sélectionnez d\'abord un magasin dans le Qualité de service.'); return; }
 
   if (!DB.qualimetreCustom[storeId]) DB.qualimetreCustom[storeId] = {};
 

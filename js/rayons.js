@@ -691,10 +691,59 @@ function unclassifyGrilleZone(rayon, zone) {
  * @returns {string[]}
  */
 function getRayonsForMagasin(storeId) {
+  // ⚠️ CHANGÉ (types de commerce) : si l'enseigne du magasin a un
+  // TYPE DE COMMERCE défini ET que ce type a des rayons/zones, le
+  // magasin en HÉRITE directement — l'assignation magasin par magasin
+  // (DB.magasinRayons) ne sert plus que de repli pour les magasins
+  // sans enseigne ou dont l'enseigne n'a pas encore de type
+  // (transition en douceur, rien ne casse).
+  /** @type {ReturnType<typeof getCommerceTypeForMagasin>} */
+  const type = getCommerceTypeForMagasin(storeId);
+  if (type) {
+    /** @type {string[]} */
+    const typeRayons = (DB.typeRayons || {})[type.id] || [];
+    if (typeRayons.length) return [...typeRayons].sort((a, b) => a.localeCompare(b, 'fr'));
+  }
   /** @type {string[] | undefined} */
   const rayons = DB.magasinRayons?.[storeId];
   if (!rayons) return [];
   return [...rayons].sort((a, b) => a.localeCompare(b, 'fr'));
+}
+
+/**
+ * Résout le type de commerce d'une enseigne (voir COMMERCE_TYPES,
+ * config.js, et DB.enseigneTypes — Record<nomEnseigne, typeId>).
+ * @param {string} enseigneNom
+ * @returns {{id: string, label: string, mode: 'rayons'|'zones'} | null} null si l'enseigne n'a pas (encore) de type.
+ */
+function getCommerceTypeForEnseigne(enseigneNom) {
+  /** @type {string} */
+  const typeId = (DB.enseigneTypes || {})[(enseigneNom || '').trim()] || '';
+  return COMMERCE_TYPES.find(t => t.id === typeId) || null;
+}
+
+/**
+ * Résout le type de commerce d'un magasin, via son enseigne.
+ * @param {string} storeId - Référence vers Magasin.id.
+ * @returns {{id: string, label: string, mode: 'rayons'|'zones'} | null}
+ */
+function getCommerceTypeForMagasin(storeId) {
+  /** @type {Magasin | undefined} */
+  const store = DB.magasins.find(m => m.id === storeId);
+  return store ? getCommerceTypeForEnseigne(store.enseigne || '') : null;
+}
+
+/**
+ * Mot à employer selon le type de commerce : « Rayon » pour la
+ * distribution, « Zone » pour la restauration et l'industrie.
+ * @param {{mode: 'rayons'|'zones'} | null} type - null = « Rayon » (défaut historique).
+ * @param {boolean} [plural]
+ * @returns {string}
+ */
+function rayonWord(type, plural) {
+  /** @type {string} */
+  const base = type && type.mode === 'zones' ? 'Zone' : 'Rayon';
+  return plural ? base + 's' : base;
 }
 
 /**

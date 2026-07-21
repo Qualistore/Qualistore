@@ -370,8 +370,10 @@ const _deleteHandlers = {
   },
 
   user: (id) => {
-    sbDeleteWhere('profiles', 'id', id);
-    renderUsers();
+    // ⚠️ CORRIGÉ : suppression COMPLÈTE (compte Auth + profil) via
+    // deleteUserCompletely (users.js) — l'ancienne version laissait un
+    // compte orphelin dans Authentication → Users.
+    deleteUserCompletely(id);
   },
 
   alert: (id) => {
@@ -430,12 +432,9 @@ function _deleteAlertDocuments(alertId) {
     /** @type {string} */
     const storagePath = doc.url.split('/storage/v1/object/public/photos/')[1];
     // ⚠️ CORRIGÉ : ne supprime que les fichiers APPARTENANT à l'alerte
-    // (préfixe 'alertes-documents/', voir handleAlertDocuments,
-    // alertes.js). Les alertes automatiques — rappels métrologie, voir
-    // checkMetrologieEcheances (metrologie.js) — RÉFÉRENCENT des
-    // documents d'autres modules (préfixe 'metrologie/') sans en être
-    // propriétaires : supprimer l'alerte ne doit jamais détruire ces
-    // fichiers d'origine.
+    // (préfixe 'alertes-documents/'). Les alertes automatiques (rappels
+    // métrologie) RÉFÉRENCENT des documents d'autres modules sans en
+    // être propriétaires — jamais détruits avec l'alerte.
     if (!storagePath.startsWith('alertes-documents/')) return;
     sbDeletePhoto(storagePath);
   });
@@ -504,6 +503,13 @@ function renameEnseigne(oldName, newName) {
     return { ok: false, error: `L'enseigne « ${trimmed} » existe déjà.` };
   }
 
+  // Type de commerce : suit le renommage (clé indexée par nom).
+  if (DB.enseigneTypes && DB.enseigneTypes[oldName] !== undefined) {
+    DB.enseigneTypes[trimmed] = DB.enseigneTypes[oldName];
+    delete DB.enseigneTypes[oldName];
+    save(['enseigneTypes']);
+  }
+
   if (DB.enseignes) DB.enseignes = DB.enseignes.map(e => e === oldName ? trimmed : e);
   DB.magasins.forEach(m => { if (m.enseigne === oldName) m.enseigne = trimmed; });
 
@@ -532,6 +538,10 @@ function renameEnseigne(oldName, newName) {
 function deleteEnseigne(nom) {
   if (DB.enseignes) DB.enseignes = DB.enseignes.filter(e => e !== nom);
   DB.magasins.forEach(m => { if (m.enseigne === nom) m.enseigne = ''; });
+  if (DB.enseigneTypes && DB.enseigneTypes[nom] !== undefined) {
+    delete DB.enseigneTypes[nom];
+    save(['enseigneTypes']);
+  }
 
   if (DB.grilleCustom && Object.prototype.hasOwnProperty.call(DB.grilleCustom, nom)) {
     /** @type {string[]} */
@@ -559,23 +569,152 @@ function renderEnseignes() {
 
   el('ens-cnt').textContent = `${enseignes.length} enseigne(s)`;
 
+  // ⚠️ CHANGÉ (types de commerce) : colonne « Type de commerce » —
+  // le type choisi détermine les rayons/zones dont héritent TOUS les
+  // magasins de l'enseigne (voir getRayonsForMagasin, rayons.js).
+  // Sans type : comportement historique (assignation par magasin).
   el('ens-tb').innerHTML = enseignes.map(enseigne => {
     /** @type {Magasin[]} */
     const stores = DB.magasins.filter(m => m.enseigne === enseigne);
+    /** @type {string} */
+    const typeId = (DB.enseigneTypes || {})[enseigne] || '';
+    /** @type {CommerceType | null} */
+    const type = COMMERCE_TYPES.find(t => t.id === typeId) || null;
+    /** @type {string[]} */
+    const typeRayons = typeId ? ((DB.typeRayons || {})[typeId] || []) : [];
+    /** @type {string} */
+    const typeCell = canManage
+      ? `<select class="form-control" style="width:auto;font-size:12px;padding:4px 8px" onchange="setEnseigneType('${_escapeHtmlAttr(enseigne)}', this.value)">
+           <option value="">— Type non défini —</option>
+           ${COMMERCE_TYPES.map(t => `<option value="${t.id}" ${t.id === typeId ? 'selected' : ''}>${t.label}</option>`).join('')}
+         </select>`
+      : `<span class="tsm">${type ? type.label : '—'}</span>`;
+
     return `<tr>
-      <td style="font-weight:500">${enseigne}</td>
+      <td style="font-weight:500">${_escapeHtmlAttr(enseigne)}</td>
+      <td>
+        ${typeCell}
+        ${type ? `<div class="tsm tm" style="margin-top:3px">${typeRayons.length} ${rayonWord(type, true).toLowerCase()} hérité(es) par ses magasins</div>` : `<div class="tsm tm" style="margin-top:3px">Assignation par magasin (historique)</div>`}
+      </td>
       <td>
         <span class="tsm tm">${stores.length} magasin(s)</span>
-        ${stores.length ? `<div class="tsm tm" style="margin-top:2px">${stores.map(s => s.nom).join(', ')}</div>` : ''}
+        ${stores.length ? `<div class="tsm tm" style="margin-top:2px">${stores.map(s => _escapeHtmlAttr(s.nom)).join(', ')}</div>` : ''}
       </td>
       <td>
         ${canManage ? `
-          <button class="btn btn-secondary btn-sm" onclick="openRenameEnseignePrompt('${enseigne}')" aria-label="Renommer"><i class="ti ti-pencil"></i></button>
-          <button class="btn btn-danger btn-sm" onclick="confirmDeleteEnseigne('${enseigne}', ${stores.length})" aria-label="Supprimer"><i class="ti ti-trash"></i></button>
+          <button class="btn btn-secondary btn-sm" onclick="openRenameEnseignePrompt('${_escapeHtmlAttr(enseigne)}')" aria-label="Renommer"><i class="ti ti-pencil"></i></button>
+          <button class="btn btn-danger btn-sm" onclick="confirmDeleteEnseigne('${_escapeHtmlAttr(enseigne)}', ${stores.length})" aria-label="Supprimer"><i class="ti ti-trash"></i></button>
         ` : ''}
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="3" class="tsm tm" style="text-align:center;padding:24px">Aucune enseigne pour l'instant.</td></tr>`;
+  }).join('') || `<tr><td colspan="4" class="tsm tm" style="text-align:center;padding:24px">Aucune enseigne pour l'instant.</td></tr>`;
+}
+
+/**
+ * Enregistre (ou retire) le type de commerce d'une enseigne — tous
+ * ses magasins basculent immédiatement sur les rayons/zones du type
+ * (voir getRayonsForMagasin, rayons.js).
+ * @param {string} enseigneNom
+ * @param {string} typeId - CommerceType.id, ou '' pour retirer le type.
+ * @returns {void}
+ */
+function setEnseigneType(enseigneNom, typeId) {
+  if (!hasPerm('brand_manage')) return;
+  DB.enseigneTypes = DB.enseigneTypes || {};
+  if (typeId) DB.enseigneTypes[enseigneNom] = typeId;
+  else delete DB.enseigneTypes[enseigneNom];
+  save(['enseigneTypes']);
+  showToast(typeId
+    ? 'Type enregistré — les magasins de cette enseigne héritent des rayons/zones du type.'
+    : 'Type retiré — retour à l\'assignation rayon par magasin.');
+  renderEnseignes();
+}
+
+/**
+ * Ouvre la modale de gestion des rayons/zones par type de commerce
+ * (bouton « Rayons / Zones par type », page Enseignes).
+ * @returns {void}
+ */
+function openTypeRayonsModal() {
+  if (!hasPerm('brand_manage')) return;
+  const typeSelect = el('tr-type-sel');
+  if (!typeSelect) return;
+  typeSelect.innerHTML = COMMERCE_TYPES.map(t => `<option value="${t.id}">${t.label}</option>`).join('');
+  _renderTypeRayonsChecklist();
+  openModal('m-type-rayons');
+}
+
+/**
+ * (Re)construit la liste de cases de la modale selon le type choisi :
+ * union des rayons connus et de ceux déjà assignés au type, avec le
+ * vocabulaire adapté (Rayons / Zones).
+ * @returns {void}
+ */
+function _renderTypeRayonsChecklist() {
+  /** @type {string} */
+  const typeId = v('tr-type-sel');
+  /** @type {CommerceType | null} */
+  const type = COMMERCE_TYPES.find(t => t.id === typeId) || null;
+  /** @type {string} */
+  const word = rayonWord(type, true);
+
+  if (el('tr-list-label')) el('tr-list-label').textContent = `${word} de ce type de commerce`;
+  if (el('tr-add-label'))  el('tr-add-label').textContent  = type && type.mode === 'zones' ? 'Créer une zone' : 'Créer un rayon';
+
+  /** @type {string[]} */
+  const assigned = (DB.typeRayons || {})[typeId] || [];
+  /** @type {string[]} */
+  const all = [...new Set([...getKnownRayons(), ...assigned])].sort((a, b) => a.localeCompare(b, 'fr'));
+
+  el('tr-rayon-cbs').innerHTML = all.length
+    ? all.map(rayon => `
+        <label class="cb-item">
+          <input type="checkbox" class="tr-rayon-cb" value="${_escapeHtmlAttr(rayon)}" ${assigned.includes(rayon) ? 'checked' : ''}>
+          ${_escapeHtmlAttr(rayon)}
+        </label>`).join('')
+    : `<div class="tsm tm" style="padding:12px;text-align:center">Aucun rayon/zone connu — utilisez « Créer » ci-dessous.</div>`;
+}
+
+/**
+ * Crée un nouveau rayon/zone depuis la modale des types (réutilise
+ * createRayon, rayons.js) et le coche d'office pour le type affiché.
+ * @returns {void}
+ */
+function addTypeRayonPrompt() {
+  /** @type {CommerceType | null} */
+  const type = COMMERCE_TYPES.find(t => t.id === v('tr-type-sel')) || null;
+  /** @type {string | null} */
+  const name = prompt(`Nom ${type && type.mode === 'zones' ? 'de la nouvelle zone' : 'du nouveau rayon'} :`);
+  if (name === null) return;
+  /** @type {string} */
+  const trimmed = name.trim();
+  if (!trimmed) return;
+
+  if (typeof createRayon === 'function') createRayon(trimmed); // doublon = refus silencieux, sans conséquence
+
+  /** @type {string} */
+  const typeId = v('tr-type-sel');
+  DB.typeRayons = DB.typeRayons || {};
+  DB.typeRayons[typeId] = [...new Set([...(DB.typeRayons[typeId] || []), trimmed])];
+  save(['typeRayons', 'manualRayons']);
+  _renderTypeRayonsChecklist();
+}
+
+/**
+ * Enregistre la liste cochée pour le type affiché — héritée
+ * immédiatement par tous les magasins des enseignes de ce type.
+ * @returns {void}
+ */
+function saveTypeRayons() {
+  if (!hasPerm('brand_manage')) return;
+  /** @type {string} */
+  const typeId = v('tr-type-sel');
+  DB.typeRayons = DB.typeRayons || {};
+  DB.typeRayons[typeId] = [...document.querySelectorAll('.tr-rayon-cb:checked')].map(cb => cb.value);
+  save(['typeRayons']);
+  showToast('Liste enregistrée — héritée par tous les magasins des enseignes de ce type.');
+  renderEnseignes();
+  closeModal('m-type-rayons');
 }
 
 /**
@@ -663,6 +802,25 @@ function openAssignRayonsModal(storeId) {
   /** @type {Magasin | undefined} */
   const store = DB.magasins.find(m => m.id === storeId);
   if (!store) return;
+
+  // ⚠️ AJOUTÉ (types de commerce) : si l'enseigne du magasin a un
+  // type avec des rayons/zones, le magasin en HÉRITE — la modale
+  // devient une simple consultation (liste gérée depuis la page
+  // Enseignes), et l'enregistrement est neutralisé (ar-store-id vide).
+  /** @type {ReturnType<typeof getCommerceTypeForMagasin>} */
+  const commerceType = getCommerceTypeForMagasin(storeId);
+  /** @type {string[]} */
+  const inheritedList = commerceType ? ((DB.typeRayons || {})[commerceType.id] || []) : [];
+  if (commerceType && inheritedList.length) {
+    sv('ar-store-id', '');
+    el('m-assign-rayons-ttl').innerHTML = `<i class="ti ti-category" style="color:var(--primary)"></i> ${rayonWord(commerceType, true)} — ${store.nom}`;
+    el('ar-rayon-cbs').innerHTML =
+      `<div class="tsm tm" style="margin-bottom:10px"><i class="ti ti-building"></i> ${rayonWord(commerceType, true)} hérités du type « ${commerceType.label} » de l'enseigne — liste gérée depuis la page Enseignes (bouton « Rayons / Zones par type »).</div>` +
+      [...inheritedList].sort((a, b) => a.localeCompare(b, 'fr')).map(rayon => `
+        <label class="cb-item"><input type="checkbox" checked disabled> ${_escapeHtmlAttr(rayon)}</label>`).join('');
+    openModal('m-assign-rayons');
+    return;
+  }
 
   sv('ar-store-id', storeId);
   el('m-assign-rayons-ttl').innerHTML = `<i class="ti ti-category" style="color:var(--primary)"></i> Rayons assignés — ${store.nom}`;

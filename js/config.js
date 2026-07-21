@@ -333,3 +333,31 @@ const IMPORT_FORMAT_INFO = {
 // Alias pour compatibilité
 /** @type {Object<string, string>} */
 const FORMAT_INFO = IMPORT_FORMAT_INFO;
+
+// ─────────────────────────────────────────────
+// 7. TYPES DE COMMERCE
+// ─────────────────────────────────────────────
+
+/**
+ * Type de commerce d'une enseigne. Le type détermine :
+ *  - la LISTE des rayons/zones dont héritent tous les magasins des
+ *    enseignes de ce type (DB.typeRayons, géré depuis la page
+ *    Enseignes — bouton « Rayons / Zones par type ») ;
+ *  - le VOCABULAIRE : « Rayons » pour la distribution (mode 'rayons'),
+ *    « Zones » pour la restauration et l'industrie (mode 'zones').
+ * Les grilles d'audit restent inchangées : grille commune d'enseigne
+ * + grille spécifique magasin (voir getGrille, grille.js).
+ * @typedef {Object} CommerceType
+ * @property {string} id - Identifiant stable (stocké dans DB.enseigneTypes).
+ * @property {string} label - Libellé affiché.
+ * @property {'rayons'|'zones'} mode - Vocabulaire employé.
+ */
+
+/** @type {CommerceType[]} */
+const COMMERCE_TYPES = [
+  { id: 'grande-distribution',    label: 'Grande Distribution',       mode: 'rayons' },
+  { id: 'distribution-proximite', label: 'Distribution de Proximité', mode: 'rayons' },
+  { id: 'restaurant',             label: 'Restaurant',                mode: 'zones' },
+  { id: 'fast-food',              label: 'Fast Food',                 mode: 'zones' },
+  { id: 'industrie-agro',         label: 'Industrie Agroalimentaire', mode: 'zones' },
+];

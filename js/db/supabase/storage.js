@@ -201,9 +201,11 @@
  * @property {QualimetreGlobalMap} qualimetreGlobal - Données globales qualité de service (équivalent de la ligne '__global__' isolée côté Supabase).
  * @property {QualimetreZoneLabelsMap} qualimetreZoneLabels - Renommages manuels de zones (équivalent de la ligne '__zone_labels__' isolée côté Supabase).
  * @property {QualAudit[]} qualAudits
- * @property {Object[]} analyses - Rapports d'analyses uploadés (métadonnées + URL du fichier brut — voir analyses.js).
- * @property {Object[]} auditsExternes - Rapports d'audits externes FSQS (même principe que analyses — voir audits-externes.js).
- * @property {Object[]} balances - Balances de métrologie, avec leurs passages prestataire embarqués (voir metrologie.js).
+ * @property {Object[]} analyses - Rapports d'analyses uploadés (voir analyses.js).
+ * @property {Object[]} auditsExternes - Rapports d'audits externes FSQS (voir audits-externes.js).
+ * @property {Object[]} balances - Balances de métrologie avec leurs passages (voir metrologie.js).
+ * @property {Record<string, string>} enseigneTypes - Type de commerce par enseigne (nom → CommerceType.id, voir config.js). Ligne réservée '__enseigne_types__' de grille_custom.
+ * @property {Record<string, string[]>} typeRayons - Rayons/zones par type de commerce (CommerceType.id → noms), hérités par tous les magasins des enseignes du type. Ligne réservée '__type_rayons__' de grille_custom.
  */
 
 // ─────────────────────────────────────────────
@@ -327,6 +329,8 @@ function _buildDefaultDB() {
     deletedRayons:     [],
     manualRayons:      [],
     magasinRayons:     {},
+    enseigneTypes:     {},
+    typeRayons:        {},
     qualimetreCustom:  {},
     qualimetreGlobal:  {},
     qualimetreZoneLabels: {},
@@ -386,12 +390,10 @@ async function loadDB() {
   if (DB.qualimetreGlobal) DB.qualimetreGlobal = _migrateQualimetreGlobalToEnseigneScoped(DB.qualimetreGlobal);
 
   // ⚠️ CORRIGÉ (données absentes à la connexion) : ne JAMAIS
-  // interroger Supabase sans utilisateur authentifié. Les policies
-  // RLS (`to authenticated`) ne renvoient pas d'erreur dans ce cas —
-  // elles renvoient des tableaux VIDES, qui écrasaient la DB locale
-  // et son cache localStorage par du vide au chargement de la page
-  // (avant connexion). Le vrai chargement a désormais lieu APRÈS
-  // l'authentification (voir doLogin/confirmForcedPasswordChange,
+  // interroger Supabase sans utilisateur authentifié — les policies
+  // RLS (`to authenticated`) renvoient des tableaux VIDES (pas une
+  // erreur), qui écrasaient la DB locale et son cache par du vide.
+  // Le vrai chargement a lieu APRÈS l'authentification (voir doLogin,
   // auth.js) ; ici on s'arrête au cache local.
   if (!CU) return;
 
@@ -421,16 +423,15 @@ async function loadDB() {
       auditsExternes, balances,
     ] = await Promise.all([
       // ⚠️ CHANGÉ : sbSelectStrict (supabase.js) au lieu de sbSelect —
-      // un échec (réseau, RLS...) fait désormais basculer dans le
-      // catch ci-dessous (mode hors-ligne, cache conservé) au lieu
-      // d'écraser silencieusement la DB par des tableaux vides.
+      // un échec (réseau, RLS...) bascule dans le catch ci-dessous
+      // (mode hors-ligne, cache conservé) au lieu d'écraser la DB par
+      // des tableaux vides.
       sbSelectStrict('magasins'),   sbSelectStrict('audits'),
       sbSelectStrict('ncs'),      sbSelectStrict('actions'),    sbSelectStrict('alertes'),
       sbSelectStrict('grille_custom'), sbSelectStrict('qual_audits'),
       sbSelectStrict('qualimetre_custom'), sbSelectStrict('drafts'),
       // Tables récentes : tolérées absentes (migration SQL pas encore
-      // exécutée) — repli sur la valeur locale courante, sans faire
-      // échouer tout le chargement.
+      // exécutée) — repli sur la valeur locale, sans échec global.
       sbSelectStrict('analyses').catch(() => DB.analyses || []),
       sbSelectStrict('audits_externes').catch(() => DB.auditsExternes || []),
       sbSelectStrict('balances').catch(() => DB.balances || []),
@@ -458,6 +459,8 @@ async function loadDB() {
       deletedRayons:    _parseDeletedRayons(grilleRows),
       manualRayons:     _parseManualRayons(grilleRows),
       magasinRayons:    _parseMagasinRayons(grilleRows),
+      enseigneTypes:    _parseEnseigneTypes(grilleRows),
+      typeRayons:       _parseTypeRayons(grilleRows),
       enseignes:        _parseEnseignes(grilleRows),
       qualimetreCustom: _parseQualimetreCustom(qualRows),
       qualimetreGlobal: _migrateQualimetreGlobalToEnseigneScoped(_parseQualimetreGlobal(qualRows)),
@@ -646,6 +649,33 @@ function _parseMagasinRayons(rows) {
 }
 
 /**
+ * Extrait le type de commerce de chaque enseigne (ligne réservée
+ * '__enseigne_types__' de la table `grille_custom` — même principe
+ * que '__magasin_rayons__'). Record<nomEnseigne, CommerceType.id>.
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {Record<string, string>}
+ */
+function _parseEnseigneTypes(rows) {
+  /** @type {SupabaseRow | undefined} */
+  const row = (rows || []).find(r => r.rayon === '__enseigne_types__');
+  return row && row.data && typeof row.data === 'object' ? row.data : {};
+}
+
+/**
+ * Extrait les rayons/zones assignés à chaque type de commerce (ligne
+ * réservée '__type_rayons__' de la table `grille_custom`).
+ * Record<CommerceType.id, string[]> — hérités par tous les magasins
+ * des enseignes du type (voir getRayonsForMagasin, rayons.js).
+ * @param {SupabaseRow[] | null | undefined} rows
+ * @returns {Record<string, string[]>}
+ */
+function _parseTypeRayons(rows) {
+  /** @type {SupabaseRow | undefined} */
+  const row = (rows || []).find(r => r.rayon === '__type_rayons__');
+  return row && row.data && typeof row.data === 'object' ? row.data : {};
+}
+
+/**
  * Transforme les lignes brutes de la table `qualimetre_custom` en
  * dictionnaire indexé par identifiant de magasin (mid), en excluant
  * les lignes réservées '__global__' (DB.qualimetreGlobal, voir
@@ -784,7 +814,7 @@ async function _pushToSupabase(tables) {
     if (pushAll || tables.includes('qualAudits')) operations.push(sbUpsert('qual_audits', DB.qualAudits));
     if (pushAll || tables.includes('drafts'))     operations.push(sbUpsert('drafts',     DB.drafts));
 
-    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore') || tables.includes('enseignes') || tables.includes('manualRayons') || tables.includes('magasinRayons')) {
+    if (pushAll || tables.includes('grilleCustom') || tables.includes('deletedRayons') || tables.includes('grilleCustomByStore') || tables.includes('enseignes') || tables.includes('manualRayons') || tables.includes('magasinRayons') || tables.includes('enseigneTypes') || tables.includes('typeRayons')) {
       /** @type {SupabaseRow[]} */
       const rows = [];
       // Grilles communes par enseigne (DB.grilleCustom, désormais à
@@ -821,6 +851,14 @@ async function _pushToSupabase(tables) {
       // contient encore des données.
       if (pushAll || tables.includes('magasinRayons')) {
         rows.push({ id: '__magasin_rayons__', rayon: '__magasin_rayons__', data: DB.magasinRayons || {} });
+      }
+      // Types de commerce : type par enseigne + rayons/zones par type
+      // (toujours réécrits, même vides — même règle que '__enseignes__').
+      if (pushAll || tables.includes('enseigneTypes')) {
+        rows.push({ id: '__enseigne_types__', rayon: '__enseigne_types__', data: DB.enseigneTypes || {} });
+      }
+      if (pushAll || tables.includes('typeRayons')) {
+        rows.push({ id: '__type_rayons__', rayon: '__type_rayons__', data: DB.typeRayons || {} });
       }
       // Grilles spécifiques à un magasin (DB.grilleCustomByStore) —
       // réutilise la même table grille_custom, une ligne par
@@ -1058,11 +1096,9 @@ setInterval(async () => {
 
   try {
     /** @type {[Audit[], NC[], Action[], Alerte[], QualAudit[], Draft[]]} */
-    // ⚠️ CHANGÉ : sbSelectStrict — un échec réseau ponctuel pendant
-    // un tick de polling tombait dans le catch... sauf que sbSelect ne
-    // levait jamais : les tableaux vides retournés passaient pour un
-    // « changement » et écrasaient la DB locale (données de saisie
-    // comprises) jusqu'au tick réussi suivant.
+    // ⚠️ CHANGÉ : sbSelectStrict — un échec réseau ponctuel passait
+    // pour des tableaux vides et écrasait la DB locale jusqu'au tick
+    // réussi suivant.
     const [audits, ncs, actions, alertes, qualAudits, drafts, analyses, auditsExternes, balances] = await Promise.all([
       sbSelectStrict('audits'), sbSelectStrict('ncs'), sbSelectStrict('actions'),
       sbSelectStrict('alertes'), sbSelectStrict('qual_audits'), sbSelectStrict('drafts'),
@@ -1264,7 +1300,7 @@ function importBackup(input) {
 
 /** @type {string} */
 const PHOTO_QUEUE_DB_NAME = 'hygiperf-photo-queue';
-/** @type {string} Ancien nom de la base IndexedDB (avant le passage à HygiPerf) — utilisé UNIQUEMENT pour migrer une file d'attente existante vers la nouvelle base, puis supprimer l'ancienne (voir _migrateLegacyPhotoQueue). */
+/** @type {string} Ancien nom de la base IndexedDB (avant le passage à HygiPerf) — utilisé UNIQUEMENT pour migrer une file d'attente existante, puis supprimer l'ancienne base (voir _migrateLegacyPhotoQueue). */
 const LEGACY_PHOTO_QUEUE_DB_NAME = 'qualistore-photo-queue';
 /** @type {number} */
 const PHOTO_QUEUE_DB_VERSION = 1;
@@ -1438,10 +1474,8 @@ setInterval(flushPendingPhotoQueue, 30_000);
 /**
  * Migration ponctuelle : déplace les entrées de l'ancienne base
  * IndexedDB (nom d'avant le passage à HygiPerf) vers la nouvelle,
- * puis supprime l'ancienne base. Sans effet si l'ancienne base
- * n'existe pas ou est vide ; toute erreur est silencieuse (la
- * migration retentera au prochain chargement tant que l'ancienne
- * base n'a pas été supprimée).
+ * puis supprime l'ancienne. Sans effet si absente ou vide ; toute
+ * erreur est silencieuse (nouvelle tentative au prochain chargement).
  * @returns {Promise<void>}
  */
 async function _migrateLegacyPhotoQueue() {
@@ -1458,25 +1492,21 @@ async function _migrateLegacyPhotoQueue() {
     if (legacyDb.objectStoreNames.contains(PHOTO_QUEUE_STORE)) {
       /** @type {PendingPhotoEntry[]} */
       const entries = await new Promise((resolve, reject) => {
-        /** @type {IDBTransaction} */
         const tx = legacyDb.transaction(PHOTO_QUEUE_STORE, 'readonly');
-        /** @type {IDBRequest} */
         const request = tx.objectStore(PHOTO_QUEUE_STORE).getAll();
         request.onsuccess = () => resolve(request.result || []);
         request.onerror   = () => reject(request.error);
       });
-
       if (entries.length) {
         /** @type {IDBDatabase} */
         const db = await _openPhotoQueueDb();
         await new Promise((resolve, reject) => {
-          /** @type {IDBTransaction} */
           const tx = db.transaction(PHOTO_QUEUE_STORE, 'readwrite');
           entries.forEach(entry => tx.objectStore(PHOTO_QUEUE_STORE).put(entry));
           tx.oncomplete = resolve;
           tx.onerror    = () => reject(tx.error);
         });
-        console.log(`📦 File d'attente photos migrée vers la nouvelle base (${entries.length} entrée(s)).`);
+        console.log(`📦 File d'attente photos migrée (${entries.length} entrée(s)).`);
       }
     }
     legacyDb.close();
@@ -1488,5 +1518,5 @@ async function _migrateLegacyPhotoQueue() {
 
 // Tentative dès le chargement de la page, au cas où des photos
 // seraient restées en attente d'une session précédente — précédée de
-// la migration ponctuelle depuis l'ancienne base (voir ci-dessus).
+// la migration ponctuelle depuis l'ancienne base.
 _migrateLegacyPhotoQueue().finally(() => flushPendingPhotoQueue());
