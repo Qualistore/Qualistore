@@ -393,9 +393,8 @@ function _renderStoreCheckboxesForFilter() {
 
   // ⚠️ CHANGÉ : assignation présentée par ENSEIGNE puis par magasin —
   // une case d'enseigne (dé)coche tous ses magasins d'un coup.
-  // Purement visuel et data-driven (groupes dérivés de
-  // Magasin.enseigne) : les liaisons existantes restent des IDs de
-  // magasins (User.magasins), rien à migrer.
+  // Data-driven (groupes dérivés de Magasin.enseigne) : les liaisons
+  // restent des IDs de magasins, rien à migrer.
   /** @type {Map<string, Magasin[]>} */
   const byEnseigne = new Map();
   filteredMagasins.forEach(store => {
@@ -437,7 +436,7 @@ function _renderStoreCheckboxesForFilter() {
 
 /**
  * (Dé)coche d'un coup tous les magasins d'une enseigne dans la
- * modale utilisateur, et synchronise la sélection (_selectedMagasinIds).
+ * modale utilisateur, et synchronise la sélection.
  * @param {HTMLInputElement} enseigneCheckbox
  * @returns {void}
  */
@@ -494,8 +493,8 @@ function _updateStoreSelectionCount() {
 function _buildPermissionsSection() {
   const container = el('u-perms-container');
   // ⚠️ AJOUTÉ : droit users_edit_permissions — sans ce droit, la
-  // section reste VISIBLE mais en lecture seule (cases désactivées),
-  // et saveUser ignore les cases (voir _readStoreAndPermsFromForm).
+  // section reste VISIBLE mais en lecture seule, et saveUser ignore
+  // les cases (voir _readStoreAndPermsFromForm).
   /** @type {boolean} */
   const canEditPerms = !!hasPerm('users_edit_permissions');
   /** @type {string} */
@@ -679,10 +678,11 @@ function onRoleChange(applyDefaults = true) {
 
   if (!applyDefaults) return;
 
-  if (role === 'direction') {
-    _selectedMagasinIds = new Set(DB.magasins.map(m => m.id));
-    _renderStoreCheckboxesForFilter();
-  }
+  // ⚠️ CORRIGÉ : le rôle Associé (direction) recevait TOUS les
+  // magasins cochés d'office au choix du rôle — supprimé. Comme tout
+  // le monde, un Associé ne voit que les magasins explicitement
+  // cochés dans sa fiche (visibleMids, ui.js). Aucune assignation
+  // automatique, quel que soit le rôle.
 
   if (DPERMS[role]) {
     PIDS.forEach(permId => {
@@ -702,7 +702,6 @@ function toggleAllMags(selectAll) {
     if (selectAll) _selectedMagasinIds.add(cb.value);
     else _selectedMagasinIds.delete(cb.value);
   });
-  // Les cases d'enseigne suivent (voir _renderStoreCheckboxesForFilter).
   document.querySelectorAll('#u-mag-cbs .ens-cb').forEach(cb => { cb.checked = selectAll; });
   _updateStoreSelectionCount();
 }
@@ -722,8 +721,7 @@ function _readStoreAndPermsFromForm() {
   /** @type {UserPerms} */
   const perms = {};
   // ⚠️ AJOUTÉ : sans users_edit_permissions, les cases (désactivées)
-  // sont IGNORÉES — droits existants conservés, ou défauts du rôle en
-  // création. Jamais uniquement une protection d'UI.
+  // sont IGNORÉES — droits existants conservés, ou défauts du rôle.
   if (!hasPerm('users_edit_permissions')) {
     /** @type {User | undefined} */
     const existing = _cachedProfiles.find(u => u.id === v('u-id'));
@@ -794,14 +792,12 @@ function _computeResetPasswordRedirect() {
 
 /**
  * Extrait le VRAI message d'erreur d'un appel functions.invoke.
- *
- * ⚠️ AJOUTÉ : en cas de statut non-2xx, supabase-js renvoie une
- * erreur générique et `data` reste null — le message précis renvoyé
- * par la fonction ({ error: '...' }) se trouve dans error.context
- * (l'objet Response), qu'il faut lire explicitement.
+ * ⚠️ AJOUTÉ : en non-2xx, supabase-js renvoie une erreur générique —
+ * le message précis est dans error.context (Response), à lire
+ * explicitement.
  * @param {{error?: string}|null} data
  * @param {{message?: string, context?: Response}|null} error
- * @returns {Promise<string|undefined>} Message d'erreur, ou undefined si succès.
+ * @returns {Promise<string|undefined>}
  */
 async function _edgeFunctionErrorMessage(data, error) {
   if (data && data.error) return data.error;
@@ -811,17 +807,16 @@ async function _edgeFunctionErrorMessage(data, error) {
       /** @type {{error?: string}} */
       const body = await error.context.json();
       if (body && body.error) return body.error;
-    } catch (_) { /* corps illisible — repli sur le message générique */ }
+    } catch (_) { /* corps illisible — repli générique */ }
   }
   return error.message || 'Erreur inconnue.';
 }
 
 /**
- * Supprime COMPLÈTEMENT un utilisateur : son compte Supabase Auth via
- * l'Edge Function invite-user (action 'delete-user'), puis la ligne
- * `profiles`. ⚠️ AJOUTÉ (bug des comptes orphelins) — voir
- * confirmDel('user'), magasins.js.
- * @param {string} userId - Référence vers profiles.id / auth.users.id.
+ * Supprime COMPLÈTEMENT un utilisateur : compte Supabase Auth (via
+ * l'Edge Function invite-user, action 'delete-user') puis ligne
+ * `profiles`. ⚠️ AJOUTÉ (bug des comptes orphelins).
+ * @param {string} userId
  * @returns {Promise<void>}
  */
 async function deleteUserCompletely(userId) {
